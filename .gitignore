@@ -1,0 +1,52 @@
+# Build artifacts
+*.obj
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
+*.idb
+*.lib
+*.a
+# Build directories
+build/
+src/build/
+relay-server/build/
+artifacts/
+bin/
+obj/
+# Test files (large binary data)
+*.bin
+test_*.bin
+testfile.txt
+# IDE and editor files
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+compile_commands.json
+# OS-specific files
+.DS_Store
+Thumbs.db
+Desktop.ini
+# Dependencies - exclude most libsodium binaries
+deps/libsodium/ARM64/
+deps/libsodium/Win32/
+deps/libsodium/x64/Debug/
+deps/libsodium/x64/Release/*/Debug/
+deps/libsodium/x64/Release/*/ltcg/
+deps/libsodium/x64/Release/*/static/
+# Keep only essential Windows x64 Release dynamic libs
+!deps/libsodium/x64/Release/v143/dynamic/
+# Temporary files
+*.tmp
+*.temp
+*.log
+# User-specific files
+*.user
+*.suo
