@@ -45,7 +45,7 @@ void print_usage(const char* program_name) {
     printf("Usage: %s [options]\n\n", program_name);
     printf("Options:\n");
     printf("  -p, --port <port>         UDP port to listen on (default: 443)\n");
-    printf("  -w, --wordlist <path>     Path to EFF wordlist (default: ../../deps/eff_large_wordlist.txt)\n");
+    printf("  -w, --wordlist <path>     Path to EFF wordlist (default: deps/eff_large_wordlist.txt)\n");
     printf("  --max-peers <num>         Maximum concurrent peers (default: 10000)\n");
     printf("  --max-tickets <num>       Maximum active tickets (default: 5000)\n");
     printf("  -h, --help                Show this help message\n");
@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
     config.port = 443;
     config.max_peers = 10000;
     config.max_tickets = 5000;
-    config.wordlist_path = "../../deps/eff_large_wordlist.txt";
+    config.wordlist_path = "deps/eff_large_wordlist.txt";
     
     // Parse command-line arguments
     for (int i = 1; i < argc; i++) {

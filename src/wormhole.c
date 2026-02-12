@@ -25,8 +25,8 @@ HQUIC ClientConfiguration = NULL;
 HANDLE ServerShutdownEvent = NULL;
 
 // Relay configuration
-#define DEFAULT_RELAY_HOST "172.25.254.13"  // WSL IP (change to "wormholerelay.com" for production)
-#define DEFAULT_RELAY_PORT 8080              // Change to 443 for production
+#define DEFAULT_RELAY_HOST "wormholerelay.com"  // WSL IP (change to "wormholerelay.com" for production)
+#define DEFAULT_RELAY_PORT 443              // Change to 443 for production
 
 //=============================================================================
 // Forward Declarations
