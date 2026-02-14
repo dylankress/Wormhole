@@ -83,6 +83,11 @@ PEER_ENTRY* PeerRegistry_FindBySessionID(PEER_REGISTRY* registry, uint64_t sessi
 // Returns: Pointer to peer entry, or NULL if not found
 PEER_ENTRY* PeerRegistry_FindByTicket(PEER_REGISTRY* registry, const char* ticket);
 
+// Find peer by socket address (IP + port)
+// Returns: Pointer to peer entry, or NULL if not found
+PEER_ENTRY* PeerRegistry_FindByAddress(PEER_REGISTRY* registry,
+                                       const struct sockaddr* addr, socklen_t addr_len);
+
 // Update peer's last keepalive timestamp
 // Returns: true if peer found and updated, false otherwise
 bool PeerRegistry_UpdateKeepalive(PEER_REGISTRY* registry, uint64_t session_id);

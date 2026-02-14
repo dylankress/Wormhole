@@ -13,6 +13,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <wincrypt.h>
 #else
 #include <pthread.h>
 #endif

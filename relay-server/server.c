@@ -15,6 +15,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
+typedef int ssize_t;
+typedef int socklen_t;
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -148,13 +150,39 @@ bool RelayServer_Init(RELAY_SERVER* server, const SERVER_CONFIG* config) {
     server->total_packets_received = 0;
     server->total_packets_sent = 0;
     server->total_bytes_forwarded = 0;
-    
+
+    // Store relay identity for fallback endpoint
+    server->listen_port = 0;
+    server->relay_addr_type = 0;
+    memset(server->relay_addr, 0, sizeof(server->relay_addr));
+
+    if (config->public_addr) {
+        struct in_addr addr4;
+        struct in6_addr addr6;
+        if (inet_pton(AF_INET, config->public_addr, &addr4) == 1) {
+            server->relay_addr_type = 0x04;
+            memcpy(server->relay_addr, &addr4, 4);
+            server->listen_port = config->port;
+            printf("[Server] Relay endpoint: %s:%u (IPv4)\n", config->public_addr, config->port);
+        } else if (inet_pton(AF_INET6, config->public_addr, &addr6) == 1) {
+            server->relay_addr_type = 0x06;
+            memcpy(server->relay_addr, &addr6, 16);
+            server->listen_port = config->port;
+            printf("[Server] Relay endpoint: [%s]:%u (IPv6)\n", config->public_addr, config->port);
+        } else {
+            fprintf(stderr, "[Server] Warning: Invalid --public-addr '%s', relay endpoint disabled\n",
+                    config->public_addr);
+        }
+    } else {
+        printf("[Server] Warning: No --public-addr specified, relay fallback endpoint disabled\n");
+    }
+
 #ifdef _WIN32
     InitializeCriticalSection(&server->stats_lock);
 #else
     pthread_mutex_init(&server->stats_lock, NULL);
 #endif
-    
+
     printf("[Server] Initialized on port %u (max peers: %u, max tickets: %u)\n",
            config->port, config->max_peers, config->max_tickets);
     return true;
@@ -402,9 +430,15 @@ static void handle_register(RELAY_SERVER* server, const uint8_t* packet, size_t 
         response.observed_port = addr4->sin_port;
     } else if (client_addr->sa_family == AF_INET6) {
         const struct sockaddr_in6* addr6 = (const struct sockaddr_in6*)client_addr;
-        response.observed_addr_type = 0x06;
-        memcpy(response.observed_addr, &addr6->sin6_addr, 16);
-        response.observed_port = addr6->sin6_port;
+        if (IN6_IS_ADDR_V4MAPPED(&addr6->sin6_addr)) {
+            response.observed_addr_type = 0x04;
+            memcpy(response.observed_addr, &addr6->sin6_addr.s6_addr[12], 4);
+            response.observed_port = addr6->sin6_port;
+        } else {
+            response.observed_addr_type = 0x06;
+            memcpy(response.observed_addr, &addr6->sin6_addr, 16);
+            response.observed_port = addr6->sin6_port;
+        }
     }
     
     // Send response
@@ -511,78 +545,222 @@ static void handle_create_ticket(RELAY_SERVER* server, const uint8_t* packet, si
     free(response_buffer);
 }
 
+// Helper: Build an ENDPOINT from a sockaddr (extracts IP + port, assigns priority)
+static bool endpoint_from_sockaddr(const struct sockaddr* addr, ENDPOINT* ep, uint8_t priority) {
+    memset(ep, 0, sizeof(ENDPOINT));
+    ep->priority = priority;
+
+    if (addr->sa_family == AF_INET) {
+        const struct sockaddr_in* addr4 = (const struct sockaddr_in*)addr;
+        ep->addr_type = 0x04;
+        memcpy(ep->addr, &addr4->sin_addr, 4);
+        ep->port = ntohs(addr4->sin_port);  // Store in host byte order (little-endian)
+        return true;
+    } else if (addr->sa_family == AF_INET6) {
+        const struct sockaddr_in6* addr6 = (const struct sockaddr_in6*)addr;
+        // Check for IPv4-mapped IPv6 (::ffff:x.x.x.x) — extract pure IPv4
+        if (IN6_IS_ADDR_V4MAPPED(&addr6->sin6_addr)) {
+            ep->addr_type = 0x04;
+            memcpy(ep->addr, &addr6->sin6_addr.s6_addr[12], 4);  // Last 4 bytes = IPv4
+            ep->port = ntohs(addr6->sin6_port);
+            return true;
+        }
+        ep->addr_type = 0x06;
+        memcpy(ep->addr, &addr6->sin6_addr, 16);
+        ep->port = ntohs(addr6->sin6_port);  // Store in host byte order (little-endian)
+        return true;
+    }
+
+    return false;
+}
+
 static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                          const struct sockaddr* client_addr, socklen_t addr_len) {
     printf("[Server] LOOKUP from client\n");
-    
+
     // Parse message
     if (len < sizeof(LookupMsg)) {
         fprintf(stderr, "[Server] LOOKUP message too short\n");
         return;
     }
-    
+
     const LookupMsg* msg = (const LookupMsg*)packet;
-    
+
     // Extract ticket
     size_t header_size = sizeof(LookupMsg);
     if (len < header_size + msg->ticket_length) {
         fprintf(stderr, "[Server] LOOKUP message truncated (missing ticket)\n");
         return;
     }
-    
+
     const char* ticket_data = (const char*)(packet + header_size);
     char ticket[MAX_TICKET_LENGTH + 1];
     size_t ticket_len = (msg->ticket_length < MAX_TICKET_LENGTH) ? msg->ticket_length : MAX_TICKET_LENGTH;
     memcpy(ticket, ticket_data, ticket_len);
     ticket[ticket_len] = '\0';
-    
+
     // Lookup ticket
     TICKET_INFO* ticket_info = TicketManager_LookupTicket(&server->ticket_manager, ticket);
     if (!ticket_info) {
         fprintf(stderr, "[Server] Ticket not found or expired: %s\n", ticket);
         return;
     }
-    
+
     // Find sender peer
     PEER_ENTRY* sender = PeerRegistry_FindByPeerID(&server->peer_registry, ticket_info->sender_peer_id);
     if (!sender) {
         fprintf(stderr, "[Server] Sender peer not found for ticket: %s\n", ticket);
         return;
     }
-    
-    // Send PEER_INFO to receiver
-    size_t response_size = sizeof(PeerInfoMsg) + sender->endpoint_count * sizeof(ENDPOINT);
-    uint8_t* response_buffer = (uint8_t*)malloc(response_size);
-    
-    if (!response_buffer) {
-        fprintf(stderr, "[Server] Failed to allocate response buffer\n");
-        return;
-    }
-    
-    PeerInfoMsg* response = (PeerInfoMsg*)response_buffer;
-    response->message_type = RELAY_MSG_PEER_INFO;
-    memcpy(response->peer_id, sender->peer_id, 32);
-    response->endpoint_count = sender->endpoint_count;
-    memcpy(response_buffer + sizeof(PeerInfoMsg), sender->endpoints,
-           sender->endpoint_count * sizeof(ENDPOINT));
-    
-    if (send_packet(server->socket_fd, response_buffer, response_size, client_addr, addr_len)) {
+
+    // Find receiver peer (by session_id from the LOOKUP message)
+    PEER_ENTRY* receiver = PeerRegistry_FindBySessionID(&server->peer_registry, msg->session_id);
+
+    // ---------------------------------------------------------------
+    // Part 1: Send PEER_INFO to RECEIVER (sender's endpoints)
+    //         + relay server as fallback endpoint (priority 200)
+    // ---------------------------------------------------------------
+    {
+        uint16_t extra_endpoints = (server->listen_port > 0) ? 1 : 0;
+        uint16_t total_ep_count = sender->endpoint_count + extra_endpoints;
+        if (total_ep_count > MAX_ENDPOINTS) {
+            printf("[Server] Warning: total endpoints %u exceeds MAX_ENDPOINTS, capping to %u\n",
+                   total_ep_count, MAX_ENDPOINTS);
+            total_ep_count = MAX_ENDPOINTS;
+        }
+        size_t response_size = sizeof(PeerInfoMsg) + total_ep_count * sizeof(ENDPOINT);
+        uint8_t* response_buffer = (uint8_t*)malloc(response_size);
+
+        if (!response_buffer) {
+            fprintf(stderr, "[Server] Failed to allocate response buffer\n");
+            return;
+        }
+
+        PeerInfoMsg* response = (PeerInfoMsg*)response_buffer;
+        response->message_type = RELAY_MSG_PEER_INFO;
+        memcpy(response->peer_id, sender->peer_id, 32);
+        response->endpoint_count = total_ep_count;
+
+        // Copy sender's self-reported endpoints
+        ENDPOINT* ep_ptr = (ENDPOINT*)(response_buffer + sizeof(PeerInfoMsg));
+        memcpy(ep_ptr, sender->endpoints, sender->endpoint_count * sizeof(ENDPOINT));
+
+        // Append relay server as fallback endpoint (priority 200)
+        if (extra_endpoints > 0) {
+            ENDPOINT* relay_ep = &ep_ptr[sender->endpoint_count];
+            memset(relay_ep, 0, sizeof(ENDPOINT));
+            relay_ep->addr_type = server->relay_addr_type;
+            memcpy(relay_ep->addr, server->relay_addr, sizeof(relay_ep->addr));
+            relay_ep->port = server->listen_port;
+            relay_ep->priority = 200;
+        }
+
+        printf("[Server] [DEBUG] Sending PEER_INFO to receiver with %u endpoints:\n", total_ep_count);
+        for (uint16_t i = 0; i < total_ep_count; i++) {
+            printf("[Server] [DEBUG]   EP[%u]: type=0x%02x, port=%u, priority=%u\n",
+                   i, ep_ptr[i].addr_type, ep_ptr[i].port, ep_ptr[i].priority);
+        }
+
+        if (send_packet(server->socket_fd, response_buffer, response_size, client_addr, addr_len)) {
 #ifdef _WIN32
-        EnterCriticalSection(&server->stats_lock);
+            EnterCriticalSection(&server->stats_lock);
 #else
-        pthread_mutex_lock(&server->stats_lock);
+            pthread_mutex_lock(&server->stats_lock);
 #endif
-        server->total_packets_sent++;
+            server->total_packets_sent++;
 #ifdef _WIN32
-        LeaveCriticalSection(&server->stats_lock);
+            LeaveCriticalSection(&server->stats_lock);
 #else
-        pthread_mutex_unlock(&server->stats_lock);
+            pthread_mutex_unlock(&server->stats_lock);
 #endif
-        
-        printf("[Server] PEER_INFO sent (%u endpoints)\n", sender->endpoint_count);
+
+            printf("[Server] PEER_INFO sent to receiver (%u endpoints)\n", total_ep_count);
+        }
+
+        free(response_buffer);
     }
-    
-    free(response_buffer);
+
+    // ---------------------------------------------------------------
+    // Part 2: Send PEER_INFO to SENDER (receiver's endpoints)
+    //         This enables bidirectional hole punching
+    // ---------------------------------------------------------------
+    if (receiver) {
+        // Build observed public endpoint from receiver's client_addr
+        ENDPOINT observed_ep;
+        bool has_observed = endpoint_from_sockaddr(client_addr, &observed_ep, 100);
+
+        uint16_t recv_ep_count = receiver->endpoint_count;
+        uint16_t extra = (has_observed ? 1 : 0) + ((server->listen_port > 0) ? 1 : 0);
+        uint16_t total_ep_count = recv_ep_count + extra;
+        if (total_ep_count > MAX_ENDPOINTS) {
+            printf("[Server] Warning: total endpoints %u exceeds MAX_ENDPOINTS, capping to %u\n",
+                   total_ep_count, MAX_ENDPOINTS);
+            total_ep_count = MAX_ENDPOINTS;
+        }
+        size_t response_size = sizeof(PeerInfoMsg) + total_ep_count * sizeof(ENDPOINT);
+        uint8_t* response_buffer = (uint8_t*)malloc(response_size);
+
+        if (!response_buffer) {
+            fprintf(stderr, "[Server] Failed to allocate response buffer for sender notification\n");
+            return;
+        }
+
+        PeerInfoMsg* response = (PeerInfoMsg*)response_buffer;
+        response->message_type = RELAY_MSG_PEER_INFO;
+        memcpy(response->peer_id, receiver->peer_id, 32);
+        response->endpoint_count = total_ep_count;
+
+        // Copy receiver's self-reported endpoints
+        ENDPOINT* ep_ptr = (ENDPOINT*)(response_buffer + sizeof(PeerInfoMsg));
+        memcpy(ep_ptr, receiver->endpoints, recv_ep_count * sizeof(ENDPOINT));
+
+        // Append receiver's observed public IP (NAT-mapped address) as priority 100
+        uint16_t appended = 0;
+        if (has_observed) {
+            ep_ptr[recv_ep_count + appended] = observed_ep;
+            appended++;
+        }
+
+        // Append relay server as fallback endpoint (priority 200)
+        if (server->listen_port > 0) {
+            ENDPOINT* relay_ep = &ep_ptr[recv_ep_count + appended];
+            memset(relay_ep, 0, sizeof(ENDPOINT));
+            relay_ep->addr_type = server->relay_addr_type;
+            memcpy(relay_ep->addr, server->relay_addr, sizeof(relay_ep->addr));
+            relay_ep->port = server->listen_port;
+            relay_ep->priority = 200;
+            appended++;
+        }
+
+        printf("[Server] [DEBUG] Sending PEER_INFO to sender with %u endpoints:\n", total_ep_count);
+        for (uint16_t i = 0; i < total_ep_count; i++) {
+            printf("[Server] [DEBUG]   EP[%u]: type=0x%02x, port=%u, priority=%u\n",
+                   i, ep_ptr[i].addr_type, ep_ptr[i].port, ep_ptr[i].priority);
+        }
+
+        if (send_packet(server->socket_fd, response_buffer, response_size,
+                       (struct sockaddr*)&sender->socket_addr, sender->addr_len)) {
+#ifdef _WIN32
+            EnterCriticalSection(&server->stats_lock);
+#else
+            pthread_mutex_lock(&server->stats_lock);
+#endif
+            server->total_packets_sent++;
+#ifdef _WIN32
+            LeaveCriticalSection(&server->stats_lock);
+#else
+            pthread_mutex_unlock(&server->stats_lock);
+#endif
+
+            printf("[Server] PEER_INFO sent to sender (%u endpoints, bidirectional notification)\n",
+                   total_ep_count);
+        }
+
+        free(response_buffer);
+    } else {
+        printf("[Server] Warning: Could not find receiver peer (session %llu) for bidirectional notification\n",
+               (unsigned long long)msg->session_id);
+    }
 }
 
 static void handle_forward(RELAY_SERVER* server, const uint8_t* packet, size_t len,
@@ -633,7 +811,13 @@ static void handle_forward(RELAY_SERVER* server, const uint8_t* packet, size_t l
 
 static void handle_keepalive(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                             const struct sockaddr* client_addr, socklen_t addr_len) {
-    // Just echo back the keepalive
+    // Find peer by their socket address and update keepalive timestamp
+    PEER_ENTRY* peer = PeerRegistry_FindByAddress(&server->peer_registry, client_addr, addr_len);
+    if (peer) {
+        PeerRegistry_UpdateKeepalive(&server->peer_registry, peer->session_id);
+    }
+
+    // Echo back the keepalive
     if (send_packet(server->socket_fd, packet, len, client_addr, addr_len)) {
 #ifdef _WIN32
         EnterCriticalSection(&server->stats_lock);

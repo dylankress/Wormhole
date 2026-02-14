@@ -12,6 +12,15 @@
 #include <stdbool.h>
 #include <time.h>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+typedef int socklen_t;
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
+
 // Forward declarations
 typedef struct RELAY_CLIENT RELAY_CLIENT;
 
@@ -28,6 +37,7 @@ typedef void (*RelayDisconnectedCallback)(void* context);
 typedef struct {
     const char* relay_host;           // Relay server hostname (e.g., "wormholerelay.com")
     uint16_t relay_port;              // Relay server port (default: 443)
+    uint16_t local_port;              // Local UDP port to bind (0 = ephemeral, use WORMHOLE_DEFAULT_PORT for NAT consistency)
     KEYPAIR* keypair;                 // Our Ed25519 keypair
     
     // Callbacks
@@ -86,3 +96,13 @@ uint64_t RelayClient_GetSessionID(RELAY_CLIENT* client);
 
 // Check if client is connected to relay
 bool RelayClient_IsConnected(RELAY_CLIENT* client);
+
+// Get relay client's UDP socket file descriptor (for hole punch probing)
+// Returns: socket fd, or -1 if client is NULL
+int RelayClient_GetSocket(RELAY_CLIENT* client);
+
+// Get relay server address (for including relay as fallback endpoint)
+// addr: Output buffer for relay address
+// addr_len: Output for address length
+// Returns: true if successful
+bool RelayClient_GetRelayAddr(RELAY_CLIENT* client, struct sockaddr_storage* addr, socklen_t* addr_len);

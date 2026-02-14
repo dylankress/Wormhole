@@ -167,6 +167,14 @@ uint64_t PeerRegistry_RegisterPeer(
     new_entry->last_keepalive = time(NULL);
     new_entry->ticket = NULL;
     
+    // Debug: Log stored endpoints
+    printf("[PeerRegistry] [DEBUG] Storing %u endpoints:\n", endpoint_count);
+    for (uint16_t i = 0; i < endpoint_count; i++) {
+        printf("[PeerRegistry] [DEBUG]   EP[%u]: type=0x%02x, port=0x%04x (%u), priority=%u\n",
+               i, endpoints[i].addr_type, endpoints[i].port,
+               endpoints[i].port, endpoints[i].priority);
+    }
+    
     // Insert at head of bucket
     new_entry->next = registry->buckets[bucket];
     registry->buckets[bucket] = new_entry;
@@ -288,6 +296,66 @@ PEER_ENTRY* PeerRegistry_FindByTicket(PEER_REGISTRY* registry, const char* ticke
     pthread_mutex_unlock(&registry->lock);
 #endif
     
+    return NULL;
+}
+
+// Compare two socket addresses (IP + port)
+static bool sockaddr_equals(const struct sockaddr_storage* a, socklen_t a_len,
+                            const struct sockaddr* b, socklen_t b_len) {
+    (void)a_len;
+    (void)b_len;
+    if (a->ss_family != b->sa_family) {
+        return false;
+    }
+
+    if (a->ss_family == AF_INET) {
+        const struct sockaddr_in* sa = (const struct sockaddr_in*)a;
+        const struct sockaddr_in* sb = (const struct sockaddr_in*)b;
+        return sa->sin_port == sb->sin_port &&
+               sa->sin_addr.s_addr == sb->sin_addr.s_addr;
+    } else if (a->ss_family == AF_INET6) {
+        const struct sockaddr_in6* sa = (const struct sockaddr_in6*)a;
+        const struct sockaddr_in6* sb = (const struct sockaddr_in6*)b;
+        return sa->sin6_port == sb->sin6_port &&
+               memcmp(&sa->sin6_addr, &sb->sin6_addr, sizeof(struct in6_addr)) == 0;
+    }
+
+    return false;
+}
+
+PEER_ENTRY* PeerRegistry_FindByAddress(PEER_REGISTRY* registry,
+                                       const struct sockaddr* addr, socklen_t addr_len) {
+    if (!registry || !addr) {
+        return NULL;
+    }
+
+#ifdef _WIN32
+    EnterCriticalSection(&registry->lock);
+#else
+    pthread_mutex_lock(&registry->lock);
+#endif
+
+    for (uint32_t i = 0; i < registry->bucket_count; i++) {
+        PEER_ENTRY* entry = registry->buckets[i];
+        while (entry) {
+            if (sockaddr_equals(&entry->socket_addr, entry->addr_len, addr, addr_len)) {
+#ifdef _WIN32
+                LeaveCriticalSection(&registry->lock);
+#else
+                pthread_mutex_unlock(&registry->lock);
+#endif
+                return entry;
+            }
+            entry = entry->next;
+        }
+    }
+
+#ifdef _WIN32
+    LeaveCriticalSection(&registry->lock);
+#else
+    pthread_mutex_unlock(&registry->lock);
+#endif
+
     return NULL;
 }
 

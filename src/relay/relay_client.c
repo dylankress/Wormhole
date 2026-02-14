@@ -12,14 +12,9 @@
 #include <sodium.h>
 
 #ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
 typedef int ssize_t;  // Windows doesn't have ssize_t
-typedef int socklen_t;
 #else
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -88,7 +83,52 @@ RELAY_CLIENT* RelayClient_Create(const RELAY_CLIENT_CONFIG* config) {
         free(client);
         return NULL;
     }
-    
+
+    // Bind to local port if specified (for consistent NAT mapping with QUIC listener)
+    if (config->local_port > 0) {
+        int reuse = 1;
+        setsockopt(client->socket_fd, SOL_SOCKET, SO_REUSEADDR,
+                   (const char*)&reuse, sizeof(reuse));
+
+        if (result->ai_family == AF_INET) {
+            struct sockaddr_in bind_addr;
+            memset(&bind_addr, 0, sizeof(bind_addr));
+            bind_addr.sin_family = AF_INET;
+            bind_addr.sin_addr.s_addr = INADDR_ANY;
+            bind_addr.sin_port = htons(config->local_port);
+
+            if (bind(client->socket_fd, (struct sockaddr*)&bind_addr, sizeof(bind_addr)) < 0) {
+#ifdef _WIN32
+                fprintf(stderr, "[RelayClient] Warning: Failed to bind to port %u (WSA error %d), using ephemeral\n",
+                        config->local_port, WSAGetLastError());
+#else
+                fprintf(stderr, "[RelayClient] Warning: Failed to bind to port %u, using ephemeral\n",
+                        config->local_port);
+#endif
+            } else {
+                printf("[RelayClient] Bound to local port %u (SO_REUSEADDR)\n", config->local_port);
+            }
+        } else {
+            struct sockaddr_in6 bind_addr;
+            memset(&bind_addr, 0, sizeof(bind_addr));
+            bind_addr.sin6_family = AF_INET6;
+            bind_addr.sin6_addr = in6addr_any;
+            bind_addr.sin6_port = htons(config->local_port);
+
+            if (bind(client->socket_fd, (struct sockaddr*)&bind_addr, sizeof(bind_addr)) < 0) {
+#ifdef _WIN32
+                fprintf(stderr, "[RelayClient] Warning: Failed to bind to port %u (WSA error %d), using ephemeral\n",
+                        config->local_port, WSAGetLastError());
+#else
+                fprintf(stderr, "[RelayClient] Warning: Failed to bind to port %u, using ephemeral\n",
+                        config->local_port);
+#endif
+            } else {
+                printf("[RelayClient] Bound to local port %u (SO_REUSEADDR)\n", config->local_port);
+            }
+        }
+    }
+
     // Save relay address
     memcpy(&client->relay_addr, result->ai_addr, result->ai_addrlen);
     client->relay_addr_len = result->ai_addrlen;
@@ -450,11 +490,18 @@ bool RelayClient_Poll(RELAY_CLIENT* client, int timeout_ms) {
             }
             
             const ENDPOINT* endpoints = (const ENDPOINT*)(buffer + sizeof(PeerInfoMsg));
-            
-            printf("[RelayClient] PEER_INFO (%u endpoints)\n", msg->endpoint_count);
-            
+
+            uint16_t ep_count = msg->endpoint_count;
+            if (ep_count > MAX_ENDPOINTS) {
+                printf("[RelayClient] Warning: PEER_INFO has %u endpoints, capping to %u\n",
+                       ep_count, MAX_ENDPOINTS);
+                ep_count = MAX_ENDPOINTS;
+            }
+
+            printf("[RelayClient] PEER_INFO (%u endpoints)\n", ep_count);
+
             if (client->on_peer_info) {
-                client->on_peer_info(client->callback_context, msg->peer_id, endpoints, msg->endpoint_count);
+                client->on_peer_info(client->callback_context, msg->peer_id, endpoints, ep_count);
             }
             break;
         }
@@ -479,4 +526,17 @@ uint64_t RelayClient_GetSessionID(RELAY_CLIENT* client) {
 
 bool RelayClient_IsConnected(RELAY_CLIENT* client) {
     return client ? client->connected : false;
+}
+
+int RelayClient_GetSocket(RELAY_CLIENT* client) {
+    return client ? client->socket_fd : -1;
+}
+
+bool RelayClient_GetRelayAddr(RELAY_CLIENT* client, struct sockaddr_storage* addr, socklen_t* addr_len) {
+    if (!client || !addr || !addr_len) {
+        return false;
+    }
+    memcpy(addr, &client->relay_addr, client->relay_addr_len);
+    *addr_len = client->relay_addr_len;
+    return true;
 }

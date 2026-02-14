@@ -21,6 +21,8 @@ obj/
 *.bin
 test_*.bin
 testfile.txt
+recent_test_logs.md
+CLAUDE.md
 # IDE and editor files
 .vs/
 .vscode/

@@ -45,9 +45,10 @@ void print_usage(const char* program_name) {
     printf("Usage: %s [options]\n\n", program_name);
     printf("Options:\n");
     printf("  -p, --port <port>         UDP port to listen on (default: 443)\n");
-    printf("  -w, --wordlist <path>     Path to EFF wordlist (default: deps/eff_large_wordlist.txt)\n");
+    printf("  -w, --wordlist <path>     Path to EFF wordlist (default: eff_large_wordlist.txt)\n");
     printf("  --max-peers <num>         Maximum concurrent peers (default: 10000)\n");
     printf("  --max-tickets <num>       Maximum active tickets (default: 5000)\n");
+    printf("  --public-addr <ip>        Public IP address for relay fallback endpoint\n");
     printf("  -h, --help                Show this help message\n");
     printf("\n");
 }
@@ -58,8 +59,9 @@ int main(int argc, char* argv[]) {
     config.port = 443;
     config.max_peers = 10000;
     config.max_tickets = 5000;
-    config.wordlist_path = "deps/eff_large_wordlist.txt";
-    
+    config.wordlist_path = "eff_large_wordlist.txt";
+    config.public_addr = NULL;
+
     // Parse command-line arguments
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--port") == 0) {
@@ -94,6 +96,14 @@ int main(int argc, char* argv[]) {
                 print_usage(argv[0]);
                 return 1;
             }
+        } else if (strcmp(argv[i], "--public-addr") == 0) {
+            if (i + 1 < argc) {
+                config.public_addr = argv[++i];
+            } else {
+                fprintf(stderr, "Error: Missing value for %s\n", argv[i]);
+                print_usage(argv[0]);
+                return 1;
+            }
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -111,6 +121,7 @@ int main(int argc, char* argv[]) {
     printf("  Max Peers: %u\n", config.max_peers);
     printf("  Max Tickets: %u\n", config.max_tickets);
     printf("  Wordlist: %s\n", config.wordlist_path);
+    printf("  Public Addr: %s\n", config.public_addr ? config.public_addr : "(not set - relay fallback disabled)");
     printf("===============================================\n\n");
     
     // Initialize server

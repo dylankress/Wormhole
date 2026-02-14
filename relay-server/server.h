@@ -5,7 +5,10 @@
 //
 
 #pragma once
-#ifndef _WIN32
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
 #include <pthread.h>
 #endif
 
@@ -21,6 +24,7 @@ typedef struct {
     uint32_t max_peers;               // Maximum concurrent peers
     uint32_t max_tickets;             // Maximum active tickets
     const char* wordlist_path;        // Path to EFF wordlist
+    const char* public_addr;          // Public IP address (for relay endpoint, NULL = disabled)
 } SERVER_CONFIG;
 
 // Server state
@@ -31,7 +35,12 @@ typedef struct {
     PEER_REGISTRY peer_registry;     // Connected peers
     TICKET_MANAGER ticket_manager;   // Active tickets
     RATE_LIMITER rate_limiter;       // Rate limiting
-    
+
+    // Relay identity (for including self as fallback endpoint)
+    uint16_t listen_port;            // Port we're listening on (host byte order)
+    uint8_t  relay_addr_type;        // 0x04=IPv4, 0x06=IPv6
+    uint8_t  relay_addr[16];         // Our public IP address
+
     // Statistics
     uint64_t total_packets_received;
     uint64_t total_packets_sent;
