@@ -9,6 +9,7 @@
 #include "stream.h"
 #include "file_io.h"
 #include "crypto.h"
+#include "chunker.h"
 #include "relay/peer_id.h"
 #include "relay/relay_client.h"
 #include "relay/discovery.h"
@@ -46,7 +47,6 @@ static void PrintUsage(void);
 static QUIC_STATUS QUIC_API ServerListenerCallback_Send(HQUIC Listener, void* Context, QUIC_LISTENER_EVENT* Event);
 static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(HQUIC Connection, void* Context, QUIC_CONNECTION_EVENT* Event);
 static QUIC_STATUS QUIC_API ClientConnectionCallback_Receive(HQUIC Connection, void* Context, QUIC_CONNECTION_EVENT* Event);
-static QUIC_STATUS QUIC_API ReceiveStreamCallback_Wrapper(HQUIC Stream, void* Context, QUIC_STREAM_EVENT* Event);
 
 //=============================================================================
 // MsQuic Initialization & Cleanup
@@ -503,7 +503,7 @@ static BOOLEAN RunClient(const char *target_host, const char *file_path)
 
 	LOG("[client] Connected! Sending file...\n");
 
-	// SendFile will be called from ClientConnectionCallback when CONNECTED event fires
+	// ChunkSendFile will be called from ClientConnectionCallback when CONNECTED event fires
 	// Wait for transfer to complete (or timeout after 120 seconds for large files)
 	LOG("[client] Waiting for transfer to complete...\n");
 	wait_result = WaitForSingleObject(conn_ctx->transfer_complete_event, 120000);  // 120 second timeout
@@ -618,6 +618,7 @@ static void on_relay_disconnected(void* context)
 // Context for sender's QUIC server
 typedef struct {
 	const char* filepath;
+	FILE_MANIFEST* manifest;
 	BOOLEAN receiver_connected;
 	BOOLEAN transfer_started;
 	HANDLE receiver_connect_event;
@@ -691,10 +692,10 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 			}
 			ctx->transfer_started = TRUE;
 
-			LOG("[Send] Receiver connected! Starting file transfer...\n");
+			LOG("[Send] Receiver connected! Starting chunk-based file transfer...\n");
 
-			// Start sending file
-			SendFile(Connection, ctx->filepath, ctx->transfer_done_event);
+			// Start sending file using chunk protocol
+			ChunkSendFile(Connection, ctx->filepath, ctx->manifest, ctx->transfer_done_event);
 
 			return QUIC_STATUS_SUCCESS;
 		}
@@ -721,104 +722,23 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 // Receive Command - QUIC Client Callbacks
 //=============================================================================
 
-// Context for receiver's QUIC client  
+// Context for receiver's QUIC client
 typedef struct {
 	BOOLEAN connected;
 	HANDLE connect_event;
 	HANDLE transfer_done_event;
 	char downloads_path[MAX_PATH];
+	CHUNK_RECEIVE_CONTEXT *chunk_recv_ctx;
 } RECEIVE_CLIENT_CONTEXT;
 
-// Custom stream callback wrapper for cmd_receive that handles Downloads folder path
-static QUIC_STATUS QUIC_API ReceiveStreamCallback_Wrapper(
-	HQUIC Stream,
-	void* Context,
-	QUIC_STREAM_EVENT* Event)
-{
-	RECEIVE_CONTEXT* recv_ctx = (RECEIVE_CONTEXT*)Context;
-	RECEIVE_CLIENT_CONTEXT* client_ctx = (RECEIVE_CLIENT_CONTEXT*)recv_ctx->user_context;
-	
-	// Just pass through RECEIVE events - don't modify filename yet
-	if (Event->Type == QUIC_STREAM_EVENT_RECEIVE)
-	{
-		return ServerStreamCallback(Stream, Context, Event);
-	}
-	
-	// Handle PEER_SEND_SHUTDOWN to move completed file to Downloads
-	if (Event->Type == QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN)
-	{
-		// Store original filename before ServerStreamCallback processes shutdown
-		char original_filename[MAX_PATH] = {0};
-		if (recv_ctx->filename)
-		{
-			strncpy_s(original_filename, sizeof(original_filename), recv_ctx->filename, _TRUNCATE);
-		}
-		
-		// Call ServerStreamCallback to finish transfer, close file, and rename .partial to final
-		QUIC_STATUS result = ServerStreamCallback(Stream, Context, Event);
-		
-		// After successful transfer, move file from current directory to Downloads
-		if (original_filename[0] && recv_ctx->bytes_received == recv_ctx->total_file_size)
-		{
-			// ServerStreamCallback renamed .partial to final, so file is now at: ./<filename>
-			// Check both possible locations (with and without .partial, in case rename failed)
-			char source_file[MAX_PATH];
-			snprintf(source_file, sizeof(source_file), "%s", original_filename);
-			
-			if (!FileExists(source_file))
-			{
-				// Maybe rename failed, try .partial
-				snprintf(source_file, sizeof(source_file), "%s.partial", original_filename);
-			}
-			
-			if (FileExists(source_file))
-			{
-				// Get unique path in Downloads folder
-				char downloads_path[MAX_PATH];
-				if (GetUniqueFilename(client_ctx->downloads_path, original_filename, downloads_path, sizeof(downloads_path)))
-				{
-					LOG("[Receive] Moving file to Downloads: %s -> %s\n", source_file, downloads_path);
-					
-					// Use MoveFileA (Windows API) which is more reliable than rename()
-					if (MoveFileA(source_file, downloads_path))
-					{
-						LOG("[Receive] ✅ File saved to Downloads: %s\n", downloads_path);
-					}
-					else
-					{
-						DWORD error = GetLastError();
-						LOG_ERROR("[Receive] ⚠️ Warning: Could not move file to Downloads (error: %lu)\n", error);
-						LOG_ERROR("[Receive] File remains at: %s\n", source_file);
-					}
-				}
-			}
-			else
-			{
-				LOG_ERROR("[Receive] ⚠️ Warning: Cannot find transferred file: %s\n", original_filename);
-			}
-		}
-		
-		return result;
-	}
-	
-	// Handle SHUTDOWN_COMPLETE to signal transfer done
-	if (Event->Type == QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE)
-	{
-		SetEvent(client_ctx->transfer_done_event);
-	}
-	
-	// Call the original ServerStreamCallback for other events
-	return ServerStreamCallback(Stream, Context, Event);
-}
-
-// Client connection callback for cmd_receive
+// Client connection callback for cmd_receive (chunk protocol)
 static QUIC_STATUS QUIC_API ClientConnectionCallback_Receive(
 	HQUIC Connection,
 	void* Context,
 	QUIC_CONNECTION_EVENT* Event)
 {
 	RECEIVE_CLIENT_CONTEXT* ctx = (RECEIVE_CLIENT_CONTEXT*)Context;
-	
+
 	switch (Event->Type)
 	{
 		case QUIC_CONNECTION_EVENT_CONNECTED:
@@ -828,44 +748,92 @@ static QUIC_STATUS QUIC_API ClientConnectionCallback_Receive(
 			SetEvent(ctx->connect_event);
 			return QUIC_STATUS_SUCCESS;
 		}
-		
-	case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
-	{
-		LOG("[Receive] Connection shutdown complete\n");
-		// Connection already closed by main loop or MsQuic, don't close again
-		return QUIC_STATUS_SUCCESS;
-	}
-		
-		case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
+
+		case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
 		{
-			// Sender is starting file transfer stream
-			LOG("[Receive] File transfer stream started...\n");
-			
-			// Create receive context
-			RECEIVE_CONTEXT* recv_ctx = (RECEIVE_CONTEXT*)malloc(sizeof(RECEIVE_CONTEXT));
-			if (!recv_ctx)
-			{
-				return QUIC_STATUS_OUT_OF_MEMORY;
-			}
-			
-			memset(recv_ctx, 0, sizeof(RECEIVE_CONTEXT));
-			// Allocate buffer for header (min size + max filename)
-			recv_ctx->header_buffer = (uint8_t*)malloc(HEADER_MIN_SIZE + MAX_FILENAME_LENGTH);
-			recv_ctx->user_context = ctx;  // Store client context for Downloads path
-			QueryPerformanceCounter(&recv_ctx->start_time);  // Record start time for throughput calculation
-			
-			// Set stream callback wrapper to receive file
-			MsQuic->SetCallbackHandler(
-				Event->PEER_STREAM_STARTED.Stream,
-				(void*)ReceiveStreamCallback_Wrapper,
-				recv_ctx
-			);
-			
+			LOG("[Receive] Connection shutdown complete\n");
 			return QUIC_STATUS_SUCCESS;
 		}
-		
+
+		case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
+		{
+			HQUIC stream = Event->PEER_STREAM_STARTED.Stream;
+			BOOLEAN is_bidi = !(Event->PEER_STREAM_STARTED.Flags & QUIC_STREAM_OPEN_FLAG_UNIDIRECTIONAL);
+
+			if (is_bidi)
+			{
+				// Bidirectional stream = control stream from sender
+				LOG("[Receive] Control stream started (bidirectional)\n");
+
+				// Create chunk receive context
+				CHUNK_RECEIVE_CONTEXT* recv_ctx = (CHUNK_RECEIVE_CONTEXT*)calloc(1, sizeof(CHUNK_RECEIVE_CONTEXT));
+				if (!recv_ctx)
+				{
+					return QUIC_STATUS_OUT_OF_MEMORY;
+				}
+
+				recv_ctx->control_stream = stream;
+				recv_ctx->transfer_complete_event = ctx->transfer_done_event;
+				recv_ctx->user_context = ctx;
+				strncpy_s(recv_ctx->downloads_path, sizeof(recv_ctx->downloads_path),
+					ctx->downloads_path, _TRUNCATE);
+				ctx->chunk_recv_ctx = recv_ctx;
+
+				// Attach control stream callback
+				MsQuic->SetCallbackHandler(stream, (void*)ReceiverControlStreamCallback, recv_ctx);
+
+				// Send MANIFEST_REQUEST to sender
+				LOG("[Receive] Sending MANIFEST_REQUEST...\n");
+				uint32_t frame_size = CTRL_HEADER_SIZE;
+				uint8_t *buffer = (uint8_t *)malloc(frame_size);
+				if (buffer)
+				{
+					buffer[0] = CTRL_MSG_MANIFEST_REQUEST;
+					// payload_length = 0
+					buffer[1] = 0; buffer[2] = 0; buffer[3] = 0; buffer[4] = 0;
+
+					QUIC_BUFFER *quic_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+					if (quic_buf)
+					{
+						quic_buf->Buffer = buffer;
+						quic_buf->Length = frame_size;
+
+						QUIC_STATUS status = MsQuic->StreamSend(stream, quic_buf, 1,
+							QUIC_SEND_FLAG_NONE, quic_buf);
+						if (QUIC_FAILED(status))
+						{
+							LOG_ERROR("[Receive] ERROR: Failed to send MANIFEST_REQUEST: 0x%x\n", status);
+							free(buffer);
+							free(quic_buf);
+						}
+					}
+					else
+					{
+						free(buffer);
+					}
+				}
+			}
+			else
+			{
+				// Unidirectional stream = data stream from sender
+				LOG("[Receive] Data stream started (unidirectional)\n");
+
+				if (ctx->chunk_recv_ctx)
+				{
+					ctx->chunk_recv_ctx->data_stream = stream;
+					MsQuic->SetCallbackHandler(stream, (void*)ReceiverDataStreamCallback, ctx->chunk_recv_ctx);
+				}
+				else
+				{
+					LOG_ERROR("[Receive] ERROR: Data stream started before control stream\n");
+					MsQuic->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 1);
+				}
+			}
+
+			return QUIC_STATUS_SUCCESS;
+		}
+
 		default:
-			LOG("[Receive] Unhandled connection event type: %d\n", Event->Type);
 			return QUIC_STATUS_SUCCESS;
 	}
 }
@@ -1066,6 +1034,18 @@ static int cmd_send(const char* filepath)
 	
 	LOG("[Send] File: %s\n", filename);
 	LOG("[Send] Size: %llu bytes\n\n", (unsigned long long)filesize);
+
+	// Build content-addressed manifest (chunks + Blake3 hashes)
+	LOG("[Send] Building file manifest...\n");
+	FILE_MANIFEST* manifest = Chunker_BuildManifest(filepath);
+	if (!manifest)
+	{
+		LOG_ERROR("Error: Failed to build file manifest\n");
+		free(filename);
+		return 1;
+	}
+	LOG("[Send] Manifest: %u chunks of %u bytes (Blake3 hashed)\n",
+		manifest->chunk_count, manifest->chunk_size);
 	
 #ifdef _WIN32
 	// Initialize Winsock on Windows
@@ -1119,6 +1099,7 @@ static int cmd_send(const char* filepath)
 #ifdef _WIN32
 		WSACleanup();
 #endif
+		Manifest_Destroy(manifest);
 		free(filename);
 		return 1;
 	}
@@ -1182,6 +1163,7 @@ static int cmd_send(const char* filepath)
 	{
 		LOG_ERROR("Error: Failed to connect to relay after %d attempts (timeout)\n", MAX_REGISTER_ATTEMPTS);
 		RelayClient_Destroy(relay_client);
+		Manifest_Destroy(manifest);
 		free(filename);
 		return 1;
 	}
@@ -1256,20 +1238,22 @@ static int cmd_send(const char* filepath)
 	{
 		LOG_ERROR("Error: Failed to create ticket\n");
 		RelayClient_Destroy(relay_client);
+		Manifest_Destroy(manifest);
 		free(filename);
 		return 1;
 	}
-	
+
 	// Wait for ticket
 	for (int i = 0; i < 50 && !g_ticket_ready; i++)
 	{
 		RelayClient_Poll(relay_client, 100);
 	}
-	
+
 	if (!g_ticket_ready)
 	{
 		LOG_ERROR("Error: Failed to receive ticket (timeout)\n");
 		RelayClient_Destroy(relay_client);
+		Manifest_Destroy(manifest);
 		free(filename);
 		return 1;
 	}
@@ -1348,6 +1332,7 @@ static int cmd_send(const char* filepath)
 	if (!InitializeMsQuic())
 	{
 		LOG_ERROR("Error: Failed to initialize MsQuic\n");
+		Manifest_Destroy(manifest);
 		free(filename);
 #ifdef _WIN32
 		WSACleanup();
@@ -1360,6 +1345,7 @@ static int cmd_send(const char* filepath)
 	{
 		LOG_ERROR("Error: Failed to load QUIC server configuration\n");
 		CleanupMsQuic();
+		Manifest_Destroy(manifest);
 		free(filename);
 #ifdef _WIN32
 		WSACleanup();
@@ -1370,6 +1356,7 @@ static int cmd_send(const char* filepath)
 	// Create server context
 	SEND_SERVER_CONTEXT server_ctx;
 	server_ctx.filepath = filepath;
+	server_ctx.manifest = manifest;
 	server_ctx.receiver_connected = FALSE;
 	server_ctx.transfer_started = FALSE;
 	server_ctx.receiver_connect_event = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -1379,6 +1366,7 @@ static int cmd_send(const char* filepath)
 	{
 		LOG_ERROR("Error: Failed to create events\n");
 		CleanupMsQuic();
+		Manifest_Destroy(manifest);
 		free(filename);
 #ifdef _WIN32
 		WSACleanup();
@@ -1401,6 +1389,7 @@ static int cmd_send(const char* filepath)
 		CloseHandle(server_ctx.receiver_connect_event);
 		CloseHandle(server_ctx.transfer_done_event);
 		CleanupMsQuic();
+		Manifest_Destroy(manifest);
 		free(filename);
 #ifdef _WIN32
 		WSACleanup();
@@ -1425,6 +1414,7 @@ static int cmd_send(const char* filepath)
 		CloseHandle(server_ctx.receiver_connect_event);
 		CloseHandle(server_ctx.transfer_done_event);
 		CleanupMsQuic();
+		Manifest_Destroy(manifest);
 		free(filename);
 #ifdef _WIN32
 		WSACleanup();
@@ -1476,6 +1466,7 @@ static int cmd_send(const char* filepath)
 	CloseHandle(server_ctx.transfer_done_event);
 	CleanupMsQuic();
 
+	Manifest_Destroy(manifest);
 	free(filename);
 	
 #ifdef _WIN32
@@ -1712,10 +1703,12 @@ static int cmd_receive(const char* ticket)
 	
 	// Create client context
 	RECEIVE_CLIENT_CONTEXT client_ctx;
+	memset(&client_ctx, 0, sizeof(client_ctx));
 	client_ctx.connected = FALSE;
 	client_ctx.connect_event = CreateEvent(NULL, FALSE, FALSE, NULL);
 	client_ctx.transfer_done_event = CreateEvent(NULL, FALSE, FALSE, NULL);
 	strncpy_s(client_ctx.downloads_path, sizeof(client_ctx.downloads_path), downloads_path, _TRUNCATE);
+	client_ctx.chunk_recv_ctx = NULL;
 	
 	if (!client_ctx.connect_event || !client_ctx.transfer_done_event)
 	{

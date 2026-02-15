@@ -1,5 +1,6 @@
 //
 // connection.c
+// QUIC connection callbacks for legacy -server/-client mode.
 // by Dylan Kress
 //
 
@@ -14,14 +15,16 @@ extern HQUIC ClientConfiguration;
 // Server: Track connection state
 typedef struct {
 	BOOLEAN active;
+	CHUNK_RECEIVE_CONTEXT *recv_ctx;  // for chunk protocol
 } SERVER_CONNECTION_CONTEXT;
 
 // Client: Track file to send and connection status
 typedef struct {
 	char *file_path;
+	FILE_MANIFEST *manifest;
 	BOOLEAN connected;
 	HANDLE connect_event;
-	HANDLE transfer_complete_event;  // Signals when file transfer is done
+	HANDLE transfer_complete_event;
 } CLIENT_CONNECTION_CONTEXT;
 
 
@@ -42,7 +45,7 @@ QUIC_STATUS QUIC_API ServerListenerCallback(
 
 		// A client is trying to connect
 		LOG("[listener] New connection attempt\n");
-		
+
 		// Allocate context for this connection
 		SERVER_CONNECTION_CONTEXT* conn_ctx = (SERVER_CONNECTION_CONTEXT*)malloc(sizeof(SERVER_CONNECTION_CONTEXT));
 		if (conn_ctx == NULL) {
@@ -50,27 +53,28 @@ QUIC_STATUS QUIC_API ServerListenerCallback(
 			return QUIC_STATUS_OUT_OF_MEMORY;
 		}
 		conn_ctx->active = TRUE;
-		
+		conn_ctx->recv_ctx = NULL;
+
 		// Attach our connection callback to handle events
 		MsQuic->SetCallbackHandler(
 			Event->NEW_CONNECTION.Connection,
 			(void*)ServerConnectionCallback,
 			conn_ctx);
-		
+
 		// Provide the server configuration (includes certificate)
 		Status = MsQuic->ConnectionSetConfiguration(
 			Event->NEW_CONNECTION.Connection,
 			ServerConfiguration);
-		
+
 		if (QUIC_FAILED(Status)) {
 			LOG("[listener] ConnectionSetConfiguration failed: 0x%x\n", Status);
 			free(conn_ctx);
 			return Status;
 		}
-		
+
 		LOG("[listener] Connection accepted\n");
 		return Status;
-		
+
 	default:
 		break;
 	}
@@ -80,7 +84,7 @@ QUIC_STATUS QUIC_API ServerListenerCallback(
 
 
 
-// ServerConnectionCallback - Handle server-side connection events
+// ServerConnectionCallback - Handle server-side connection events (chunk protocol)
 QUIC_STATUS QUIC_API ServerConnectionCallback(
     HQUIC Connection,
     void* Context,
@@ -90,95 +94,101 @@ QUIC_STATUS QUIC_API ServerConnectionCallback(
 
 	switch (Event->Type) {
 	case QUIC_CONNECTION_EVENT_CONNECTED:
-		//
-		// The handshake has completed successfully
-		//
 		LOG("[conn][%p] Connected - waiting for file stream\n", Connection);
 		break;
-		
+
 	case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
-		//
-		// The client opened a stream to send us a file
-		//
-		LOG("[stream][%p] Peer started stream (incoming file)\n", 
-			   Event->PEER_STREAM_STARTED.Stream);
-		
-		// Allocate RECEIVE_CONTEXT for this incoming file transfer
-		RECEIVE_CONTEXT *recv_ctx = (RECEIVE_CONTEXT*)malloc(sizeof(RECEIVE_CONTEXT));
-		if (recv_ctx == NULL) {
-			LOG_ERROR("[stream] ERROR: Failed to allocate RECEIVE_CONTEXT\n");
-			MsQuic->StreamShutdown(Event->PEER_STREAM_STARTED.Stream, 
-								   QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 1);
-			break;
+	{
+		HQUIC stream = Event->PEER_STREAM_STARTED.Stream;
+		BOOLEAN is_bidi = !(Event->PEER_STREAM_STARTED.Flags & QUIC_STREAM_OPEN_FLAG_UNIDIRECTIONAL);
+
+		if (is_bidi)
+		{
+			// Bidirectional stream = control stream
+			LOG("[conn][%p] Control stream started (bidirectional)\n", Connection);
+
+			CHUNK_RECEIVE_CONTEXT *recv_ctx = (CHUNK_RECEIVE_CONTEXT *)calloc(1, sizeof(CHUNK_RECEIVE_CONTEXT));
+			if (!recv_ctx) {
+				LOG_ERROR("[conn] ERROR: Failed to allocate CHUNK_RECEIVE_CONTEXT\n");
+				MsQuic->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 1);
+				break;
+			}
+
+			recv_ctx->control_stream = stream;
+			ctx->recv_ctx = recv_ctx;
+
+			MsQuic->SetCallbackHandler(stream, (void*)ReceiverControlStreamCallback, recv_ctx);
+
+			// Send MANIFEST_REQUEST
+			uint8_t *buffer = (uint8_t *)malloc(CTRL_HEADER_SIZE);
+			if (buffer)
+			{
+				buffer[0] = CTRL_MSG_MANIFEST_REQUEST;
+				buffer[1] = 0; buffer[2] = 0; buffer[3] = 0; buffer[4] = 0;
+
+				QUIC_BUFFER *quic_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+				if (quic_buf)
+				{
+					quic_buf->Buffer = buffer;
+					quic_buf->Length = CTRL_HEADER_SIZE;
+					QUIC_STATUS status = MsQuic->StreamSend(stream, quic_buf, 1,
+						QUIC_SEND_FLAG_NONE, quic_buf);
+					if (QUIC_FAILED(status))
+					{
+						free(buffer);
+						free(quic_buf);
+					}
+				}
+				else
+				{
+					free(buffer);
+				}
+			}
 		}
-		
-		// Initialize RECEIVE_CONTEXT
-		memset(recv_ctx, 0, sizeof(RECEIVE_CONTEXT));
-		recv_ctx->file_handle = NULL;
-		recv_ctx->total_file_size = 0;
-		recv_ctx->filename_length = 0;
-		recv_ctx->filename = NULL;
-		recv_ctx->bytes_received = 0;
-		recv_ctx->header_buffer = NULL;
-		recv_ctx->header_bytes_received = 0;
-		recv_ctx->header_complete = FALSE;
-		QueryPerformanceCounter(&recv_ctx->start_time);  // Record start time
-		
-		LOG("[stream][%p] RECEIVE_CONTEXT allocated and initialized\n", 
-			   Event->PEER_STREAM_STARTED.Stream);
-		
-		// Attach callback with context
-		MsQuic->SetCallbackHandler(
-			Event->PEER_STREAM_STARTED.Stream,
-			(void*)ServerStreamCallback,
-			recv_ctx);
+		else
+		{
+			// Unidirectional stream = data stream
+			LOG("[conn][%p] Data stream started (unidirectional)\n", Connection);
+			if (ctx->recv_ctx)
+			{
+				ctx->recv_ctx->data_stream = stream;
+				MsQuic->SetCallbackHandler(stream, (void*)ReceiverDataStreamCallback, ctx->recv_ctx);
+			}
+			else
+			{
+				MsQuic->StreamShutdown(stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 1);
+			}
+		}
 		break;
-		
+	}
+
 	case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
-		//
-		// The connection is being shut down by the transport (QUIC layer)
-		// This is expected - usually due to idle timeout after transfer completes
-		//
 		if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status == QUIC_STATUS_CONNECTION_IDLE) {
 			LOG("[conn][%p] Successfully shut down on idle\n", Connection);
 		} else {
-			LOG("[conn][%p] Shut down by transport: 0x%x\n", 
+			LOG("[conn][%p] Shut down by transport: 0x%x\n",
 				   Connection, Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
 		}
 		break;
-		
+
 	case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
-		//
-		// The peer (client) explicitly closed the connection
-		//
-		LOG("[conn][%p] Shut down by peer: 0x%llx\n", 
-			   Connection, 
+		LOG("[conn][%p] Shut down by peer: 0x%llx\n",
+			   Connection,
 			   (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
 		break;
-		
+
 	case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
-		//
-		// The connection shutdown is complete - safe to cleanup
-		//
 		LOG("[conn][%p] Shutdown complete - cleaning up\n", Connection);
-		
-		// Free the connection context we allocated in ServerListenerCallback
 		if (ctx != NULL) {
 			free(ctx);
 		}
-		
-		// Close the connection handle
 		MsQuic->ConnectionClose(Connection);
 		break;
-		
+
 	case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
-		//
-		// Server received a resumption ticket (0-RTT support)
-		// We don't use this in Phase 1, but MsQuic might send it
-		//
 		LOG("[conn][%p] Resumption ticket received (ignored)\n", Connection);
 		break;
-		
+
 	default:
 		break;
 	}
@@ -198,26 +208,20 @@ QUIC_STATUS QUIC_API ClientConnectionCallback(
 
 	switch (Event->Type) {
 	case QUIC_CONNECTION_EVENT_CONNECTED:
-		//
-		// Successfully connected to server - time to send the file!
-		//
-		LOG("[conn][%p] Connected to server - starting file transfer\n", Connection);
-		
-		if (ctx != NULL && ctx->file_path != NULL) {
+		LOG("[conn][%p] Connected to server - starting chunk-based file transfer\n", Connection);
+
+		if (ctx != NULL && ctx->file_path != NULL && ctx->manifest != NULL) {
 			ctx->connected = TRUE;
 			if (ctx->connect_event != NULL) {
-				SetEvent(ctx->connect_event);  // Signal main thread that connection is ready
+				SetEvent(ctx->connect_event);
 			}
-			SendFile(Connection, ctx->file_path, ctx->transfer_complete_event);
+			ChunkSendFile(Connection, ctx->file_path, ctx->manifest, ctx->transfer_complete_event);
 		} else {
-			LOG("[conn][%p] ERROR: No file path in context\n", Connection);
+			LOG("[conn][%p] ERROR: No file path or manifest in context\n", Connection);
 		}
 		break;
-		
+
 	case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
-		//
-		// Connection shut down by transport layer
-		//
 		if (Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status == QUIC_STATUS_CONNECTION_IDLE) {
 			LOG("[conn][%p] Successfully shut down on idle\n", Connection);
 		} else {
@@ -225,23 +229,15 @@ QUIC_STATUS QUIC_API ClientConnectionCallback(
 				   Connection, Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
 		}
 		break;
-		
+
 	case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
-		//
-		// Server closed the connection
-		//
 		LOG("[conn][%p] Shut down by server: 0x%llx\n",
 			   Connection,
 			   (unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
 		break;
-		
+
 	case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
-		//
-		// Connection shutdown complete - cleanup time
-		//
 		LOG("[conn][%p] Shutdown complete - cleaning up\n", Connection);
-		
-		// Free the context
 		if (ctx != NULL) {
 			if (ctx->file_path != NULL) {
 				free(ctx->file_path);
@@ -251,23 +247,17 @@ QUIC_STATUS QUIC_API ClientConnectionCallback(
 			}
 			free(ctx);
 		}
-		
-		// Close the connection handle
-		// NOTE: In wormhole.c, connection is closed manually after RunClient returns
 		if (!Event->SHUTDOWN_COMPLETE.AppCloseInProgress) {
 			MsQuic->ConnectionClose(Connection);
 		}
 		break;
-		
+
 	case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
-		//
-		// Received a resumption ticket from server (for 0-RTT)
-		//
 		LOG("[conn][%p] Resumption ticket received (%u bytes)\n",
 			   Connection,
 			   Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength);
 		break;
-		
+
 	default:
 		break;
 	}

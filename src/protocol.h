@@ -1,5 +1,6 @@
 //
 // protocol.h
+// Wormhole chunk-based transfer protocol constants.
 // by Dylan Kress
 //
 
@@ -13,16 +14,18 @@
 // Default UDP port (4567 for development, use 443 in production)
 #define WORMHOLE_DEFAULT_PORT 4567
 
-// Chunk size for file transfers (64KB)
-#define CHUNK_SIZE (64 * 1024)
+// Content-addressed chunk size (256KB)
+#define CHUNK_SIZE (256 * 1024)
 
-// Minimum header size (file_size + filename_length)
-#define HEADER_MIN_SIZE 12
+// Control messages (Stream 0: bidirectional)
+#define CTRL_MSG_MANIFEST_REQUEST    0x01
+#define CTRL_MSG_MANIFEST_RESPONSE   0x02
+#define CTRL_MSG_CHUNK_REQUEST       0x03
+#define CTRL_MSG_TRANSFER_COMPLETE   0x04
 
-// Wire Protocol Format (bytes on the wire):
-//
-// [8 bytes] uint64_t file_size (little-endian)
-// [4 bytes] uint32_t filename_length (little-endian)
-// [N bytes] filename (UTF-8, no null terminator)
-// [remaining] file data chunks
+// Control message framing: [1B type][4B payload_length][payload]
+#define CTRL_HEADER_SIZE 5
 
+// Data frame (Stream 1: unidirectional sender->receiver)
+// [4B chunk_index][32B chunk_hash][4B chunk_data_size][data]
+#define DATA_FRAME_HEADER_SIZE (4 + 32 + 4)  // 40 bytes

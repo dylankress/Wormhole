@@ -1,4 +1,4 @@
-REM build.bat - Wormhole with Relay Integration
+REM build.bat - Wormhole with Relay Integration + Content-Addressed Chunking
 @echo off
 setlocal
 pushd %~dp0
@@ -18,6 +18,9 @@ set LIBSODIUM_INC=%LIBSODIUM_ROOT%\include
 set LIBSODIUM_LIB=%LIBSODIUM_ROOT%\x64\Release\v143\dynamic\libsodium.lib
 set LIBSODIUM_DLL=%LIBSODIUM_ROOT%\x64\Release\v143\dynamic\libsodium.dll
 
+REM --- Blake3 paths (portable-only: no SIMD assembly)
+set BLAKE3_ROOT=..\..\deps\blake3
+
 REM --- Relay client sources
 set RELAY_SOURCES=..\relay\peer_id.c ..\relay\relay_client.c ..\relay\discovery.c ..\relay\ticket.c ..\relay\connection_manager.c
 
@@ -25,12 +28,20 @@ REM --- Compile + link
 cl /Zi /Od /W4 /MD ^
 	/I "%MSQUIC_INC%" ^
 	/I "%LIBSODIUM_INC%" ^
+	/I "%BLAKE3_ROOT%" ^
 	/I .. ^
+	/DBLAKE3_NO_SSE2 /DBLAKE3_NO_SSE41 /DBLAKE3_NO_AVX2 /DBLAKE3_NO_AVX512 ^
 	..\wormhole.c ^
 	..\connection.c ^
 	..\stream.c ^
 	..\file_io.c ^
 	..\crypto.c ^
+	..\manifest.c ^
+	..\chunker.c ^
+	..\chunk_store.c ^
+	"%BLAKE3_ROOT%\blake3.c" ^
+	"%BLAKE3_ROOT%\blake3_dispatch.c" ^
+	"%BLAKE3_ROOT%\blake3_portable.c" ^
 	%RELAY_SOURCES% ^
 	"%MSQUIC_LIB%" ^
 	"%LIBSODIUM_LIB%" ^
