@@ -42,6 +42,10 @@ Ticket: 5-ocean-maple
 - **Peer discovery** — find active peers on the network via relay protocol
 - **Chunk replication** — 3x replication target across peers for durability
 - **Storage quota** — configurable disk limit with LRU eviction
+- **Kademlia DHT** — decentralized peer and chunk discovery (UDP port 4568), bootstrap from relay
+- **Erasure coding** — RS(4,2) Reed-Solomon codec for fault-tolerant storage (4 data + 2 parity shards per stripe)
+- **Proof-of-storage** — Blake3-based challenge/response verification that peers actually hold chunks
+- **Storage incentives** — per-peer reciprocity tracking, reject freeloading peers (ratio < 0.5)
 - **Configuration** — `~/.wormhole/config` INI file for all settings
 
 ## Building
@@ -52,6 +56,7 @@ Ticket: 5-ocean-maple
 - **Linux** with GCC for the relay server
 - **MsQuic** — git submodule, build separately (`git submodule update --init --recursive`)
 - **libsodium** — pre-built Windows binaries in `deps/libsodium/`; on Linux: `apt install libsodium-dev`
+- **Reed-Solomon** — GF(2^8) erasure coding codec in `deps/reed_solomon/` (included)
 
 ### Client (Windows)
 
@@ -101,7 +106,7 @@ Retrieves a chunk by its Blake3 hash from the daemon's store or the network.
 ```
 wormhole.exe status
 ```
-Shows daemon stats: peer count, stored chunks, storage used, relay connection.
+Shows daemon stats: peer count, stored chunks, storage used, relay connection, DHT node count.
 
 ### Configuration
 ```
@@ -122,8 +127,8 @@ wormholed.exe                         # Start the daemon
 The project has three components:
 
 - **Client** (`src/wormhole.c`) — Windows CLI using MsQuic for QUIC transport, libsodium for Ed25519 identity, and Blake3 for content-addressed chunking. Thin client for daemon commands (`store`, `get`, `status`, `config`).
-- **Daemon** (`src/wormholed.c`) — Persistent background process managing QUIC listener, chunk store, relay connection, peer discovery, and chunk replication. Communicates with CLI via named pipe IPC.
-- **Relay Server** (`relay-server/`) — lightweight Linux UDP server for peer coordination, NAT reflection, ticket management, peer discovery, and packet forwarding
+- **Daemon** (`src/wormholed.c`) — Persistent background process managing QUIC listener, chunk store, relay connection, peer discovery, chunk replication, Kademlia DHT node, health monitoring, proof-of-storage verification, and storage incentive tracking. Communicates with CLI via named pipe IPC.
+- **Relay Server** (`relay-server/`) — lightweight Linux UDP server for peer coordination, NAT reflection, ticket management, peer discovery, packet forwarding, and DHT bootstrap (responds to PING/FIND_NODE)
 
 See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
 

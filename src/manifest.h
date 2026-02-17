@@ -14,6 +14,7 @@
 #define WH_MANIFEST_MAGIC   0x4C4D4857     // "WHML" little-endian
 #define WH_MANIFEST_VERSION   1
 #define WH_MANIFEST_VERSION_2 2
+#define WH_MANIFEST_VERSION_3 3
 
 typedef struct {
     uint8_t  hash[WH_HASH_SIZE];
@@ -42,6 +43,12 @@ typedef struct {
     // Version 2 multi-file fields (NULL/0 for v1)
     uint32_t    file_count;
     FILE_ENTRY *files;
+
+    // Version 3 erasure coding fields (0/NULL for v1/v2)
+    uint8_t     ec_k;               // Data shards per stripe
+    uint8_t     ec_m;               // Parity shards per stripe
+    uint32_t    ec_stripe_count;
+    void       *ec_stripes;         // EC_STRIPE array (opaque ptr, cast in erasure.h)
 } FILE_MANIFEST;
 
 // Create an empty v1 manifest with chunk_count computed from file_size.

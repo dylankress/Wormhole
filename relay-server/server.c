@@ -10,6 +10,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sodium.h>
+
+// ============================================================================
+// DHT bootstrap constants (subset of src/dht/dht_protocol.h)
+// ============================================================================
+
+#define DHT_MSG_PING                0x20
+#define DHT_MSG_PONG                0x21
+#define DHT_MSG_FIND_NODE           0x22
+#define DHT_MSG_FIND_NODE_RESPONSE  0x23
+#define DHT_MSG_FIND_VALUE          0x24
+#define DHT_MSG_STORE               0x26
+#define DHT_HEADER_SIZE             102
+#define DHT_NODE_INFO_SIZE          51
+#define DHT_SIGNATURE_OFFSET        38
+#define DHT_K                       20
+#define DHT_PROTOCOL_VERSION        1
+#define DHT_ADDR_IPV4               0x04
+#define DHT_ADDR_IPV6               0x06
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -44,6 +63,8 @@ static void handle_goodbye(RELAY_SERVER* server, const uint8_t* packet, size_t l
                           const struct sockaddr* client_addr, socklen_t addr_len);
 static void handle_find_peers(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                               const struct sockaddr* client_addr, socklen_t addr_len);
+static void handle_dht_message(RELAY_SERVER* server, const uint8_t* packet, size_t len,
+                               const struct sockaddr* client_addr, socklen_t addr_len);
 
 // Send UDP packet
 static bool send_packet(int socket_fd, const void* data, size_t len,
@@ -185,6 +206,10 @@ bool RelayServer_Init(RELAY_SERVER* server, const SERVER_CONFIG* config) {
     pthread_mutex_init(&server->stats_lock, NULL);
 #endif
 
+    // Generate DHT bootstrap keypair (ephemeral, new each run)
+    crypto_sign_keypair(server->dht_public_key, server->dht_secret_key);
+    printf("[Server] DHT bootstrap identity generated\n");
+
     printf("[Server] Initialized on port %u (max peers: %u, max tickets: %u)\n",
            config->port, config->max_peers, config->max_tickets);
     return true;
@@ -306,7 +331,13 @@ int RelayServer_Run(RELAY_SERVER* server) {
                 handle_find_peers(server, packet_buffer, recv_len, (struct sockaddr*)&client_addr, addr_len);
                 break;
             default:
-                fprintf(stderr, "[Server] Unknown message type: 0x%02X\n", msg_type);
+                // Check for DHT messages (0x20-0x27)
+                if (msg_type >= DHT_MSG_PING && msg_type <= DHT_MSG_STORE + 1) {
+                    handle_dht_message(server, packet_buffer, recv_len,
+                                       (struct sockaddr*)&client_addr, addr_len);
+                } else {
+                    fprintf(stderr, "[Server] Unknown message type: 0x%02X\n", msg_type);
+                }
                 break;
         }
         
@@ -944,4 +975,243 @@ static void handle_find_peers(RELAY_SERVER* server, const uint8_t* packet, size_
     }
 
     free(response_buffer);
+}
+
+// ============================================================================
+// DHT Bootstrap Handler
+// The relay acts as a bootstrap-only DHT node: responds to PING and FIND_NODE.
+// It does NOT handle STORE or FIND_VALUE (those are for full DHT nodes).
+// ============================================================================
+
+// Sign a DHT message buffer in-place using the relay's keypair.
+static bool dht_sign_message(RELAY_SERVER* server, uint8_t* msg, size_t msg_len) {
+    if (msg_len < DHT_HEADER_SIZE) return false;
+
+    // Zero signature field before signing
+    memset(msg + DHT_SIGNATURE_OFFSET, 0, 64);
+
+    unsigned long long sig_len;
+    if (crypto_sign_detached(msg + DHT_SIGNATURE_OFFSET, &sig_len,
+                             msg, msg_len, server->dht_secret_key) != 0) {
+        return false;
+    }
+    return true;
+}
+
+// Verify a DHT message signature. Mutates msg temporarily (zeroes + restores sig).
+static bool dht_verify_message(const uint8_t sender_id[32], uint8_t* msg, size_t msg_len) {
+    if (msg_len < DHT_HEADER_SIZE) return false;
+
+    uint8_t sig[64];
+    memcpy(sig, msg + DHT_SIGNATURE_OFFSET, 64);
+
+    memset(msg + DHT_SIGNATURE_OFFSET, 0, 64);
+    int result = crypto_sign_verify_detached(sig, msg, msg_len, sender_id);
+    memcpy(msg + DHT_SIGNATURE_OFFSET, sig, 64);
+
+    return (result == 0);
+}
+
+// Fill a DHT header in a response buffer.
+static void dht_fill_header(RELAY_SERVER* server, uint8_t* buf, uint8_t msg_type, uint32_t txn_id) {
+    buf[0] = msg_type;
+    buf[1] = DHT_PROTOCOL_VERSION;
+    // txn_id (little-endian at offset 2)
+    buf[2] = (uint8_t)(txn_id);
+    buf[3] = (uint8_t)(txn_id >> 8);
+    buf[4] = (uint8_t)(txn_id >> 16);
+    buf[5] = (uint8_t)(txn_id >> 24);
+    // sender_id at offset 6
+    memcpy(buf + 6, server->dht_public_key, 32);
+    // signature at offset 38 (filled by dht_sign_message)
+    memset(buf + DHT_SIGNATURE_OFFSET, 0, 64);
+}
+
+// Extract endpoint address from a PEER_ENTRY's socket_addr.
+// Writes addr_type, addr[16], and port (host byte order).
+static bool extract_peer_dht_addr(const PEER_ENTRY* peer, uint8_t* addr_type,
+                                   uint8_t addr[16], uint16_t* port) {
+    const struct sockaddr* sa = (const struct sockaddr*)&peer->socket_addr;
+
+    if (sa->sa_family == AF_INET) {
+        const struct sockaddr_in* sin4 = (const struct sockaddr_in*)sa;
+        *addr_type = DHT_ADDR_IPV4;
+        memset(addr, 0, 16);
+        memcpy(addr, &sin4->sin_addr, 4);
+        *port = ntohs(sin4->sin_port);
+        return true;
+    } else if (sa->sa_family == AF_INET6) {
+        const struct sockaddr_in6* sin6 = (const struct sockaddr_in6*)sa;
+        if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+            *addr_type = DHT_ADDR_IPV4;
+            memset(addr, 0, 16);
+            memcpy(addr, &sin6->sin6_addr.s6_addr[12], 4);
+            *port = ntohs(sin6->sin6_port);
+            return true;
+        }
+        *addr_type = DHT_ADDR_IPV6;
+        memcpy(addr, &sin6->sin6_addr, 16);
+        *port = ntohs(sin6->sin6_port);
+        return true;
+    }
+    return false;
+}
+
+// XOR distance comparison: returns <0 if a closer to target than b.
+static int xor_distance_cmp(const uint8_t a[32], const uint8_t b[32], const uint8_t target[32]) {
+    for (int i = 0; i < 32; i++) {
+        uint8_t da = a[i] ^ target[i];
+        uint8_t db = b[i] ^ target[i];
+        if (da < db) return -1;
+        if (da > db) return 1;
+    }
+    return 0;
+}
+
+static void handle_dht_message(RELAY_SERVER* server, const uint8_t* packet, size_t len,
+                               const struct sockaddr* client_addr, socklen_t addr_len) {
+    if (len < DHT_HEADER_SIZE) {
+        fprintf(stderr, "[Server] DHT message too short (%zu < %d)\n", len, DHT_HEADER_SIZE);
+        return;
+    }
+
+    uint8_t msg_type = packet[0];
+
+    // Extract sender_id from header (offset 6, 32 bytes)
+    const uint8_t* sender_id = packet + 6;
+
+    // Verify signature (need a mutable copy)
+    uint8_t verify_buf[2048];
+    if (len > sizeof(verify_buf)) {
+        fprintf(stderr, "[Server] DHT message too large for verify buffer\n");
+        return;
+    }
+    memcpy(verify_buf, packet, len);
+
+    if (!dht_verify_message(sender_id, verify_buf, len)) {
+        fprintf(stderr, "[Server] DHT signature verification failed (type 0x%02X)\n", msg_type);
+        return;
+    }
+
+    // Extract txn_id (little-endian at offset 2)
+    uint32_t txn_id = (uint32_t)packet[2] |
+                      ((uint32_t)packet[3] << 8) |
+                      ((uint32_t)packet[4] << 16) |
+                      ((uint32_t)packet[5] << 24);
+
+    switch (msg_type) {
+        case DHT_MSG_PING: {
+            // Respond with PONG (header only, 102 bytes)
+            uint8_t pong[DHT_HEADER_SIZE];
+            memset(pong, 0, sizeof(pong));
+            dht_fill_header(server, pong, DHT_MSG_PONG, txn_id);
+
+            if (dht_sign_message(server, pong, sizeof(pong))) {
+                if (send_packet(server->socket_fd, pong, sizeof(pong), client_addr, addr_len)) {
+                    server->total_packets_sent++;
+                    printf("[Server] DHT PONG sent\n");
+                }
+            }
+            break;
+        }
+
+        case DHT_MSG_FIND_NODE: {
+            // FIND_NODE: header(102) + target_id(32) = 134 bytes
+            if (len < DHT_HEADER_SIZE + 32) {
+                fprintf(stderr, "[Server] DHT FIND_NODE too short\n");
+                break;
+            }
+
+            const uint8_t* target_id = packet + DHT_HEADER_SIZE;
+
+            // Get active peers from registry (exclude the requester)
+            PEER_ENTRY* found_peers[MAX_FIND_PEERS];
+            time_t now = time(NULL);
+            uint32_t found_count = PeerRegistry_FindActivePeers(
+                &server->peer_registry,
+                sender_id,
+                now,
+                0,      // no min_age for DHT bootstrap
+                found_peers,
+                MAX_FIND_PEERS
+            );
+
+            // Sort by XOR distance to target (selection sort, small N)
+            for (uint32_t i = 0; i < found_count && i < DHT_K; i++) {
+                uint32_t best = i;
+                for (uint32_t j = i + 1; j < found_count; j++) {
+                    if (xor_distance_cmp(found_peers[j]->peer_id,
+                                         found_peers[best]->peer_id, target_id) < 0) {
+                        best = j;
+                    }
+                }
+                if (best != i) {
+                    PEER_ENTRY* tmp = found_peers[i];
+                    found_peers[i] = found_peers[best];
+                    found_peers[best] = tmp;
+                }
+            }
+
+            // Cap at K
+            uint8_t node_count = (uint8_t)(found_count < DHT_K ? found_count : DHT_K);
+
+            // Build FIND_NODE_RESPONSE: header(102) + node_count(1) + N * DHT_NODE_INFO(51)
+            size_t response_size = DHT_HEADER_SIZE + 1 + (size_t)node_count * DHT_NODE_INFO_SIZE;
+            uint8_t* response = (uint8_t*)malloc(response_size);
+            if (!response) {
+                fprintf(stderr, "[Server] DHT: failed to allocate FIND_NODE_RESPONSE\n");
+                break;
+            }
+
+            memset(response, 0, response_size);
+            dht_fill_header(server, response, DHT_MSG_FIND_NODE_RESPONSE, txn_id);
+
+            // node_count at offset 102
+            response[DHT_HEADER_SIZE] = node_count;
+
+            // Write DHT_NODE_INFO entries starting at offset 103
+            uint8_t* write_ptr = response + DHT_HEADER_SIZE + 1;
+            for (uint8_t i = 0; i < node_count; i++) {
+                uint8_t a_type;
+                uint8_t a_addr[16];
+                uint16_t a_port;
+
+                if (!extract_peer_dht_addr(found_peers[i], &a_type, a_addr, &a_port)) {
+                    // Can't extract address, write peer_id with zeroed address
+                    memcpy(write_ptr, found_peers[i]->peer_id, 32);
+                    write_ptr += DHT_NODE_INFO_SIZE;
+                    continue;
+                }
+
+                // node_id[32]
+                memcpy(write_ptr, found_peers[i]->peer_id, 32);
+                write_ptr += 32;
+                // addr_type[1]
+                *write_ptr++ = a_type;
+                // addr[16]
+                memcpy(write_ptr, a_addr, 16);
+                write_ptr += 16;
+                // port[2] (little-endian, use DHT default port 4568)
+                uint16_t dht_port = 4568;
+                write_ptr[0] = (uint8_t)(dht_port);
+                write_ptr[1] = (uint8_t)(dht_port >> 8);
+                write_ptr += 2;
+            }
+
+            if (dht_sign_message(server, response, response_size)) {
+                if (send_packet(server->socket_fd, response, response_size, client_addr, addr_len)) {
+                    server->total_packets_sent++;
+                    printf("[Server] DHT FIND_NODE_RESPONSE sent (%u nodes)\n", node_count);
+                }
+            }
+
+            free(response);
+            break;
+        }
+
+        default:
+            // Relay is bootstrap-only: ignore FIND_VALUE, STORE, etc.
+            printf("[Server] DHT: ignoring non-bootstrap message type 0x%02X\n", msg_type);
+            break;
+    }
 }

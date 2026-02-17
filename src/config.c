@@ -57,6 +57,20 @@ static void Config_SetDefaults(WORMHOLE_CONFIG *config)
     Config_SetUint64(config, "replication_target", CONFIG_DEFAULT_REPLICATION_TARGET);
     Config_Set(config, "relay_host", CONFIG_DEFAULT_RELAY_HOST);
     Config_SetUint64(config, "relay_port", CONFIG_DEFAULT_RELAY_PORT);
+
+    // DHT settings
+    Config_SetUint64(config, "dht_port", CONFIG_DEFAULT_DHT_PORT);
+    Config_SetUint64(config, "dht_enabled", CONFIG_DEFAULT_DHT_ENABLED);
+
+    // Erasure coding settings
+    Config_SetUint64(config, "ec_enabled", CONFIG_DEFAULT_EC_ENABLED);
+    Config_SetUint64(config, "ec_data_shards", CONFIG_DEFAULT_EC_DATA_SHARDS);
+    Config_SetUint64(config, "ec_parity_shards", CONFIG_DEFAULT_EC_PARITY_SHARDS);
+
+    // Health and verification settings
+    Config_SetUint64(config, "min_storage_ratio", CONFIG_DEFAULT_MIN_STORAGE_RATIO);
+    Config_SetUint64(config, "health_check_interval_sec", CONFIG_DEFAULT_HEALTH_CHECK_SEC);
+    Config_SetUint64(config, "proof_cache_count", CONFIG_DEFAULT_PROOF_CACHE_COUNT);
 }
 
 //=============================================================================

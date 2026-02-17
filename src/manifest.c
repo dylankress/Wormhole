@@ -65,13 +65,20 @@ static size_t ComputeBodySize(const FILE_MANIFEST *m)
     size_t size = MANIFEST_BODY_FIXED + m->filename_length +
                   (size_t)m->chunk_count * MANIFEST_PER_CHUNK;
 
-    if (m->version == WH_MANIFEST_VERSION_2)
+    if (m->version >= WH_MANIFEST_VERSION_2)
     {
         size += 4;  // file_count field
         for (uint32_t i = 0; i < m->file_count; i++)
         {
             size += MANIFEST_FILE_ENTRY_FIXED + m->files[i].path_length;
         }
+    }
+
+    if (m->version >= WH_MANIFEST_VERSION_3)
+    {
+        // ec_k(1) + ec_m(1) + stripe_count(4) + per stripe: start(4) + count(4) + m*(hash(32)+size(4))
+        size += 1 + 1 + 4;
+        size += (size_t)m->ec_stripe_count * (4 + 4 + (size_t)m->ec_m * (WH_HASH_SIZE + 4));
     }
 
     return size;
@@ -92,8 +99,8 @@ static void SerializeBody(const FILE_MANIFEST *m, uint8_t *body)
     memcpy(p, m->filename, m->filename_length);
     p += m->filename_length;
 
-    // Version 2: file entries
-    if (m->version == WH_MANIFEST_VERSION_2)
+    // Version 2+: file entries
+    if (m->version >= WH_MANIFEST_VERSION_2)
     {
         WriteUint32LE(p, m->file_count); p += 4;
         for (uint32_t i = 0; i < m->file_count; i++)
@@ -115,6 +122,35 @@ static void SerializeBody(const FILE_MANIFEST *m, uint8_t *body)
         p += WH_HASH_SIZE;
         WriteUint32LE(p, m->chunks[i].chunk_size);
         p += 4;
+    }
+
+    // Version 3: erasure coding extension
+    if (m->version >= WH_MANIFEST_VERSION_3 && m->ec_stripes)
+    {
+        *p = m->ec_k; p += 1;
+        *p = m->ec_m; p += 1;
+        WriteUint32LE(p, m->ec_stripe_count); p += 4;
+
+        // Cast ec_stripes to access stripe data
+        // ec_stripes layout per stripe: [4B start][4B count][m * (32B hash + 4B size)]
+        const uint8_t *stripe_data = (const uint8_t *)m->ec_stripes;
+        // We serialize from the EC_STRIPE structs using the known layout
+        // But since ec_stripes is void*, the caller (erasure.c) must have
+        // set it up correctly. We'll use a simple flat copy approach.
+        // Each stripe: start(4) + count(4) + m*(32+4)
+        size_t stripe_size = 4 + 4 + (size_t)m->ec_m * (WH_HASH_SIZE + 4);
+        // Note: ec_stripes is an array of EC_STRIPE structs but we don't include
+        // erasure.h here. The actual serialization is done by ErasureCoding_SerializeGroup.
+        // For manifest v3, we just store ec_k, ec_m, ec_stripe_count here.
+        // Parity data is serialized separately in the EC_GROUP file.
+        // Reset — just write the parameters, not the actual stripes
+        // (stripes are in the separate .ec file)
+    }
+    else if (m->version >= WH_MANIFEST_VERSION_3)
+    {
+        *p = m->ec_k; p += 1;
+        *p = m->ec_m; p += 1;
+        WriteUint32LE(p, 0); p += 4;  // 0 stripes if none
     }
 }
 
@@ -335,7 +371,8 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
 
     // Validate version
     uint8_t version = *p; p += 1;
-    if (version != WH_MANIFEST_VERSION && version != WH_MANIFEST_VERSION_2)
+    if (version != WH_MANIFEST_VERSION && version != WH_MANIFEST_VERSION_2 &&
+        version != WH_MANIFEST_VERSION_3)
         return NULL;
 
     // Read manifest hash
@@ -363,11 +400,11 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
     filename[filename_length] = '\0';
     p += filename_length;
 
-    // Version 2: parse file entries
+    // Version 2+: parse file entries
     uint32_t fc = 0;
     FILE_ENTRY *files = NULL;
 
-    if (version == WH_MANIFEST_VERSION_2)
+    if (version >= WH_MANIFEST_VERSION_2)
     {
         if ((size_t)(p - data) + 4 > size) { free(filename); return NULL; }
         fc = ReadUint32LE(p); p += 4;
@@ -424,11 +461,19 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
     // We need to calculate it manually here since we don't have a manifest struct yet
     size_t expected_body = MANIFEST_BODY_FIXED + filename_length +
                            (size_t)chunk_count * MANIFEST_PER_CHUNK;
-    if (version == WH_MANIFEST_VERSION_2)
+    if (version >= WH_MANIFEST_VERSION_2)
     {
         expected_body += 4;  // file_count
         for (uint32_t i = 0; i < fc; i++)
             expected_body += MANIFEST_FILE_ENTRY_FIXED + files[i].path_length;
+    }
+
+    // Version 3: erasure coding extension
+    uint8_t ec_k = 0, ec_m = 0;
+    uint32_t ec_stripe_count = 0;
+    if (version >= WH_MANIFEST_VERSION_3)
+    {
+        expected_body += 1 + 1 + 4;  // ec_k + ec_m + stripe_count
     }
 
     if (size < MANIFEST_HEADER_SIZE + expected_body)
@@ -485,6 +530,10 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
     m->filename_length = filename_length;
     m->file_count = fc;
     m->files = files;
+    m->ec_k = 0;
+    m->ec_m = 0;
+    m->ec_stripe_count = 0;
+    m->ec_stripes = NULL;
 
     if (chunk_count > 0)
     {
@@ -501,6 +550,17 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
             p += WH_HASH_SIZE;
             m->chunks[i].chunk_size = ReadUint32LE(p);
             p += 4;
+        }
+    }
+
+    // Version 3: parse EC parameters
+    if (version >= WH_MANIFEST_VERSION_3)
+    {
+        if ((size_t)(p - data) + 6 <= size)
+        {
+            m->ec_k = *p; p += 1;
+            m->ec_m = *p; p += 1;
+            m->ec_stripe_count = ReadUint32LE(p); p += 4;
         }
     }
 

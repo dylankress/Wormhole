@@ -40,5 +40,12 @@ Update libsodium
 Download from: https://download.libsodium.org/libsodium/releases/
 For Windows, extract to deps/libsodium/ maintaining directory structure.
 
+Reed-Solomon (Erasure Coding)
+GF(2^8) Reed-Solomon codec for erasure coding, located in `deps/reed_solomon/`.
+- `rs.h` / `rs.c` — Vandermonde-matrix RS encoder/decoder
+- Used by `src/erasure.c` for RS(4,2) stripe encoding (4 data + 2 parity shards)
+- No external dependencies, pure C implementation
+- Precomputed log/exp tables for GF(2^8) with polynomial 0x11d
+
 Update MsQuic
 git submodule update --remote msquic

@@ -20,6 +20,7 @@ typedef struct {
     volatile LONG       running;
     IpcCommandHandler   handler;
     void               *handler_context;
+    char                pipe_name[256];
 } IPC_SERVER;
 
 static IPC_SERVER g_ipc_server = {
@@ -28,6 +29,7 @@ static IPC_SERVER g_ipc_server = {
     .running          = 0,
     .handler          = NULL,
     .handler_context  = NULL,
+    .pipe_name        = {0},
 };
 
 // --- Client handle ---
@@ -195,7 +197,7 @@ static void IpcServerHandleClient(HANDLE client_pipe, IPC_SERVER *server)
 static HANDLE IpcServerCreatePipe(void)
 {
     HANDLE pipe = CreateNamedPipeA(
-        IPC_PIPE_NAME,
+        g_ipc_server.pipe_name,
         PIPE_ACCESS_DUPLEX,
         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
         PIPE_UNLIMITED_INSTANCES,
@@ -236,7 +238,7 @@ static DWORD WINAPI IpcServerThread(LPVOID param)
 {
     IPC_SERVER *server = (IPC_SERVER *)param;
 
-    LOG("[ipc] Server listening on %s\n", IPC_PIPE_NAME);
+    LOG("[ipc] Server listening on %s\n", g_ipc_server.pipe_name);
 
     while (InterlockedCompareExchange(&server->running, 1, 1) == 1)
     {
@@ -297,7 +299,8 @@ static DWORD WINAPI IpcServerThread(LPVOID param)
 
 // --- Server public API ---
 
-BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context)
+BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context,
+                        const char *pipe_name)
 {
     if (!handler)
     {
@@ -310,6 +313,13 @@ BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context)
         LOG_ERROR("[ipc] Server already running\n");
         return FALSE;
     }
+
+    // Store pipe name (use default if NULL)
+    if (pipe_name)
+        strncpy(g_ipc_server.pipe_name, pipe_name, sizeof(g_ipc_server.pipe_name) - 1);
+    else
+        strncpy(g_ipc_server.pipe_name, IPC_PIPE_NAME, sizeof(g_ipc_server.pipe_name) - 1);
+    g_ipc_server.pipe_name[sizeof(g_ipc_server.pipe_name) - 1] = '\0';
 
     g_ipc_server.handler = handler;
     g_ipc_server.handler_context = context;
@@ -340,7 +350,7 @@ void IpcServer_Stop(void)
 
     // Connect to our own pipe to unblock ConnectNamedPipe
     HANDLE dummy = CreateFileA(
-        IPC_PIPE_NAME,
+        g_ipc_server.pipe_name,
         GENERIC_READ | GENERIC_WRITE,
         0, NULL,
         OPEN_EXISTING,
@@ -372,10 +382,12 @@ BOOLEAN IpcServer_IsRunning(void)
 
 // --- Client public API ---
 
-IPC_CLIENT *IpcClient_Connect(void)
+IPC_CLIENT *IpcClient_ConnectTo(const char *pipe_name)
 {
+    const char *name = pipe_name ? pipe_name : IPC_PIPE_NAME;
+
     HANDLE pipe = CreateFileA(
-        IPC_PIPE_NAME,
+        name,
         GENERIC_READ | GENERIC_WRITE,
         0,
         NULL,
@@ -389,7 +401,7 @@ IPC_CLIENT *IpcClient_Connect(void)
         DWORD err = GetLastError();
         if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PIPE_BUSY)
         {
-            LOG_ERROR("[ipc] Daemon not running (pipe not found)\n");
+            LOG_ERROR("[ipc] Daemon not running (pipe not found: %s)\n", name);
         }
         else
         {
@@ -412,6 +424,11 @@ IPC_CLIENT *IpcClient_Connect(void)
 
     client->pipe_handle = pipe;
     return client;
+}
+
+IPC_CLIENT *IpcClient_Connect(void)
+{
+    return IpcClient_ConnectTo(NULL);
 }
 
 BOOLEAN IpcClient_SendCommand(
@@ -496,10 +513,12 @@ void IpcClient_Disconnect(IPC_CLIENT *client)
 #else
 // --- POSIX stub (Unix domain sockets, future implementation) ---
 
-BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context)
+BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context,
+                        const char *pipe_name)
 {
     UNREFERENCED_PARAMETER(handler);
     UNREFERENCED_PARAMETER(context);
+    UNREFERENCED_PARAMETER(pipe_name);
     LOG_ERROR("[ipc] IPC not implemented on this platform\n");
     return FALSE;
 }
@@ -515,6 +534,13 @@ BOOLEAN IpcServer_IsRunning(void)
 
 IPC_CLIENT *IpcClient_Connect(void)
 {
+    LOG_ERROR("[ipc] IPC not implemented on this platform\n");
+    return NULL;
+}
+
+IPC_CLIENT *IpcClient_ConnectTo(const char *pipe_name)
+{
+    UNREFERENCED_PARAMETER(pipe_name);
     LOG_ERROR("[ipc] IPC not implemented on this platform\n");
     return NULL;
 }

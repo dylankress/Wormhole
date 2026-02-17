@@ -20,6 +20,20 @@
 #define CONFIG_DEFAULT_RELAY_HOST         "wormholerelay.com"
 #define CONFIG_DEFAULT_RELAY_PORT         443
 
+// DHT defaults
+#define CONFIG_DEFAULT_DHT_PORT           4568
+#define CONFIG_DEFAULT_DHT_ENABLED        1
+
+// Erasure coding defaults
+#define CONFIG_DEFAULT_EC_ENABLED         1
+#define CONFIG_DEFAULT_EC_DATA_SHARDS     4
+#define CONFIG_DEFAULT_EC_PARITY_SHARDS   2
+
+// Health and verification defaults
+#define CONFIG_DEFAULT_MIN_STORAGE_RATIO  50   // 0.50 stored as integer percent
+#define CONFIG_DEFAULT_HEALTH_CHECK_SEC   1800 // 30 minutes
+#define CONFIG_DEFAULT_PROOF_CACHE_COUNT  8
+
 // Config entry
 typedef struct {
     char key[CONFIG_MAX_KEY_LEN];

@@ -2,9 +2,9 @@
 
 Client-side relay integration for Wormhole P2P file transfer.
 
-## Components Implemented (Day 2)
+## Components
 
-### ✅ Complete Modules
+### Modules
 
 1. **peer_id.c/h** (~300 lines)
    - Ed25519 keypair generation and management
@@ -15,7 +15,7 @@ Client-side relay integration for Wormhole P2P file transfer.
 2. **relay_client.c/h** (~500 lines)
    - Full relay protocol implementation
    - UDP communication with relay server
-   - All 9 message types supported:
+   - All 11 message types supported:
      - REGISTER (with Ed25519 signature)
      - CREATE_TICKET
      - LOOKUP
@@ -132,25 +132,12 @@ The `test_relay_client` program demonstrates all relay client functionality:
 - Lookup tickets (receiver)
 - Pretty-printed UI
 
-### Future Integration (Phase 2)
-To integrate with the full Wormhole application:
+### Full Integration (Complete)
+These modules are fully integrated into the main Wormhole application:
 
-1. **Add to `wormhole.c` CLI:**
-   ```c
-   // New commands:
-   wormhole send <file>       // Uses relay client to generate ticket
-   wormhole receive <ticket>  // Uses relay client to lookup sender
-   ```
-
-2. **Connection Manager:**
-   - Multi-path connection attempts (LAN + public + IPv6 + relay)
-   - Parallel connection racing
-   - Automatic upgrade from relay to direct
-   - MsQuic integration
-
-3. **Build Integration:**
-   - Link relay client modules into main wormhole binary
-   - Add libsodium dependency to main build script
+- **CLI**: `wormhole send <file>` and `wormhole receive <ticket>` use the relay client for ticket generation and lookup
+- **Connection Manager**: Multi-path connection attempts (LAN + public + IPv6 + relay), parallel connection racing, relay fallback via `relay_forwarder.c`
+- **Build**: Relay client modules linked into main `wormhole.exe` and `wormholed.exe` binaries
 
 ## Protocol Flow (Implemented)
 
@@ -169,8 +156,8 @@ To integrate with the full Wormhole application:
 3. Connect to relay and REGISTER ✅
 4. LOOKUP ticket ✅
 5. Relay responds with sender's endpoints ✅
-6. Attempt direct connections (TODO: Phase 2)
-7. Fall back to relay forwarding (TODO: Phase 2)
+6. Attempt direct connections (parallel racing by priority) ✅
+7. Fall back to relay forwarding if all direct connections fail ✅
 
 ## Security
 
@@ -189,41 +176,9 @@ To integrate with the full Wormhole application:
 
 ## Known Limitations
 
-1. **No QUIC Integration Yet**
-   - Test program doesn't actually transfer files
-   - Needs MsQuic integration for real transfers
-
-2. **No Connection Manager**
-   - Doesn't attempt direct connections
-   - Doesn't implement relay fallback forwarding
-
-3. **No UPnP**
+1. **No UPnP**
    - Only discovers local and IPv6 addresses
    - No port mapping
-
-4. **Basic UI**
-   - ASCII art boxes (looks good in terminal!)
-   - No progress bars during transfer
-
-## Next Steps (Phase 2)
-
-1. **Connection Manager** (~500 lines)
-   - Parallel connection attempts
-   - Direct vs relay decision logic
-   - Connection upgrade (relay → direct)
-
-2. **MsQuic Integration**
-   - Modify existing QUIC code to use discovered endpoints
-   - Add relay forwarding mode
-
-3. **CLI Integration**
-   - Replace `-server`/`-client` with `send`/`receive` commands
-   - Integrate relay client seamlessly
-
-4. **Testing**
-   - End-to-end file transfer via relay
-   - Direct connection upgrade testing
-   - Multi-peer scenarios
 
 ## References
 

@@ -7,9 +7,11 @@ Production-ready relay server for Wormhole peer-to-peer file transfers.
 The relay server enables connections on hostile networks (firewalls, NAT) where direct P2P connections fail. It provides:
 
 1. **Connection Coordination** - Peers register and exchange connection information
-2. **NAT Reflection** - Server tells clients their public IP:port 
+2. **NAT Reflection** - Server tells clients their public IP:port
 3. **Fallback Forwarding** - Relays QUIC packets when direct connection fails
 4. **Ticket System** - User-friendly short codes (e.g., "7-guitar-battery")
+5. **Peer Discovery** - Active peer lookup for P2P storage (FIND_PEERS/PEERS_FOUND)
+6. **DHT Bootstrap** - Responds to Kademlia PING and FIND_NODE for DHT network bootstrapping
 
 ## Components
 
@@ -32,10 +34,11 @@ The relay server enables connections on hostile networks (firewalls, NAT) where 
   - Hash table tracking
   - Automatic stale entry removal
 
-- **`server.c`** - Main UDP server loop (~700 lines)
-  - 9 message types (REGISTER, CREATE_TICKET, LOOKUP, etc.)
+- **`server.c`** - Main UDP server loop (~1,000 lines)
+  - 11 relay message types + DHT bootstrap (0x20-0x27)
   - Dual-stack IPv4/IPv6 support
   - Message routing and forwarding
+  - DHT PING/PONG and FIND_NODE responses (bootstrap-only, no STORE/FIND_VALUE)
   - Statistics tracking
 
 - **`main.c`** - Entry point (~150 lines)
@@ -47,7 +50,8 @@ The relay server enables connections on hostile networks (firewalls, NAT) where 
 
 - **`relay_protocol.h`** - Wire format specification
   - Binary protocol (packed structs)
-  - 9 message types
+  - 11 relay message types: REGISTER (0x01), REGISTERED (0x02), LOOKUP (0x03), PEER_INFO (0x04), FORWARD (0x05), KEEPALIVE (0x06), GOODBYE (0x07), CREATE_TICKET (0x08), TICKET_CREATED (0x09), FIND_PEERS (0x0A), PEERS_FOUND (0x0B)
+  - DHT messages (0x20-0x27) handled inline in server.c
   - Little-endian encoding
   - Ed25519 authentication via libsodium
 
@@ -125,6 +129,7 @@ Options:
   -w, --wordlist <path>     Path to EFF wordlist (default: ../deps/eff_large_wordlist.txt)
   --max-peers <num>         Maximum concurrent peers (default: 10000)
   --max-tickets <num>       Maximum active tickets (default: 5000)
+  --public-addr <ip>        Public IP address for relay endpoint injection (required for relay fallback)
   -h, --help                Show this help message
 ```
 
@@ -325,8 +330,10 @@ relay-server/
 ├── ticket_manager.c             # Ticket generation (implementation)
 ├── rate_limiter.h               # Rate limiting (header)
 ├── rate_limiter.c               # Rate limiting (implementation)
+├── crypto.h                     # Crypto helpers (header)
+├── crypto.c                     # libsodium init, Ed25519 verification
 ├── server.h                     # Main server (header)
-├── server.c                     # Main server (implementation)
+├── server.c                     # Main server + DHT bootstrap (implementation)
 ├── main.c                       # Entry point
 ├── build.sh                     # Linux build script
 ├── build.bat                    # Windows build script
@@ -336,12 +343,13 @@ relay-server/
 
 ## Lines of Code
 
-- **Total:** ~2,200 lines of C code
+- **Total:** ~2,800 lines of C code
 - **Protocol:** 118 lines
 - **Peer Registry:** ~500 lines
 - **Ticket Manager:** ~400 lines
 - **Rate Limiter:** ~300 lines
-- **Server:** ~700 lines
+- **Server:** ~1,000 lines (includes DHT bootstrap handler)
+- **Crypto:** ~100 lines
 - **Main:** ~150 lines
 
 ## License
@@ -353,6 +361,12 @@ Open source (same as Wormhole main project)
 - Dylan Kress (primary author)
 
 ## Changelog
+
+### v0.2.0 (Feb 16, 2026)
+- DHT bootstrap support (PING/PONG, FIND_NODE responses)
+- Ed25519-signed DHT messages with relay keypair
+- FIND_PEERS/PEERS_FOUND for P2P peer discovery
+- `--public-addr` flag for relay endpoint injection
 
 ### v0.1.0 (Feb 11, 2026)
 - Initial implementation

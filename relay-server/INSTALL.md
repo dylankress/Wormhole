@@ -2,14 +2,14 @@
 
 ## Prerequisites
 
-You need to install GCC in WSL to compile the relay server. Run this command in your WSL terminal:
+You need to install GCC and libsodium in WSL to compile the relay server. Run these commands in your WSL terminal:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y build-essential
+sudo apt-get install -y build-essential libsodium-dev
 ```
 
-This will install GCC and other essential build tools.
+This will install GCC, essential build tools, and libsodium (required for Ed25519 signing in DHT bootstrap).
 
 ## Verify Installation
 

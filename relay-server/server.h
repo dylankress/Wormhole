@@ -41,6 +41,10 @@ typedef struct {
     uint8_t  relay_addr_type;        // 0x04=IPv4, 0x06=IPv6
     uint8_t  relay_addr[16];         // Our public IP address
 
+    // DHT bootstrap identity (Ed25519 keypair for signing DHT responses)
+    uint8_t  dht_public_key[32];
+    uint8_t  dht_secret_key[64];     // libsodium full secret key (seed || pk)
+
     // Statistics
     uint64_t total_packets_received;
     uint64_t total_packets_sent;

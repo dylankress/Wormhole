@@ -29,6 +29,10 @@
 #define CTRL_MSG_CHUNK_QUERY           0x07  // "Do you have this chunk?"
 #define CTRL_MSG_CHUNK_QUERY_RESPONSE  0x08  // "Yes/No + chunk data if yes"
 
+// Proof-of-storage verification (P2P storage, Stream 0: bidirectional)
+#define CTRL_MSG_PROOF_CHALLENGE       0x09  // "Prove you have this chunk" [32B hash][32B seed]
+#define CTRL_MSG_PROOF_RESPONSE        0x0A  // "Here's the proof" [32B hash][32B proof]
+
 // Target replication factor for P2P storage
 #define REPLICATION_TARGET 3
 

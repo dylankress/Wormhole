@@ -28,6 +28,9 @@ HQUIC ClientConfiguration = NULL;
 #define DEFAULT_RELAY_HOST "wormholerelay.com"
 #define DEFAULT_RELAY_PORT 443
 
+// IPC pipe name (set by --daemon flag, defaults to port-derived name)
+static char g_ipc_pipe[256] = {0};
+
 //=============================================================================
 // Ctrl+C Cleanup
 //=============================================================================
@@ -113,7 +116,7 @@ static BOOLEAN ClientLoadConfiguration(void);
 static int cmd_send(const char *filepath);
 static int cmd_receive(const char *ticket);
 static int cmd_store(const char *filepath);
-static int cmd_get(const char *hash_hex);
+static int cmd_get(int argc, char *argv[]);
 static int cmd_status(void);
 static int cmd_config(int argc, char *argv[]);
 static void PrintUsage(void);
@@ -2185,7 +2188,7 @@ static int cmd_store(const char *filepath)
 		return 1;
 	}
 
-	IPC_CLIENT *client = IpcClient_Connect();
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
 		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
@@ -2228,21 +2231,65 @@ static int cmd_store(const char *filepath)
 		return 1;
 	}
 
-	LOG("[Store] File stored successfully\n");
+	// Parse response: [1B status][32B manifest_hash][4B chunk_count][32B hash_0]...[32B hash_N]
+	if (response_size >= 1 + WH_HASH_SIZE + 4)
+	{
+		uint32_t chunk_count = ReadUint32LE(response + 1 + WH_HASH_SIZE);
+
+		// Print manifest hash
+		LOG("Stored %s (%u chunks)\n", filepath, chunk_count);
+		LOG("  Manifest: ");
+		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+			printf("%02x", response[1 + hi]);
+		printf("\n");
+
+		// Print individual chunk hashes
+		uint32_t hash_offset = 1 + WH_HASH_SIZE + 4;
+		for (uint32_t ci = 0; ci < chunk_count; ci++)
+		{
+			if (hash_offset + WH_HASH_SIZE > response_size) break;
+			LOG("  Chunk %3u: ", ci);
+			for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+				printf("%02x", response[hash_offset + hi]);
+			printf("\n");
+			hash_offset += WH_HASH_SIZE;
+		}
+	}
+	else
+	{
+		LOG("[Store] File stored successfully\n");
+	}
+
 	free(response);
 	IpcClient_Disconnect(client);
 	return 0;
 }
 
-static int cmd_get(const char *hash_hex)
+static int cmd_get(int argc, char *argv[])
 {
-	if (strlen(hash_hex) != 64)
+	const char *hash_hex = NULL;
+	const char *output_file = NULL;
+
+	// Parse args: get [options] <hash>
+	for (int i = 0; i < argc; i++)
+	{
+		if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
+		{
+			output_file = argv[++i];
+		}
+		else if (!hash_hex && strlen(argv[i]) == 64)
+		{
+			hash_hex = argv[i];
+		}
+	}
+
+	if (!hash_hex)
 	{
 		LOG_ERROR("Error: Hash must be 64 hex characters\n");
 		return 1;
 	}
 
-	IPC_CLIENT *client = IpcClient_Connect();
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
 		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
@@ -2288,10 +2335,37 @@ static int cmd_get(const char *hash_hex)
 		return 1;
 	}
 
-	// Write chunk data to stdout (skip status byte)
-	if (response_size > 1)
+	// Response: [1B status][4B data_size][chunk_data]
+	if (response_size < 1 + 4)
 	{
-		fwrite(response + 1, 1, response_size - 1, stdout);
+		LOG_ERROR("Error: Invalid response\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t data_size = ReadUint32LE(response + 1);
+	uint8_t *chunk_data = response + 1 + 4;
+
+	if (output_file)
+	{
+		FILE *fp = fopen(output_file, "wb");
+		if (!fp)
+		{
+			LOG_ERROR("Error: Cannot open output file: %s\n", output_file);
+			free(response);
+			IpcClient_Disconnect(client);
+			return 1;
+		}
+		fwrite(chunk_data, 1, data_size, fp);
+		fclose(fp);
+		fprintf(stderr, "Retrieved %u bytes -> %s\n", data_size, output_file);
+	}
+	else
+	{
+		// Write binary to stdout
+		fwrite(chunk_data, 1, data_size, stdout);
+		fprintf(stderr, "Retrieved %u bytes\n", data_size);
 	}
 
 	free(response);
@@ -2301,7 +2375,7 @@ static int cmd_get(const char *hash_hex)
 
 static int cmd_status(void)
 {
-	IPC_CLIENT *client = IpcClient_Connect();
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
 		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
@@ -2342,7 +2416,31 @@ static int cmd_status(void)
 	LOG("  Chunks:        %u\n", chunks);
 	LOG("  Storage Used:  %llu bytes\n", (unsigned long long)storage);
 	LOG("  Relay:         %s\n", relay ? "connected" : "disconnected");
-	LOG("  Listener:      %s\n\n", listener ? "active" : "inactive");
+	LOG("  Listener:      %s\n", listener ? "active" : "inactive");
+
+	// Fetch DHT status
+	uint32_t dht_response_size = 0;
+	BOOLEAN dht_ok = IpcClient_SendCommand(client, IPC_CMD_DHT_STATUS,
+		NULL, 0,
+		response, IPC_MAX_MESSAGE_SIZE, &dht_response_size);
+
+	if (dht_ok && dht_response_size >= 25 && response[0] == IPC_STATUS_OK)
+	{
+		uint32_t dht_nodes  = ReadUint32LE(response + 1);
+		uint32_t dht_values = ReadUint32LE(response + 5);
+		uint64_t dht_sent   = ReadUint64LE(response + 9);
+		uint64_t dht_recv   = ReadUint64LE(response + 17);
+
+		LOG("  DHT Nodes:     %u\n", dht_nodes);
+		LOG("  DHT Values:    %u\n", dht_values);
+		LOG("  DHT Sent:      %llu msgs\n", (unsigned long long)dht_sent);
+		LOG("  DHT Received:  %llu msgs\n", (unsigned long long)dht_recv);
+	}
+	else
+	{
+		LOG("  DHT:           not available\n");
+	}
+	LOG("\n");
 
 	free(response);
 	IpcClient_Disconnect(client);
@@ -2379,9 +2477,24 @@ static int cmd_config(int argc, char *argv[])
 				CONFIG_DEFAULT_REPLICATION_TARGET));
 		LOG("  relay_host         = %s\n",
 			Config_GetString(config, "relay_host", CONFIG_DEFAULT_RELAY_HOST));
-		LOG("  relay_port         = %llu\n\n",
+		LOG("  relay_port         = %llu\n",
 			(unsigned long long)Config_GetUint64(config, "relay_port",
 				CONFIG_DEFAULT_RELAY_PORT));
+		LOG("  dht_port           = %llu\n",
+			(unsigned long long)Config_GetUint64(config, "dht_port",
+				CONFIG_DEFAULT_DHT_PORT));
+		LOG("  dht_enabled        = %llu\n",
+			(unsigned long long)Config_GetUint64(config, "dht_enabled",
+				CONFIG_DEFAULT_DHT_ENABLED));
+		LOG("  ec_enabled         = %llu\n",
+			(unsigned long long)Config_GetUint64(config, "ec_enabled",
+				CONFIG_DEFAULT_EC_ENABLED));
+		LOG("  ec_data_shards     = %llu\n",
+			(unsigned long long)Config_GetUint64(config, "ec_data_shards",
+				CONFIG_DEFAULT_EC_DATA_SHARDS));
+		LOG("  ec_parity_shards   = %llu\n\n",
+			(unsigned long long)Config_GetUint64(config, "ec_parity_shards",
+				CONFIG_DEFAULT_EC_PARITY_SHARDS));
 	}
 	else if (strcmp(argv[1], "get") == 0)
 	{
@@ -2436,20 +2549,22 @@ static void PrintUsage(void)
 {
 	LOG("\nWormhole - Secure P2P File Transfer & Storage\n\n");
 	LOG("Usage:\n");
-	LOG("  wormhole send <file|directory>    Send a file or directory\n");
-	LOG("  wormhole receive <ticket>         Receive a file using a ticket\n");
-	LOG("  wormhole store <file>             Store file chunks via daemon\n");
-	LOG("  wormhole get <hash>               Retrieve a chunk by hash\n");
-	LOG("  wormhole status                   Show daemon status\n");
-	LOG("  wormhole config list              Show all settings\n");
-	LOG("  wormhole config get <key>         Get a config value\n");
-	LOG("  wormhole config set <key> <val>   Set a config value\n");
-	LOG("  wormhole --help                   Show this help message\n\n");
+	LOG("  wormhole send <file|directory>      Send a file or directory\n");
+	LOG("  wormhole receive <ticket>           Receive a file using a ticket\n");
+	LOG("  wormhole store <file>               Store file chunks via daemon\n");
+	LOG("  wormhole get <hash> [-o <file>]     Retrieve a chunk by hash\n");
+	LOG("  wormhole status                     Show daemon status\n");
+	LOG("  wormhole config list                Show all settings\n");
+	LOG("  wormhole config get <key>           Get a config value\n");
+	LOG("  wormhole config set <key> <val>     Set a config value\n");
+	LOG("  wormhole --help                     Show this help message\n\n");
+	LOG("Global options:\n");
+	LOG("  --daemon <port>   Connect to daemon on specified port (default: %u)\n\n", WORMHOLE_DEFAULT_PORT);
 	LOG("Examples:\n");
 	LOG("  wormhole send document.pdf\n");
 	LOG("  wormhole send ./my-project/\n");
 	LOG("  wormhole receive 7-guitar-battery\n");
-	LOG("  wormhole config set max_storage_gb 20\n\n");
+	LOG("  wormhole --daemon 4569 get <hash> -o chunk.bin\n\n");
 }
 
 //=============================================================================
@@ -2466,62 +2581,85 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (strcmp(argv[1], "send") == 0)
+	// First pass: handle --daemon flag (sets IPC pipe name)
+	uint16_t daemon_port = WORMHOLE_DEFAULT_PORT;
+	int cmd_start = 1;  // Index where the subcommand begins
+	for (int i = 1; i < argc; i++)
 	{
-		if (argc < 3)
+		if (strcmp(argv[i], "--daemon") == 0 && i + 1 < argc)
+		{
+			daemon_port = (uint16_t)atoi(argv[i + 1]);
+			cmd_start = i + 2;  // Skip --daemon and its arg
+			break;
+		}
+	}
+	snprintf(g_ipc_pipe, sizeof(g_ipc_pipe), "%s%u", IPC_PIPE_PREFIX, daemon_port);
+
+	if (cmd_start >= argc)
+	{
+		PrintUsage();
+		return 1;
+	}
+
+	const char *cmd = argv[cmd_start];
+
+	if (strcmp(cmd, "send") == 0)
+	{
+		if (cmd_start + 1 >= argc)
 		{
 			LOG_ERROR("ERROR: Missing filename or directory\n");
 			PrintUsage();
 			return 1;
 		}
-		return cmd_send(argv[2]);
+		return cmd_send(argv[cmd_start + 1]);
 	}
-	else if (strcmp(argv[1], "receive") == 0)
+	else if (strcmp(cmd, "receive") == 0)
 	{
-		if (argc < 3)
+		if (cmd_start + 1 >= argc)
 		{
 			LOG_ERROR("ERROR: Missing ticket\n");
 			PrintUsage();
 			return 1;
 		}
-		return cmd_receive(argv[2]);
+		return cmd_receive(argv[cmd_start + 1]);
 	}
-	else if (strcmp(argv[1], "store") == 0)
+	else if (strcmp(cmd, "store") == 0)
 	{
-		if (argc < 3)
+		if (cmd_start + 1 >= argc)
 		{
 			LOG_ERROR("ERROR: Missing filename\n");
 			PrintUsage();
 			return 1;
 		}
-		return cmd_store(argv[2]);
+		return cmd_store(argv[cmd_start + 1]);
 	}
-	else if (strcmp(argv[1], "get") == 0)
+	else if (strcmp(cmd, "get") == 0)
 	{
-		if (argc < 3)
+		if (cmd_start + 1 >= argc)
 		{
 			LOG_ERROR("ERROR: Missing chunk hash\n");
 			PrintUsage();
 			return 1;
 		}
-		return cmd_get(argv[2]);
+		// Pass remaining args after "get" to cmd_get for -o parsing
+		return cmd_get(argc - cmd_start - 1, argv + cmd_start + 1);
 	}
-	else if (strcmp(argv[1], "status") == 0)
+	else if (strcmp(cmd, "status") == 0)
 	{
 		return cmd_status();
 	}
-	else if (strcmp(argv[1], "config") == 0)
+	else if (strcmp(cmd, "config") == 0)
 	{
-		return cmd_config(argc - 1, argv + 1);
+		return cmd_config(argc - cmd_start, argv + cmd_start);
 	}
-	else if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)
+	else if (strcmp(cmd, "--help") == 0 || strcmp(cmd, "-h") == 0)
 	{
 		PrintUsage();
 		return 0;
 	}
 	else
 	{
-		LOG_ERROR("ERROR: Unknown command: %s\n\n", argv[1]);
+		LOG_ERROR("ERROR: Unknown command: %s\n\n", cmd);
 		PrintUsage();
 		return 1;
 	}

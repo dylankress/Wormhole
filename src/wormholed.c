@@ -16,9 +16,26 @@
 #include "config.h"
 
 // Relay includes (optional relay connectivity)
+#include <sodium.h>
 #include "relay/peer_id.h"
 #include "relay/relay_client.h"
 #include "relay/discovery.h"
+
+// DHT includes (Phase 4: decentralized network)
+#include "dht/dht_node.h"
+#include "dht/dht_store.h"
+
+// Phase 4 includes
+#include "proof.h"
+#include "incentives.h"
+#include "health.h"
+#include "erasure.h"
+
+// POSIX includes for Linux EC recovery directory scan
+#ifndef _WIN32
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
 
 //=============================================================================
 // Daemon Configuration
@@ -65,6 +82,14 @@ typedef struct {
     WORMHOLE_CONFIG    *config;
     uint64_t            max_storage_bytes;
 
+    // DHT (Phase 4)
+    DHT_NODE            dht_node;
+    BOOLEAN             dht_enabled;
+    uint16_t            dht_port;
+
+    // Incentives (Phase 4)
+    STORAGE_LEDGER      ledger;
+
     // Stats
     volatile LONG       peer_count;
     volatile LONG       chunk_count;
@@ -72,6 +97,37 @@ typedef struct {
 } DAEMON_STATE;
 
 static DAEMON_STATE g_daemon = { 0 };
+
+// Per-connection context for inbound peers (enables per-peer ledger tracking)
+typedef struct {
+    DAEMON_STATE *daemon;
+    HQUIC         connection;
+    uint8_t       peer_id[32];
+    BOOLEAN       peer_id_known;
+} PEER_CONNECTION_CONTEXT;
+
+// Context for synchronous remote chunk fetch (used by IPC_CMD_GET)
+typedef struct {
+    HANDLE         completion_event;     // Signaled when fetch completes
+    volatile LONG  status;               // 0=pending, 1=success, 2=failed, 3=not_found
+    uint8_t       *data_buf;             // Caller-provided output buffer
+    uint32_t       data_size;            // Filled on success
+    uint32_t       data_capacity;        // Size of data_buf
+    uint8_t        target_hash[WH_HASH_SIZE];
+
+    // Receive accumulation (CHUNK_QUERY_RESPONSE arrives in fragments)
+    uint8_t       *recv_buf;
+    uint32_t       recv_size;
+    uint32_t       recv_capacity;
+} CHUNK_FETCH_CONTEXT;
+
+// Per-stream context: accumulates received data + borrows peer context
+typedef struct {
+    PEER_CONNECTION_CONTEXT *peer_ctx;    // borrowed pointer (owned by connection)
+    uint8_t  *recv_buf;
+    uint32_t  recv_size;
+    uint32_t  recv_capacity;
+} DAEMON_STREAM_CONTEXT;
 
 //=============================================================================
 // Forward Declarations
@@ -99,6 +155,18 @@ static QUIC_STATUS QUIC_API Daemon_StreamCallback(
 static BOOLEAN Daemon_LoadClientConfig(void);
 static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
                                    const uint8_t *data, uint32_t size);
+static QUIC_STATUS QUIC_API Daemon_ReplicaStreamCallback(
+    HQUIC Stream, void *Context, QUIC_STREAM_EVENT *Event);
+
+// Remote chunk fetch (used by IPC_CMD_GET for distributed retrieval)
+static BOOLEAN Daemon_FetchChunkFromPeer(
+    const char *addr_str, uint16_t port,
+    const uint8_t hash[WH_HASH_SIZE],
+    uint8_t *data_out, uint32_t *size_out);
+static QUIC_STATUS QUIC_API Daemon_FetchConnectionCallback(
+    HQUIC Connection, void *Context, QUIC_CONNECTION_EVENT *Event);
+static QUIC_STATUS QUIC_API Daemon_FetchStreamCallback(
+    HQUIC Stream, void *Context, QUIC_STREAM_EVENT *Event);
 
 //=============================================================================
 // Ctrl+C Shutdown Handler
@@ -343,17 +411,25 @@ static QUIC_STATUS QUIC_API Daemon_ListenerCallback(
     switch (Event->Type)
     {
     case QUIC_LISTENER_EVENT_NEW_CONNECTION:
+    {
         LOG("[daemon] Incoming QUIC connection\n");
+        PEER_CONNECTION_CONTEXT *peer_ctx =
+            (PEER_CONNECTION_CONTEXT *)calloc(1, sizeof(PEER_CONNECTION_CONTEXT));
+        if (!peer_ctx) return QUIC_STATUS_OUT_OF_MEMORY;
+        peer_ctx->daemon = state;
+        peer_ctx->connection = Event->NEW_CONNECTION.Connection;
+        peer_ctx->peer_id_known = FALSE;
         MsQuic->SetCallbackHandler(
             Event->NEW_CONNECTION.Connection,
             (void *)Daemon_ConnectionCallback,
-            state
+            peer_ctx
         );
         InterlockedIncrement(&state->peer_count);
         return MsQuic->ConnectionSetConfiguration(
             Event->NEW_CONNECTION.Connection,
             DaemonServerConfig
         );
+    }
 
     case QUIC_LISTENER_EVENT_STOP_COMPLETE:
         LOG("[daemon] Listener stop complete\n");
@@ -366,22 +442,68 @@ static QUIC_STATUS QUIC_API Daemon_ListenerCallback(
 static QUIC_STATUS QUIC_API Daemon_ConnectionCallback(
     HQUIC Connection, void *Context, QUIC_CONNECTION_EVENT *Event)
 {
-    DAEMON_STATE *state = (DAEMON_STATE *)Context;
+    PEER_CONNECTION_CONTEXT *peer_ctx = (PEER_CONNECTION_CONTEXT *)Context;
+    DAEMON_STATE *state = peer_ctx->daemon;
 
     switch (Event->Type)
     {
     case QUIC_CONNECTION_EVENT_CONNECTED:
+    {
         LOG("[daemon] Peer connected\n");
+        // Attempt peer identification by matching remote address against discovered peers
+        QUIC_ADDR remote_addr = {0};
+        uint32_t addr_len = sizeof(remote_addr);
+        if (QUIC_SUCCEEDED(MsQuic->GetParam(Connection, QUIC_PARAM_CONN_REMOTE_ADDRESS,
+                                              &addr_len, &remote_addr)))
+        {
+            LONG peer_count = InterlockedCompareExchange(&state->discovered_peer_count, 0, 0);
+            for (LONG i = 0; i < peer_count; i++)
+            {
+                DISCOVERED_PEER *dp = &state->discovered_peers[i];
+                for (uint16_t j = 0; j < dp->endpoint_count; j++)
+                {
+                    if (dp->endpoints[j].port == QuicAddrGetPort(&remote_addr) &&
+                        dp->endpoints[j].addr_type == 0x04)
+                    {
+                        struct sockaddr_in *sin = (struct sockaddr_in *)&remote_addr;
+                        if (memcmp(dp->endpoints[j].addr, &sin->sin_addr, 4) == 0)
+                        {
+                            memcpy(peer_ctx->peer_id, dp->peer_id, 32);
+                            peer_ctx->peer_id_known = TRUE;
+                            LOG("[daemon] Identified peer from discovered peers\n");
+                            goto peer_found;
+                        }
+                    }
+                }
+            }
+        }
+        peer_found:
         break;
+    }
 
     case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
+    {
         LOG("[daemon] Peer opened stream\n");
+        DAEMON_STREAM_CONTEXT *stream_ctx =
+            (DAEMON_STREAM_CONTEXT *)calloc(1, sizeof(DAEMON_STREAM_CONTEXT));
+        if (stream_ctx)
+        {
+            stream_ctx->peer_ctx = peer_ctx;
+            stream_ctx->recv_capacity = CTRL_HEADER_SIZE + WH_CHUNK_SIZE + 64;
+            stream_ctx->recv_buf = (uint8_t *)malloc(stream_ctx->recv_capacity);
+            if (!stream_ctx->recv_buf)
+            {
+                free(stream_ctx);
+                stream_ctx = NULL;
+            }
+        }
         MsQuic->SetCallbackHandler(
             Event->PEER_STREAM_STARTED.Stream,
             (void *)Daemon_StreamCallback,
-            state
+            stream_ctx
         );
         break;
+    }
 
     case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
         LOG("[daemon] Peer initiated shutdown (error: 0x%llx)\n",
@@ -393,6 +515,7 @@ static QUIC_STATUS QUIC_API Daemon_ConnectionCallback(
         MsQuic->ConnectionClose(Connection);
         LOG("[daemon] Peer disconnected (active peers: %ld)\n",
             InterlockedCompareExchange(&state->peer_count, 0, 0));
+        free(peer_ctx);
         break;
 
     default:
@@ -406,42 +529,11 @@ static QUIC_STATUS QUIC_API Daemon_ConnectionCallback(
 // Stream Callback — handles incoming chunk replication messages
 //=============================================================================
 
-// Buffer for accumulating stream receive data
-typedef struct {
-    uint8_t *data;
-    uint32_t size;
-    uint32_t capacity;
-    HQUIC    stream;
-} STREAM_RECV_CONTEXT;
-
-static STREAM_RECV_CONTEXT *StreamRecvContext_Create(HQUIC stream)
-{
-    STREAM_RECV_CONTEXT *ctx = (STREAM_RECV_CONTEXT *)calloc(1, sizeof(STREAM_RECV_CONTEXT));
-    if (!ctx) return NULL;
-
-    ctx->capacity = CTRL_HEADER_SIZE + WH_CHUNK_SIZE + 64;  // Max possible message
-    ctx->data = (uint8_t *)malloc(ctx->capacity);
-    if (!ctx->data)
-    {
-        free(ctx);
-        return NULL;
-    }
-    ctx->stream = stream;
-    return ctx;
-}
-
-static void StreamRecvContext_Destroy(STREAM_RECV_CONTEXT *ctx)
-{
-    if (ctx)
-    {
-        free(ctx->data);
-        free(ctx);
-    }
-}
-
 // Process a complete control message from a peer
+// peer_id may be NULL if the peer is unidentified
 static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
-                                      const uint8_t *payload, uint32_t payload_len)
+                                      const uint8_t *payload, uint32_t payload_len,
+                                      const uint8_t *peer_id)
 {
     switch (msg_type)
     {
@@ -466,25 +558,57 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
 
         LOG("[daemon] CHUNK_STORE_REQUEST: %u bytes\n", data_size);
 
-        // Store the chunk
-        BOOLEAN stored = ChunkStore_Put(hash, chunk_data, data_size);
-        if (stored)
+        // Ledger enforcement — reject storage from unbalanced peers
+        BOOLEAN accepted = TRUE;
+        if (peer_id)
         {
-            InterlockedIncrement(&g_daemon.chunk_count);
-            InterlockedExchangeAdd64(&g_daemon.storage_used, (LONGLONG)data_size);
+            if (!Ledger_ShouldAcceptStorage(&g_daemon.ledger, peer_id, (uint64_t)data_size))
+            {
+                LOG("[daemon] Rejecting storage from peer (ledger ratio too unbalanced)\n");
+                accepted = FALSE;
+            }
+        }
+        else
+        {
+            uint8_t zero_id[32] = {0};
+            if (!Ledger_ShouldAcceptStorage(&g_daemon.ledger, zero_id, (uint64_t)data_size))
+            {
+                LOG("[daemon] Rejecting storage from unidentified peer\n");
+                accepted = FALSE;
+            }
+        }
+
+        // Store the chunk (if accepted by ledger)
+        BOOLEAN stored = FALSE;
+        if (accepted)
+        {
+            stored = ChunkStore_Put(hash, chunk_data, data_size);
+            if (stored)
+            {
+                InterlockedIncrement(&g_daemon.chunk_count);
+                InterlockedExchangeAdd64(&g_daemon.storage_used, (LONGLONG)data_size);
+                if (peer_id)
+                    Ledger_RecordWeStored(&g_daemon.ledger, peer_id, (uint64_t)data_size);
+            }
         }
 
         // Send ACK: [1B type][4B payload_len][32B hash][1B status]
-        uint8_t ack[CTRL_HEADER_SIZE + WH_HASH_SIZE + 1];
-        ack[0] = CTRL_MSG_CHUNK_STORE_ACK;
-        WriteUint32LE(ack + 1, WH_HASH_SIZE + 1);
-        memcpy(ack + CTRL_HEADER_SIZE, hash, WH_HASH_SIZE);
-        ack[CTRL_HEADER_SIZE + WH_HASH_SIZE] = stored ? 0x00 : 0x01;
+        uint32_t ack_size = CTRL_HEADER_SIZE + WH_HASH_SIZE + 1;
+        uint8_t *ack = (uint8_t *)malloc(ack_size);
+        if (ack)
+        {
+            ack[0] = CTRL_MSG_CHUNK_STORE_ACK;
+            WriteUint32LE(ack + 1, WH_HASH_SIZE + 1);
+            memcpy(ack + CTRL_HEADER_SIZE, hash, WH_HASH_SIZE);
+            ack[CTRL_HEADER_SIZE + WH_HASH_SIZE] = stored ? 0x00 : 0x01;
 
-        QUIC_BUFFER send_buf;
-        send_buf.Buffer = ack;
-        send_buf.Length = sizeof(ack);
-        MsQuic->StreamSend(stream, &send_buf, 1, QUIC_SEND_FLAG_NONE, NULL);
+            QUIC_BUFFER *send_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+            if (!send_buf) { free(ack); break; }
+            send_buf->Buffer = ack;
+            send_buf->Length = ack_size;
+            QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, QUIC_SEND_FLAG_NONE, send_buf);
+            if (QUIC_FAILED(send_status)) { free(ack); free(send_buf); }
+        }
         break;
     }
 
@@ -498,7 +622,13 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
         }
 
         const uint8_t *hash = payload;
+        char hex[17];
+        for (int i = 0; i < 8; i++) sprintf(hex + i * 2, "%02x", hash[i]);
+        hex[16] = '\0';
+        LOG("[daemon] CHUNK_QUERY for %s...\n", hex);
+
         BOOLEAN has = ChunkStore_Has(hash);
+        LOG("[daemon]   ChunkStore_Has = %s\n", has ? "TRUE" : "FALSE");
 
         if (has)
         {
@@ -508,6 +638,7 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
 
             if (chunk_buf && ChunkStore_Get(hash, chunk_buf, &chunk_size))
             {
+                LOG("[daemon]   ChunkStore_Get OK, size=%u\n", chunk_size);
                 // Response: [1B type][4B payload_len][32B hash][1B status=0x00][4B size][data]
                 uint32_t resp_payload = WH_HASH_SIZE + 1 + 4 + chunk_size;
                 uint8_t *resp = (uint8_t *)malloc(CTRL_HEADER_SIZE + resp_payload);
@@ -521,28 +652,44 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
                     WriteUint32LE(resp + CTRL_HEADER_SIZE + WH_HASH_SIZE + 1, chunk_size);
                     memcpy(resp + CTRL_HEADER_SIZE + WH_HASH_SIZE + 5, chunk_buf, chunk_size);
 
-                    QUIC_BUFFER send_buf;
-                    send_buf.Buffer = resp;
-                    send_buf.Length = CTRL_HEADER_SIZE + resp_payload;
-                    MsQuic->StreamSend(stream, &send_buf, 1, QUIC_SEND_FLAG_NONE, resp);
-                    // resp freed in SEND_COMPLETE
+                    QUIC_BUFFER *send_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+                    if (!send_buf) { free(resp); free(chunk_buf); break; }
+                    send_buf->Buffer = resp;
+                    send_buf->Length = CTRL_HEADER_SIZE + resp_payload;
+                    QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, QUIC_SEND_FLAG_FIN, send_buf);
+                    LOG("[daemon]   StreamSend status: 0x%x\n", send_status);
+                    if (QUIC_FAILED(send_status)) { free(resp); free(send_buf); }
                 }
+            }
+            else
+            {
+                LOG_ERROR("[daemon]   ChunkStore_Get FAILED (buf=%p), sending not-found\n", chunk_buf);
+                // Fall through to send "not found" instead of leaving client hanging
+                has = FALSE;
             }
             free(chunk_buf);
         }
-        else
+
+        if (!has)
         {
             // Response: [1B type][4B payload_len][32B hash][1B status=0x01]
-            uint8_t resp[CTRL_HEADER_SIZE + WH_HASH_SIZE + 1];
-            resp[0] = CTRL_MSG_CHUNK_QUERY_RESPONSE;
-            WriteUint32LE(resp + 1, WH_HASH_SIZE + 1);
-            memcpy(resp + CTRL_HEADER_SIZE, hash, WH_HASH_SIZE);
-            resp[CTRL_HEADER_SIZE + WH_HASH_SIZE] = 0x01;  // has=no
+            uint32_t resp_size = CTRL_HEADER_SIZE + WH_HASH_SIZE + 1;
+            uint8_t *resp = (uint8_t *)malloc(resp_size);
+            if (resp)
+            {
+                resp[0] = CTRL_MSG_CHUNK_QUERY_RESPONSE;
+                WriteUint32LE(resp + 1, WH_HASH_SIZE + 1);
+                memcpy(resp + CTRL_HEADER_SIZE, hash, WH_HASH_SIZE);
+                resp[CTRL_HEADER_SIZE + WH_HASH_SIZE] = 0x01;  // has=no
 
-            QUIC_BUFFER send_buf;
-            send_buf.Buffer = resp;
-            send_buf.Length = sizeof(resp);
-            MsQuic->StreamSend(stream, &send_buf, 1, QUIC_SEND_FLAG_NONE, NULL);
+                QUIC_BUFFER *send_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+                if (!send_buf) { free(resp); break; }
+                send_buf->Buffer = resp;
+                send_buf->Length = resp_size;
+                QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, QUIC_SEND_FLAG_FIN, send_buf);
+                LOG("[daemon]   StreamSend (not-found) status: 0x%x\n", send_status);
+                if (QUIC_FAILED(send_status)) { free(resp); free(send_buf); }
+            }
         }
         break;
     }
@@ -558,12 +705,86 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
         if (status == 0x00)
         {
             LOG("[daemon] Chunk stored by peer (ACK)\n");
-            // TODO: Extract peer_id from connection context and record
-            // ChunkStore_SetReplicaLocation(hash, peer_id);
+            if (peer_id)
+            {
+                ChunkStore_SetReplicaLocation(hash, peer_id);
+                Ledger_RecordStoredForUs(&g_daemon.ledger, peer_id, (uint64_t)WH_CHUNK_SIZE);
+            }
         }
         else
         {
             LOG("[daemon] Peer rejected chunk store (status: 0x%02x)\n", status);
+        }
+        break;
+    }
+
+    case CTRL_MSG_PROOF_CHALLENGE:
+    {
+        // Payload: [32B hash][32B seed]
+        if (payload_len < WH_HASH_SIZE + WH_HASH_SIZE)
+        {
+            LOG_ERROR("[daemon] PROOF_CHALLENGE too short\n");
+            return;
+        }
+
+        const uint8_t *hash = payload;
+        const uint8_t *seed = payload + WH_HASH_SIZE;
+
+        // Try cached proof first
+        uint8_t proof[WH_HASH_SIZE];
+        uint8_t status = 0x01;  // not found
+
+        if (Proof_LookupCached(hash, seed, proof))
+        {
+            status = 0x00;  // proof found in cache
+        }
+        else if (ChunkStore_Has(hash))
+        {
+            // Compute proof on the fly
+            uint8_t *chunk_data = (uint8_t *)malloc(WH_CHUNK_SIZE);
+            uint32_t chunk_size = 0;
+            if (chunk_data && ChunkStore_Get(hash, chunk_data, &chunk_size))
+            {
+                Proof_Compute(chunk_data, chunk_size, seed, proof);
+                status = 0x00;
+            }
+            free(chunk_data);
+        }
+
+        // Send response: [1B type][4B len=65][32B hash][32B proof][1B status]
+        uint32_t resp_size = CTRL_HEADER_SIZE + WH_HASH_SIZE + WH_HASH_SIZE + 1;
+        uint8_t *resp = (uint8_t *)malloc(resp_size);
+        if (resp)
+        {
+            resp[0] = CTRL_MSG_PROOF_RESPONSE;
+            WriteUint32LE(resp + 1, WH_HASH_SIZE + WH_HASH_SIZE + 1);
+            memcpy(resp + CTRL_HEADER_SIZE, hash, WH_HASH_SIZE);
+            memcpy(resp + CTRL_HEADER_SIZE + WH_HASH_SIZE, proof, WH_HASH_SIZE);
+            resp[CTRL_HEADER_SIZE + WH_HASH_SIZE + WH_HASH_SIZE] = status;
+
+            QUIC_BUFFER *send_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+            if (!send_buf) { free(resp); break; }
+            send_buf->Buffer = resp;
+            send_buf->Length = resp_size;
+            QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, QUIC_SEND_FLAG_NONE, send_buf);
+            if (QUIC_FAILED(send_status)) { free(resp); free(send_buf); }
+        }
+        break;
+    }
+
+    case CTRL_MSG_PROOF_RESPONSE:
+    {
+        // Payload: [32B hash][32B proof][1B status]
+        if (payload_len < WH_HASH_SIZE + WH_HASH_SIZE + 1) return;
+
+        uint8_t status = payload[WH_HASH_SIZE + WH_HASH_SIZE];
+        if (status == 0x00)
+        {
+            LOG("[daemon] Peer proof verified successfully\n");
+        }
+        else
+        {
+            LOG("[daemon] Peer does not have chunk (proof status: 0x%02x)\n", status);
         }
         break;
     }
@@ -577,56 +798,107 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
 static QUIC_STATUS QUIC_API Daemon_StreamCallback(
     HQUIC Stream, void *Context, QUIC_STREAM_EVENT *Event)
 {
-    DAEMON_STATE *state = (DAEMON_STATE *)Context;
-    UNREFERENCED_PARAMETER(state);
+    DAEMON_STREAM_CONTEXT *stream_ctx = (DAEMON_STREAM_CONTEXT *)Context;
 
     switch (Event->Type)
     {
     case QUIC_STREAM_EVENT_RECEIVE:
     {
-        // Accumulate data and parse control messages
+        // Accumulate data into our own buffer (don't parse from MsQuic buffers directly)
         for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++)
         {
             const QUIC_BUFFER *buf = &Event->RECEIVE.Buffers[i];
-            const uint8_t *data = buf->Buffer;
-            uint32_t remaining = buf->Length;
 
-            while (remaining >= CTRL_HEADER_SIZE)
+            // Diagnostic: log raw bytes
+            if (buf->Length > 0 && buf->Buffer)
             {
-                uint8_t msg_type = data[0];
-                uint32_t payload_len = ReadUint32LE(data + 1);
-
-                if (remaining < CTRL_HEADER_SIZE + payload_len)
-                {
-                    break;  // Incomplete message, wait for more data
-                }
-
-                Daemon_HandlePeerMessage(Stream, msg_type,
-                    data + CTRL_HEADER_SIZE, payload_len);
-
-                uint32_t consumed = CTRL_HEADER_SIZE + payload_len;
-                data += consumed;
-                remaining -= consumed;
+                char raw[25] = {0};
+                uint32_t dump_len = buf->Length < 8 ? buf->Length : 8;
+                for (uint32_t d = 0; d < dump_len; d++)
+                    sprintf(raw + d * 3, "%02x ", buf->Buffer[d]);
+                LOG("[daemon] Stream RECEIVE: buf %u/%u, len=%u, raw=[%s]\n",
+                    i, Event->RECEIVE.BufferCount, buf->Length, raw);
             }
+
+            if (stream_ctx && stream_ctx->recv_buf &&
+                stream_ctx->recv_size + buf->Length <= stream_ctx->recv_capacity)
+            {
+                memcpy(stream_ctx->recv_buf + stream_ctx->recv_size,
+                       buf->Buffer, buf->Length);
+                stream_ctx->recv_size += buf->Length;
+            }
+            else if (stream_ctx)
+            {
+                LOG_ERROR("[daemon] Stream RECEIVE: buffer overflow (size=%u + %u > cap=%u)\n",
+                    stream_ctx->recv_size, buf->Length, stream_ctx->recv_capacity);
+            }
+        }
+        break;
+    }
+
+    case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
+    {
+        // Peer sent FIN — parse the complete accumulated message
+        if (!stream_ctx || !stream_ctx->recv_buf)
+        {
+            LOG_ERROR("[daemon] PEER_SEND_SHUTDOWN: no stream context\n");
+            break;
+        }
+
+        PEER_CONNECTION_CONTEXT *peer_ctx = stream_ctx->peer_ctx;
+        const uint8_t *peer_id = (peer_ctx && peer_ctx->peer_id_known)
+            ? peer_ctx->peer_id : NULL;
+
+        LOG("[daemon] PEER_SEND_SHUTDOWN: accumulated %u bytes, parsing...\n",
+            stream_ctx->recv_size);
+
+        uint8_t *data = stream_ctx->recv_buf;
+        uint32_t remaining = stream_ctx->recv_size;
+
+        while (remaining >= CTRL_HEADER_SIZE)
+        {
+            uint8_t msg_type = data[0];
+            uint32_t payload_len = ReadUint32LE(data + 1);
+
+            LOG("[daemon]   msg_type=0x%02x payload_len=%u remaining=%u\n",
+                msg_type, payload_len, remaining);
+
+            if (remaining < CTRL_HEADER_SIZE + payload_len)
+            {
+                LOG_ERROR("[daemon]   Incomplete message, %u < %u\n",
+                    remaining, CTRL_HEADER_SIZE + payload_len);
+                break;
+            }
+
+            Daemon_HandlePeerMessage(Stream, msg_type,
+                data + CTRL_HEADER_SIZE, payload_len, peer_id);
+
+            uint32_t consumed = CTRL_HEADER_SIZE + payload_len;
+            data += consumed;
+            remaining -= consumed;
         }
         break;
     }
 
     case QUIC_STREAM_EVENT_SEND_COMPLETE:
     {
-        // Free dynamically allocated send buffers
-        if (Event->SEND_COMPLETE.ClientContext)
+        // Free heap-allocated QUIC_BUFFER and its data buffer
+        QUIC_BUFFER *sent = (QUIC_BUFFER *)Event->SEND_COMPLETE.ClientContext;
+        if (sent)
         {
-            free(Event->SEND_COMPLETE.ClientContext);
+            free(sent->Buffer);
+            free(sent);
         }
         break;
     }
 
-    case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
-        LOG("[daemon] Peer stream send shutdown\n");
-        break;
-
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
+        // Free per-stream accumulation context
+        if (stream_ctx)
+        {
+            free(stream_ctx->recv_buf);
+            free(stream_ctx);
+        }
         MsQuic->StreamClose(Stream);
         break;
 
@@ -709,8 +981,8 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaConnectionCallback(
     case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
         MsQuic->SetCallbackHandler(
             Event->PEER_STREAM_STARTED.Stream,
-            (void *)Daemon_StreamCallback,
-            &g_daemon
+            (void *)Daemon_ReplicaStreamCallback,
+            NULL
         );
         break;
 
@@ -746,7 +1018,7 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaStreamCallback(
                 if (buf->Length >= CTRL_HEADER_SIZE + payload_len)
                 {
                     Daemon_HandlePeerMessage(Stream, msg_type,
-                        buf->Buffer + CTRL_HEADER_SIZE, payload_len);
+                        buf->Buffer + CTRL_HEADER_SIZE, payload_len, NULL);
                 }
             }
         }
@@ -754,11 +1026,15 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaStreamCallback(
     }
 
     case QUIC_STREAM_EVENT_SEND_COMPLETE:
-        if (Event->SEND_COMPLETE.ClientContext)
+    {
+        QUIC_BUFFER *sent = (QUIC_BUFFER *)Event->SEND_COMPLETE.ClientContext;
+        if (sent)
         {
-            free(Event->SEND_COMPLETE.ClientContext);
+            free(sent->Buffer);
+            free(sent);
         }
         break;
+    }
 
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
         MsQuic->StreamClose(Stream);
@@ -889,15 +1165,20 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
 
         // Send the CHUNK_STORE_REQUEST (copy msg since it may be freed before send completes)
         uint8_t *send_copy = (uint8_t *)malloc(msg_size);
-        if (send_copy)
+        QUIC_BUFFER *send_buf = send_copy ? (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER)) : NULL;
+        if (send_copy && send_buf)
         {
             memcpy(send_copy, msg, msg_size);
-
-            QUIC_BUFFER send_buf;
-            send_buf.Buffer = send_copy;
-            send_buf.Length = msg_size;
-            MsQuic->StreamSend(stream, &send_buf, 1,
-                QUIC_SEND_FLAG_FIN, send_copy);  // FIN after sending
+            send_buf->Buffer = send_copy;
+            send_buf->Length = msg_size;
+            QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1,
+                QUIC_SEND_FLAG_FIN, send_buf);  // FIN after sending
+            if (QUIC_FAILED(send_status)) { free(send_copy); free(send_buf); }
+        }
+        else
+        {
+            free(send_copy);
+            free(send_buf);
         }
 
         sent++;
@@ -909,6 +1190,310 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
     {
         LOG("[replicate] Sent chunk to %u peers\n", sent);
     }
+}
+
+//=============================================================================
+// Remote Chunk Fetch — synchronous QUIC fetch from a single peer
+//=============================================================================
+
+static QUIC_STATUS QUIC_API Daemon_FetchStreamCallback(
+    HQUIC Stream, void *Context, QUIC_STREAM_EVENT *Event)
+{
+    CHUNK_FETCH_CONTEXT *ctx = (CHUNK_FETCH_CONTEXT *)Context;
+
+    switch (Event->Type)
+    {
+    case QUIC_STREAM_EVENT_RECEIVE:
+    {
+        LOG("[fetch] Stream RECEIVE: %llu bytes (total so far: %u)\n",
+            (unsigned long long)Event->RECEIVE.TotalBufferLength, ctx->recv_size);
+        // Accumulate received data into recv_buf
+        for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++)
+        {
+            const QUIC_BUFFER *buf = &Event->RECEIVE.Buffers[i];
+            uint32_t needed = ctx->recv_size + buf->Length;
+            if (needed <= ctx->recv_capacity)
+            {
+                memcpy(ctx->recv_buf + ctx->recv_size, buf->Buffer, buf->Length);
+                ctx->recv_size += buf->Length;
+            }
+        }
+        break;
+    }
+
+    case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
+    {
+        LOG("[fetch] PEER_SEND_SHUTDOWN, recv_size=%u\n", ctx->recv_size);
+        // Peer sent FIN — parse the complete CHUNK_QUERY_RESPONSE
+        // Format: [1B type=0x08][4B payload_len][32B hash][1B status][4B size][data]
+        if (ctx->recv_size >= CTRL_HEADER_SIZE)
+        {
+            uint8_t msg_type = ctx->recv_buf[0];
+            uint32_t payload_len = ReadUint32LE(ctx->recv_buf + 1);
+
+            if (msg_type == CTRL_MSG_CHUNK_QUERY_RESPONSE &&
+                ctx->recv_size >= CTRL_HEADER_SIZE + payload_len &&
+                payload_len >= WH_HASH_SIZE + 1)
+            {
+                const uint8_t *payload = ctx->recv_buf + CTRL_HEADER_SIZE;
+                uint8_t status = payload[WH_HASH_SIZE];
+
+                if (status == 0x00 && payload_len >= WH_HASH_SIZE + 1 + 4)
+                {
+                    // Peer has the chunk
+                    uint32_t chunk_size = ReadUint32LE(payload + WH_HASH_SIZE + 1);
+                    if (chunk_size <= ctx->data_capacity &&
+                        payload_len >= WH_HASH_SIZE + 5 + chunk_size)
+                    {
+                        memcpy(ctx->data_buf, payload + WH_HASH_SIZE + 5, chunk_size);
+                        ctx->data_size = chunk_size;
+                        InterlockedExchange(&ctx->status, 1);  // success
+                    }
+                    else
+                    {
+                        InterlockedExchange(&ctx->status, 2);  // failed (too large)
+                    }
+                }
+                else if (status == 0x01)
+                {
+                    InterlockedExchange(&ctx->status, 3);  // not_found
+                }
+                else
+                {
+                    InterlockedExchange(&ctx->status, 2);  // failed
+                }
+            }
+            else
+            {
+                InterlockedExchange(&ctx->status, 2);  // failed (bad message)
+            }
+        }
+        else
+        {
+            InterlockedExchange(&ctx->status, 2);  // failed (no data)
+        }
+        SetEvent(ctx->completion_event);
+        break;
+    }
+
+    case QUIC_STREAM_EVENT_SEND_COMPLETE:
+    {
+        QUIC_BUFFER *sent = (QUIC_BUFFER *)Event->SEND_COMPLETE.ClientContext;
+        if (sent)
+        {
+            free(sent->Buffer);
+            free(sent);
+        }
+        break;
+    }
+
+    case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
+        // Signal failure if not already signaled
+        if (InterlockedCompareExchange(&ctx->status, 2, 0) == 0)
+            SetEvent(ctx->completion_event);
+        MsQuic->StreamClose(Stream);
+        break;
+
+    default:
+        break;
+    }
+
+    return QUIC_STATUS_SUCCESS;
+}
+
+static QUIC_STATUS QUIC_API Daemon_FetchConnectionCallback(
+    HQUIC Connection, void *Context, QUIC_CONNECTION_EVENT *Event)
+{
+    CHUNK_FETCH_CONTEXT *ctx = (CHUNK_FETCH_CONTEXT *)Context;
+
+    switch (Event->Type)
+    {
+    case QUIC_CONNECTION_EVENT_CONNECTED:
+    {
+        LOG("[fetch] Connected, sending CHUNK_QUERY\n");
+
+        // Open a bidirectional stream and send CHUNK_QUERY
+        HQUIC stream = NULL;
+        QUIC_STATUS status = MsQuic->StreamOpen(
+            Connection, QUIC_STREAM_OPEN_FLAG_NONE,
+            Daemon_FetchStreamCallback, ctx, &stream);
+        if (QUIC_FAILED(status))
+        {
+            LOG_ERROR("[fetch] StreamOpen failed: 0x%x\n", status);
+            InterlockedExchange(&ctx->status, 2);
+            SetEvent(ctx->completion_event);
+            break;
+        }
+
+        status = MsQuic->StreamStart(stream, QUIC_STREAM_START_FLAG_NONE);
+        if (QUIC_FAILED(status))
+        {
+            LOG_ERROR("[fetch] StreamStart failed: 0x%x\n", status);
+            MsQuic->StreamClose(stream);
+            InterlockedExchange(&ctx->status, 2);
+            SetEvent(ctx->completion_event);
+            break;
+        }
+
+        // Build CHUNK_QUERY message: [1B type][4B payload_len][32B hash]
+        uint32_t msg_size = CTRL_HEADER_SIZE + WH_HASH_SIZE;
+        uint8_t *msg = (uint8_t *)malloc(msg_size);
+        if (!msg)
+        {
+            InterlockedExchange(&ctx->status, 2);
+            SetEvent(ctx->completion_event);
+            break;
+        }
+
+        msg[0] = CTRL_MSG_CHUNK_QUERY;
+        WriteUint32LE(msg + 1, WH_HASH_SIZE);
+        memcpy(msg + CTRL_HEADER_SIZE, ctx->target_hash, WH_HASH_SIZE);
+
+        QUIC_BUFFER *send_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+        if (!send_buf)
+        {
+            free(msg);
+            InterlockedExchange(&ctx->status, 2);
+            SetEvent(ctx->completion_event);
+            break;
+        }
+        send_buf->Buffer = msg;
+        send_buf->Length = msg_size;
+        QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, QUIC_SEND_FLAG_FIN, send_buf);
+        if (QUIC_FAILED(send_status))
+        {
+            free(msg);
+            free(send_buf);
+            InterlockedExchange(&ctx->status, 2);
+            SetEvent(ctx->completion_event);
+        }
+        break;
+    }
+
+    case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
+        // We initiated the stream, so peer shouldn't start one — ignore
+        MsQuic->StreamClose(Event->PEER_STREAM_STARTED.Stream);
+        break;
+
+    case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
+    case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
+        // Signal failure if not already signaled
+        if (InterlockedCompareExchange(&ctx->status, 2, 0) == 0)
+            SetEvent(ctx->completion_event);
+        break;
+
+    case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
+        // Signal failure if not already signaled (safety net)
+        if (InterlockedCompareExchange(&ctx->status, 2, 0) == 0)
+            SetEvent(ctx->completion_event);
+        // Do NOT call ConnectionClose here — caller owns the close
+        break;
+
+    default:
+        break;
+    }
+
+    return QUIC_STATUS_SUCCESS;
+}
+
+// Synchronous blocking function: connect to a peer, send CHUNK_QUERY,
+// wait for CHUNK_QUERY_RESPONSE, return chunk data.
+// Called from IPC thread. Returns TRUE on success with data in data_out.
+static BOOLEAN Daemon_FetchChunkFromPeer(
+    const char *addr_str, uint16_t port,
+    const uint8_t hash[WH_HASH_SIZE],
+    uint8_t *data_out, uint32_t *size_out)
+{
+    if (!DaemonClientConfig || !MsQuic)
+        return FALSE;
+
+    // Allocate fetch context
+    CHUNK_FETCH_CONTEXT *ctx = (CHUNK_FETCH_CONTEXT *)calloc(1, sizeof(CHUNK_FETCH_CONTEXT));
+    if (!ctx) return FALSE;
+
+    ctx->completion_event = CreateEvent(NULL, TRUE, FALSE, NULL);  // manual reset
+    if (!ctx->completion_event)
+    {
+        free(ctx);
+        return FALSE;
+    }
+
+    ctx->data_buf = data_out;
+    ctx->data_capacity = WH_CHUNK_SIZE;
+    ctx->data_size = 0;
+    ctx->status = 0;  // pending
+    memcpy(ctx->target_hash, hash, WH_HASH_SIZE);
+
+    // Allocate receive buffer
+    ctx->recv_capacity = CTRL_HEADER_SIZE + WH_HASH_SIZE + 5 + WH_CHUNK_SIZE;
+    ctx->recv_buf = (uint8_t *)malloc(ctx->recv_capacity);
+    if (!ctx->recv_buf)
+    {
+        CloseHandle(ctx->completion_event);
+        free(ctx);
+        return FALSE;
+    }
+    ctx->recv_size = 0;
+
+    LOG("[fetch] Connecting to %s:%u for chunk fetch\n", addr_str, port);
+
+    // Open QUIC connection
+    HQUIC conn = NULL;
+    QUIC_STATUS status = MsQuic->ConnectionOpen(
+        DaemonRegistration, Daemon_FetchConnectionCallback, ctx, &conn);
+    if (QUIC_FAILED(status))
+    {
+        LOG_ERROR("[fetch] ConnectionOpen failed: 0x%x\n", status);
+        free(ctx->recv_buf);
+        CloseHandle(ctx->completion_event);
+        free(ctx);
+        return FALSE;
+    }
+
+    status = MsQuic->ConnectionStart(
+        conn, DaemonClientConfig, QUIC_ADDRESS_FAMILY_INET, addr_str, port);
+    if (QUIC_FAILED(status))
+    {
+        LOG_ERROR("[fetch] ConnectionStart failed: 0x%x\n", status);
+        MsQuic->ConnectionClose(conn);
+        free(ctx->recv_buf);
+        CloseHandle(ctx->completion_event);
+        free(ctx);
+        return FALSE;
+    }
+
+    // Wait for completion (5s timeout)
+    DWORD wait_result = WaitForSingleObject(ctx->completion_event, 5000);
+
+    // Close connection synchronously — blocks until all callbacks complete
+    MsQuic->ConnectionClose(conn);
+
+    BOOLEAN success = FALSE;
+    if (wait_result == WAIT_OBJECT_0 && ctx->status == 1)
+    {
+        *size_out = ctx->data_size;
+        success = TRUE;
+        LOG("[fetch] Successfully fetched %u bytes from %s:%u\n",
+            ctx->data_size, addr_str, port);
+    }
+    else if (wait_result == WAIT_TIMEOUT)
+    {
+        LOG("[fetch] Fetch timed out after 5s from %s:%u\n", addr_str, port);
+    }
+    else if (ctx->status == 3)
+    {
+        LOG("[fetch] Peer %s:%u does not have chunk\n", addr_str, port);
+    }
+    else
+    {
+        LOG("[fetch] Fetch failed from %s:%u (status=%ld)\n",
+            addr_str, port, ctx->status);
+    }
+
+    free(ctx->recv_buf);
+    CloseHandle(ctx->completion_event);
+    free(ctx);
+    return success;
 }
 
 //=============================================================================
@@ -962,19 +1547,7 @@ static void Daemon_OnPeersFound(void *context, const DISCOVERED_PEER *peers, uin
 
 static BOOLEAN Daemon_ConnectRelay(void)
 {
-    // Load or generate identity keypair
-    char* identity_path = PeerID_GetDefaultPath();
-    if (!PeerID_LoadOrGenerate(&g_daemon.keypair, identity_path))
-    {
-        LOG_ERROR("[daemon] Failed to load/generate keypair\n");
-        free(identity_path);
-        return FALSE;
-    }
-    free(identity_path);
-
-    char peer_hex[65];
-    PeerID_ToHex(g_daemon.keypair.public_key, peer_hex);
-    LOG("[daemon] PeerID: %s\n", peer_hex);
+    // Keypair already loaded in main() init sequence
 
     // Discover our endpoints
     ENDPOINT endpoints[MAX_ENDPOINTS];
@@ -1140,6 +1713,21 @@ static uint32_t Daemon_HandleIpcCommand(
         LOG("[daemon] Stored %u/%u chunks for %s\n",
             stored, manifest->chunk_count, filepath);
 
+        // Erasure coding — generate parity shards for durability
+        EC_GROUP *ec_group = NULL;
+        if (Config_GetUint64(g_daemon.config, "ec_enabled", CONFIG_DEFAULT_EC_ENABLED))
+        {
+            uint8_t ec_k = (uint8_t)Config_GetUint64(g_daemon.config, "ec_data_shards",
+                                                        CONFIG_DEFAULT_EC_DATA_SHARDS);
+            uint8_t ec_m = (uint8_t)Config_GetUint64(g_daemon.config, "ec_parity_shards",
+                                                        CONFIG_DEFAULT_EC_PARITY_SHARDS);
+            ec_group = ErasureCoding_Encode(manifest, ec_k, ec_m);
+            if (ec_group)
+                LOG("[daemon] EC: %u stripes with RS(%u,%u)\n", ec_group->stripe_count, ec_k, ec_m);
+            else
+                LOG("[daemon] EC encoding failed (continuing without parity)\n");
+        }
+
         // Trigger replication to discovered peers (async, non-blocking)
         for (uint32_t i = 0; i < manifest->chunk_count; i++)
         {
@@ -1147,13 +1735,88 @@ static uint32_t Daemon_HandleIpcCommand(
             if (ChunkStore_Get(manifest->chunks[i].hash, chunk_buf, &chunk_size))
             {
                 Daemon_ReplicateChunk(manifest->chunks[i].hash, chunk_buf, chunk_size);
+
+                // Pre-cache proofs for stored chunks
+                Proof_PrecomputeAndCache(manifest->chunks[i].hash, chunk_buf, chunk_size);
+            }
+
+            // Announce chunk to DHT
+            if (g_daemon.dht_enabled)
+            {
+                DhtNode_AnnounceChunk(&g_daemon.dht_node, manifest->chunks[i].hash, g_daemon.listen_port);
+            }
+        }
+
+        // Announce and replicate parity chunks
+        if (ec_group && g_daemon.dht_enabled)
+        {
+            for (uint32_t s = 0; s < ec_group->stripe_count; s++)
+            {
+                for (uint8_t p = 0; p < ec_group->m; p++)
+                {
+                    DhtNode_AnnounceChunk(&g_daemon.dht_node,
+                                           ec_group->stripes[s].parity_hashes[p], g_daemon.listen_port);
+                    uint32_t parity_size = 0;
+                    if (ChunkStore_Get(ec_group->stripes[s].parity_hashes[p],
+                                        chunk_buf, &parity_size))
+                    {
+                        Daemon_ReplicateChunk(ec_group->stripes[s].parity_hashes[p],
+                                               chunk_buf, parity_size);
+                        Proof_PrecomputeAndCache(ec_group->stripes[s].parity_hashes[p],
+                                                  chunk_buf, parity_size);
+                    }
+                }
             }
         }
 
         free(chunk_buf);
 
-        // Response: [status][32B manifest_hash][4B chunk_count]
-        if (response_capacity < 1 + WH_HASH_SIZE + 4)
+        // Persist EC metadata (EC_GROUP + manifest for recovery)
+        if (ec_group)
+        {
+            char ec_dir[MAX_PATH];
+            char ec_path[MAX_PATH];
+            const char *home_ec = NULL;
+#ifdef _WIN32
+            home_ec = getenv("USERPROFILE");
+            if (home_ec)
+            {
+                snprintf(ec_dir, sizeof(ec_dir), "%s\\.wormhole\\ec", home_ec);
+                CreateDirectoryA(ec_dir, NULL);
+
+                char hex[65];
+                for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+                    sprintf(hex + hi * 2, "%02x", manifest->manifest_hash[hi]);
+                hex[64] = '\0';
+                snprintf(ec_path, sizeof(ec_path), "%s\\%s.ec", ec_dir, hex);
+            }
+#else
+            home_ec = getenv("HOME");
+            if (home_ec)
+            {
+                snprintf(ec_dir, sizeof(ec_dir), "%s/.wormhole/ec", home_ec);
+                mkdir(ec_dir, 0755);
+
+                char hex[65];
+                for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+                    sprintf(hex + hi * 2, "%02x", manifest->manifest_hash[hi]);
+                hex[64] = '\0';
+                snprintf(ec_path, sizeof(ec_path), "%s/%s.ec", ec_dir, hex);
+            }
+#endif
+            if (home_ec)
+            {
+                if (ErasureCoding_SaveMetadata(ec_path, ec_group, manifest))
+                    LOG("[daemon] EC metadata saved to %s\n", ec_path);
+                else
+                    LOG("[daemon] Failed to save EC metadata\n");
+            }
+            ErasureCoding_DestroyGroup(ec_group);
+        }
+
+        // Response: [status][32B manifest_hash][4B chunk_count][32B hash_0]...[32B hash_N]
+        uint32_t resp_size = 1 + WH_HASH_SIZE + 4 + (WH_HASH_SIZE * manifest->chunk_count);
+        if (response_capacity < resp_size)
         {
             Manifest_Destroy(manifest);
             response_out[0] = IPC_STATUS_ERROR;
@@ -1163,12 +1826,21 @@ static uint32_t Daemon_HandleIpcCommand(
         response_out[0] = IPC_STATUS_OK;
         memcpy(response_out + 1, manifest->manifest_hash, WH_HASH_SIZE);
         WriteUint32LE(response_out + 1 + WH_HASH_SIZE, manifest->chunk_count);
+
+        // Append individual chunk hashes
+        uint32_t offset = 1 + WH_HASH_SIZE + 4;
+        for (uint32_t ci = 0; ci < manifest->chunk_count; ci++)
+        {
+            memcpy(response_out + offset, manifest->chunks[ci].hash, WH_HASH_SIZE);
+            offset += WH_HASH_SIZE;
+        }
         Manifest_Destroy(manifest);
 
-        return 1 + WH_HASH_SIZE + 4;  // 37 bytes
+        return resp_size;
     }
 
     //--- GET: retrieve a single chunk by hash ---
+    // Priority: 1) local store  2) discovered peers  3) DHT lookup
     case IPC_CMD_GET:
     {
         if (payload_size < WH_HASH_SIZE)
@@ -1179,15 +1851,6 @@ static uint32_t Daemon_HandleIpcCommand(
 
         const uint8_t *hash = payload;
 
-        // Check if chunk exists
-        if (!ChunkStore_Has(hash))
-        {
-            response_out[0] = IPC_STATUS_NOT_FOUND;
-            return 1;
-        }
-
-        // Read chunk data
-        uint32_t data_size = 0;
         // Response: [status][4B data_size][data]
         if (response_capacity < 1 + 4 + WH_CHUNK_SIZE)
         {
@@ -1195,16 +1858,126 @@ static uint32_t Daemon_HandleIpcCommand(
             return 1;
         }
 
-        if (!ChunkStore_Get(hash, response_out + 1 + 4, &data_size))
+        //--- Phase 1: Local ChunkStore (fast path) ---
+        if (ChunkStore_Has(hash))
+        {
+            uint32_t data_size = 0;
+            if (ChunkStore_Get(hash, response_out + 1 + 4, &data_size))
+            {
+                response_out[0] = IPC_STATUS_OK;
+                WriteUint32LE(response_out + 1, data_size);
+                return 1 + 4 + data_size;
+            }
+        }
+
+        // Allocate temp buffer for remote fetch attempts
+        uint8_t *fetch_buf = (uint8_t *)malloc(WH_CHUNK_SIZE);
+        if (!fetch_buf)
         {
             response_out[0] = IPC_STATUS_ERROR;
             return 1;
         }
 
-        response_out[0] = IPC_STATUS_OK;
-        WriteUint32LE(response_out + 1, data_size);
+        //--- Phase 2: Discovered peers (relay-known endpoints) ---
+        LONG peer_count = InterlockedCompareExchange(&g_daemon.discovered_peer_count, 0, 0);
+        for (LONG i = 0; i < peer_count; i++)
+        {
+            DISCOVERED_PEER *peer = &g_daemon.discovered_peers[i];
 
-        return 1 + 4 + data_size;
+            // Find first IPv4 endpoint
+            const ENDPOINT *ep = NULL;
+            for (uint16_t j = 0; j < peer->endpoint_count; j++)
+            {
+                if (peer->endpoints[j].addr_type == 0x04)
+                {
+                    ep = &peer->endpoints[j];
+                    break;
+                }
+            }
+            if (!ep) continue;
+
+            char addr_str[64];
+            snprintf(addr_str, sizeof(addr_str), "%u.%u.%u.%u",
+                     ep->addr[0], ep->addr[1], ep->addr[2], ep->addr[3]);
+
+            uint32_t fetched_size = 0;
+            if (Daemon_FetchChunkFromPeer(addr_str, ep->port, hash,
+                                           fetch_buf, &fetched_size))
+            {
+                // Cache locally
+                ChunkStore_Put(hash, fetch_buf, fetched_size);
+                InterlockedIncrement(&g_daemon.chunk_count);
+                InterlockedExchangeAdd64(&g_daemon.storage_used, (LONGLONG)fetched_size);
+
+                // Return to client
+                response_out[0] = IPC_STATUS_OK;
+                WriteUint32LE(response_out + 1, fetched_size);
+                memcpy(response_out + 1 + 4, fetch_buf, fetched_size);
+                free(fetch_buf);
+                return 1 + 4 + fetched_size;
+            }
+        }
+
+        //--- Phase 3: DHT lookup ---
+        if (g_daemon.dht_enabled)
+        {
+            LOG("[fetch] Chunk not found on discovered peers, trying DHT...\n");
+
+            // Check cached DHT locations first, and kick off async FIND_VALUE if none
+            DHT_LOCATION locations[DHT_STORE_MAX_LOCATIONS];
+            uint32_t loc_count = DhtNode_FindChunkLocations(
+                &g_daemon.dht_node, hash, locations, DHT_STORE_MAX_LOCATIONS);
+
+            // If no cached results, poll for async FIND_VALUE responses
+            if (loc_count == 0)
+            {
+                for (int poll = 0; poll < 20; poll++)
+                {
+                    Sleep(150);
+                    loc_count = DhtStore_Get(&g_daemon.dht_node.value_store,
+                                              hash, locations, DHT_STORE_MAX_LOCATIONS);
+                    if (loc_count > 0) break;
+                }
+            }
+
+            // Try each DHT location
+            for (uint32_t i = 0; i < loc_count; i++)
+            {
+                DHT_LOCATION *loc = &locations[i];
+
+                // Skip non-IPv4
+                if (loc->addr_type != 0x04) continue;
+
+                // Skip zero-address (self-entries from DhtNode_AnnounceChunk)
+                uint8_t zero_addr[16] = {0};
+                if (memcmp(loc->addr, zero_addr, 16) == 0) continue;
+
+                char addr_str[64];
+                snprintf(addr_str, sizeof(addr_str), "%u.%u.%u.%u",
+                         loc->addr[0], loc->addr[1], loc->addr[2], loc->addr[3]);
+
+                uint32_t fetched_size = 0;
+                if (Daemon_FetchChunkFromPeer(addr_str, loc->port, hash,
+                                               fetch_buf, &fetched_size))
+                {
+                    // Cache locally
+                    ChunkStore_Put(hash, fetch_buf, fetched_size);
+                    InterlockedIncrement(&g_daemon.chunk_count);
+                    InterlockedExchangeAdd64(&g_daemon.storage_used, (LONGLONG)fetched_size);
+
+                    // Return to client
+                    response_out[0] = IPC_STATUS_OK;
+                    WriteUint32LE(response_out + 1, fetched_size);
+                    memcpy(response_out + 1 + 4, fetch_buf, fetched_size);
+                    free(fetch_buf);
+                    return 1 + 4 + fetched_size;
+                }
+            }
+        }
+
+        free(fetch_buf);
+        response_out[0] = IPC_STATUS_NOT_FOUND;
+        return 1;
     }
 
     //--- STATUS: return daemon stats ---
@@ -1229,6 +2002,37 @@ static uint32_t Daemon_HandleIpcCommand(
         response_out[18] = DaemonListener ? 1 : 0;
 
         return 19;
+    }
+
+    //--- DHT_STATUS: return DHT stats ---
+    case IPC_CMD_DHT_STATUS:
+    {
+        // Response: [status][4B dht_nodes][4B dht_values][8B msgs_sent][8B msgs_received]
+        if (response_capacity < 1 + 4 + 4 + 8 + 8)
+        {
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        response_out[0] = IPC_STATUS_OK;
+
+        if (g_daemon.dht_enabled)
+        {
+            WriteUint32LE(response_out + 1, DhtNode_GetNodeCount(&g_daemon.dht_node));
+            WriteUint32LE(response_out + 5, DhtStore_GetCount(&g_daemon.dht_node.value_store));
+            WriteUint64LE(response_out + 9, g_daemon.dht_node.msgs_sent);
+            WriteUint64LE(response_out + 17, g_daemon.dht_node.msgs_received);
+        }
+        else
+        {
+            // DHT not initialized — return zeroes
+            WriteUint32LE(response_out + 1, 0);
+            WriteUint32LE(response_out + 5, 0);
+            WriteUint64LE(response_out + 9, 0);
+            WriteUint64LE(response_out + 17, 0);
+        }
+
+        return 25;
     }
 
     //--- SHUTDOWN: clean daemon shutdown ---
@@ -1256,7 +2060,6 @@ static void Daemon_PrintBanner(void)
     LOG("=== wormholed - Wormhole Persistent Node Daemon ===\n");
     LOG("  Port:  %u\n", g_daemon.listen_port);
     LOG("  Relay: %s\n", g_daemon.relay_enabled ? "enabled" : "disabled");
-    LOG("  IPC:   %s\n", IPC_PIPE_NAME);
     LOG("================================================\n");
 }
 
@@ -1264,22 +2067,55 @@ static void Daemon_PrintUsage(void)
 {
     printf("Usage: wormholed [options]\n");
     printf("Options:\n");
-    printf("  --port <port>     QUIC listener port (default: %u)\n", DAEMON_DEFAULT_PORT);
-    printf("  --no-relay        Disable relay connection\n");
-    printf("  --help            Show this help\n");
+    printf("  --port <port>           QUIC listener port (default: %u)\n", DAEMON_DEFAULT_PORT);
+    printf("  --data-dir <path>       Data directory (default: ~/.wormhole)\n");
+    printf("  --dht-port <port>       DHT UDP port (default: %u)\n", CONFIG_DEFAULT_DHT_PORT);
+    printf("  --bootstrap <host:port> DHT bootstrap peer (default: relay server)\n");
+    printf("  --no-relay              Disable relay connection\n");
+    printf("  --help                  Show this help\n");
 }
 
 int main(int argc, char *argv[])
 {
+    // First pass: handle --data-dir before anything else (affects all path construction)
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "--data-dir") == 0 && i + 1 < argc)
+        {
+            const char *dir = argv[i + 1];
+#ifdef _WIN32
+            _putenv_s("USERPROFILE", dir);
+#else
+            setenv("HOME", dir, 1);
+#endif
+            LOG("[daemon] Data directory: %s\n", dir);
+            break;
+        }
+    }
+
     // Parse command-line arguments
     g_daemon.listen_port = DAEMON_DEFAULT_PORT;
     g_daemon.relay_enabled = TRUE;
+    uint16_t cli_dht_port = 0;
+    const char *cli_bootstrap = NULL;
 
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "--port") == 0 && i + 1 < argc)
         {
             g_daemon.listen_port = (uint16_t)atoi(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--data-dir") == 0 && i + 1 < argc)
+        {
+            i++;  // Already handled in first pass
+        }
+        else if (strcmp(argv[i], "--dht-port") == 0 && i + 1 < argc)
+        {
+            cli_dht_port = (uint16_t)atoi(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--bootstrap") == 0 && i + 1 < argc)
+        {
+            cli_bootstrap = argv[++i];
         }
         else if (strcmp(argv[i], "--no-relay") == 0)
         {
@@ -1331,6 +2167,49 @@ int main(int argc, char *argv[])
         LOG("[daemon] Using default config (quota: %u GB)\n", CONFIG_DEFAULT_MAX_STORAGE_GB);
     }
 
+    // Step 0b: Initialize libsodium + load/generate identity keypair
+    if (sodium_init() < 0)
+    {
+        LOG_ERROR("[daemon] Failed to initialize libsodium\n");
+        return 1;
+    }
+
+    // Use USERPROFILE/HOME (redirected by --data-dir) so each daemon gets its own identity
+    {
+#ifdef _WIN32
+        const char *home = getenv("USERPROFILE");
+#else
+        const char *home = getenv("HOME");
+#endif
+        if (!home)
+        {
+            LOG_ERROR("[daemon] Failed to get home directory for identity\n");
+            return 1;
+        }
+
+        char identity_path[512];
+        char wormhole_dir[512];
+#ifdef _WIN32
+        snprintf(wormhole_dir, sizeof(wormhole_dir), "%s\\.wormhole", home);
+        CreateDirectoryA(wormhole_dir, NULL);
+        snprintf(identity_path, sizeof(identity_path), "%s\\.wormhole\\identity", home);
+#else
+        snprintf(wormhole_dir, sizeof(wormhole_dir), "%s/.wormhole", home);
+        mkdir(wormhole_dir, 0700);
+        snprintf(identity_path, sizeof(identity_path), "%s/.wormhole/identity", home);
+#endif
+
+        if (!PeerID_LoadOrGenerate(&g_daemon.keypair, identity_path))
+        {
+            LOG_ERROR("[daemon] Failed to load/generate keypair\n");
+            return 1;
+        }
+
+        char peer_hex[65];
+        PeerID_ToHex(g_daemon.keypair.public_key, peer_hex);
+        LOG("[daemon] PeerID: %s\n", peer_hex);
+    }
+
     Daemon_PrintBanner();
 
     // Step 1: Initialize chunk store
@@ -1369,8 +2248,11 @@ int main(int argc, char *argv[])
         goto cleanup;
     }
 
-    // Step 5: Start IPC server
-    if (!IpcServer_Start(Daemon_HandleIpcCommand, &g_daemon))
+    // Step 5: Start IPC server (pipe name derived from QUIC port)
+    char ipc_pipe_name[256];
+    snprintf(ipc_pipe_name, sizeof(ipc_pipe_name), "%s%u",
+             IPC_PIPE_PREFIX, g_daemon.listen_port);
+    if (!IpcServer_Start(Daemon_HandleIpcCommand, &g_daemon, ipc_pipe_name))
     {
         LOG_ERROR("[daemon] Failed to start IPC server\n");
         goto cleanup;
@@ -1386,11 +2268,92 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Step 7: Initialize DHT
+    g_daemon.dht_enabled = (BOOLEAN)Config_GetUint64(g_daemon.config, "dht_enabled",
+                                                       CONFIG_DEFAULT_DHT_ENABLED);
+    g_daemon.dht_port = cli_dht_port ? cli_dht_port
+        : (uint16_t)Config_GetUint64(g_daemon.config, "dht_port",
+                                       CONFIG_DEFAULT_DHT_PORT);
+
+    if (g_daemon.dht_enabled)
+    {
+        const char *bootstrap_host;
+        uint16_t bootstrap_port;
+
+        if (cli_bootstrap)
+        {
+            // Parse "host:port" — split on last ':'
+            static char bootstrap_buf[256];
+            strncpy(bootstrap_buf, cli_bootstrap, sizeof(bootstrap_buf) - 1);
+            bootstrap_buf[sizeof(bootstrap_buf) - 1] = '\0';
+            char *colon = strrchr(bootstrap_buf, ':');
+            if (colon)
+            {
+                *colon = '\0';
+                bootstrap_host = bootstrap_buf;
+                bootstrap_port = (uint16_t)atoi(colon + 1);
+            }
+            else
+            {
+                bootstrap_host = bootstrap_buf;
+                bootstrap_port = g_daemon.dht_port;
+            }
+            LOG("[daemon] DHT bootstrap peer: %s:%u\n", bootstrap_host, bootstrap_port);
+        }
+        else
+        {
+            bootstrap_host = Config_GetString(g_daemon.config, "relay_host",
+                                                CONFIG_DEFAULT_RELAY_HOST);
+            bootstrap_port = g_daemon.dht_port;
+        }
+
+        if (DhtNode_Init(&g_daemon.dht_node, &g_daemon.keypair,
+                          g_daemon.dht_port, bootstrap_host, bootstrap_port))
+        {
+            LOG("[daemon] DHT node initialized on port %u\n", g_daemon.dht_port);
+            DhtNode_Bootstrap(&g_daemon.dht_node);
+        }
+        else
+        {
+            LOG("[daemon] DHT init failed (continuing without DHT)\n");
+            g_daemon.dht_enabled = FALSE;
+        }
+    }
+
+    // Step 8: Initialize incentives ledger
+    Ledger_Init(&g_daemon.ledger);
+    {
+        char ledger_path[MAX_PATH];
+        BOOLEAN loaded = FALSE;
+#ifdef _WIN32
+        const char *home_ldgr = getenv("USERPROFILE");
+        if (home_ldgr)
+        {
+            snprintf(ledger_path, sizeof(ledger_path), "%s\\.wormhole\\storage_ledger.bin", home_ldgr);
+            loaded = Ledger_Load(&g_daemon.ledger, ledger_path);
+        }
+#else
+        const char *home_ldgr = getenv("HOME");
+        if (home_ldgr)
+        {
+            snprintf(ledger_path, sizeof(ledger_path), "%s/.wormhole/storage_ledger.bin", home_ldgr);
+            loaded = Ledger_Load(&g_daemon.ledger, ledger_path);
+        }
+#endif
+        if (loaded)
+            LOG("[daemon] Loaded ledger (%u peers)\n", g_daemon.ledger.peer_count);
+        else
+            LOG("[daemon] Starting with fresh ledger\n");
+    }
+
     LOG("[daemon] Daemon is running. Press Ctrl+C to stop.\n");
 
-    // Main loop: poll relay + check shutdown flag
+    // Main loop: poll relay + DHT + check shutdown flag
     time_t last_keepalive = time(NULL);
     time_t last_discovery = 0;  // Trigger immediately on first loop
+    time_t last_dht_refresh = time(NULL);
+    time_t last_health_check = time(NULL);
+    time_t last_dht_expire = time(NULL);
 
     while (InterlockedCompareExchange(&g_daemon.shutdown_requested, 0, 0) == 0)
     {
@@ -1420,6 +2383,196 @@ int main(int argc, char *argv[])
             // No relay — just sleep to avoid busy-loop
             Sleep(100);
         }
+
+        // Poll DHT for incoming messages (non-blocking)
+        if (g_daemon.dht_enabled)
+        {
+            DhtNode_Poll(&g_daemon.dht_node, 0);
+
+            time_t now = time(NULL);
+
+            // Refresh DHT buckets periodically
+            if (now - last_dht_refresh >= DHT_BUCKET_REFRESH_SEC)
+            {
+                DhtNode_RefreshBuckets(&g_daemon.dht_node);
+                last_dht_refresh = now;
+            }
+
+            // Expire pending RPCs and stale value store entries
+            if (now - last_dht_expire >= 5)
+            {
+                DhtNode_ExpirePendingRPCs(&g_daemon.dht_node);
+                DhtStore_ExpireOld(&g_daemon.dht_node.value_store);
+                last_dht_expire = now;
+            }
+        }
+
+        // Health check periodically (runs independently of DHT)
+        {
+            time_t now = time(NULL);
+            uint64_t health_interval = Config_GetUint64(g_daemon.config,
+                "health_check_interval_sec", CONFIG_DEFAULT_HEALTH_CHECK_SEC);
+            if (now - last_health_check >= (time_t)health_interval)
+            {
+                HEALTH_STATS stats = Health_CheckChunks(100);
+                if (stats.chunks_checked > 0)
+                {
+                    LOG("[daemon] Health check: %u checked, %u healthy, %u degraded, %u critical\n",
+                        stats.chunks_checked, stats.chunks_healthy,
+                        stats.chunks_degraded, stats.chunks_critical);
+                    fflush(stdout);
+                }
+
+                // Replication pass: replicate degraded chunks to peers
+                if (stats.chunks_degraded + stats.chunks_critical > 0)
+                {
+                    uint8_t degraded_hashes[10][WH_HASH_SIZE];
+                    uint32_t deg_count = Health_GetDegradedChunks(degraded_hashes, 10);
+                    uint32_t replicated = 0;
+
+                    for (uint32_t di = 0; di < deg_count; di++)
+                    {
+                        uint8_t *chunk_data = (uint8_t *)malloc(WH_CHUNK_SIZE);
+                        if (!chunk_data) break;
+
+                        uint32_t chunk_size = 0;
+                        if (ChunkStore_Get(degraded_hashes[di], chunk_data, &chunk_size))
+                        {
+                            Daemon_ReplicateChunk(degraded_hashes[di], chunk_data, chunk_size);
+                            replicated++;
+                        }
+                        free(chunk_data);
+                    }
+
+                    if (replicated > 0)
+                        LOG("[daemon] Replication pass: attempted %u chunks\n", replicated);
+                }
+
+                // EC recovery pass: reconstruct missing chunks from parity
+                if (Config_GetUint64(g_daemon.config, "ec_enabled", CONFIG_DEFAULT_EC_ENABLED))
+                {
+                    char ec_dir[MAX_PATH];
+                    BOOLEAN ec_dir_ok = FALSE;
+#ifdef _WIN32
+                    const char *home_hc = getenv("USERPROFILE");
+                    if (home_hc)
+                    {
+                        snprintf(ec_dir, sizeof(ec_dir), "%s\\.wormhole\\ec", home_hc);
+                        ec_dir_ok = TRUE;
+                    }
+#else
+                    const char *home_hc = getenv("HOME");
+                    if (home_hc)
+                    {
+                        snprintf(ec_dir, sizeof(ec_dir), "%s/.wormhole/ec", home_hc);
+                        ec_dir_ok = TRUE;
+                    }
+#endif
+                    if (ec_dir_ok)
+                    {
+                        uint32_t ec_recovered = 0;
+                        uint32_t ec_attempts = 0;
+#ifdef _WIN32
+                        char ec_search[MAX_PATH];
+                        snprintf(ec_search, sizeof(ec_search), "%s\\*.ec", ec_dir);
+
+                        WIN32_FIND_DATAA ec_find;
+                        HANDLE hEcFind = FindFirstFileA(ec_search, &ec_find);
+                        if (hEcFind != INVALID_HANDLE_VALUE)
+                        {
+                            do {
+                                if (ec_find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+                                if (ec_attempts >= 5) break;
+
+                                char ec_file[MAX_PATH];
+                                snprintf(ec_file, sizeof(ec_file), "%s\\%s", ec_dir, ec_find.cFileName);
+
+                                FILE_MANIFEST *ec_manifest = NULL;
+                                EC_GROUP *ec_group = ErasureCoding_LoadMetadata(ec_file, &ec_manifest);
+                                if (!ec_group) continue;
+
+                                // Check each data chunk in manifest — recover if missing
+                                for (uint32_t ci = 0; ci < ec_manifest->chunk_count && ec_attempts < 5; ci++)
+                                {
+                                    if (!ChunkStore_Has(ec_manifest->chunks[ci].hash))
+                                    {
+                                        ec_attempts++;
+                                        if (Health_RecoverChunk(ec_manifest->chunks[ci].hash, ec_group, ec_manifest))
+                                        {
+                                            ec_recovered++;
+                                            LOG("[daemon] EC recovered chunk %u from %s\n", ci, ec_find.cFileName);
+
+                                            // Announce recovered chunk to DHT
+                                            if (g_daemon.dht_enabled)
+                                                DhtNode_AnnounceChunk(&g_daemon.dht_node,
+                                                    ec_manifest->chunks[ci].hash, g_daemon.listen_port);
+                                        }
+                                    }
+                                }
+
+                                Manifest_Destroy(ec_manifest);
+                                ErasureCoding_DestroyGroup(ec_group);
+                            } while (FindNextFileA(hEcFind, &ec_find));
+
+                            FindClose(hEcFind);
+                        }
+#else
+                        DIR *ec_dp = opendir(ec_dir);
+                        if (ec_dp)
+                        {
+                            struct dirent *ec_ent;
+                            while ((ec_ent = readdir(ec_dp)) != NULL)
+                            {
+                                if (ec_ent->d_name[0] == '.') continue;
+                                if (ec_attempts >= 5) break;
+
+                                // Check .ec extension
+                                size_t nlen = strlen(ec_ent->d_name);
+                                if (nlen < 4 || strcmp(ec_ent->d_name + nlen - 3, ".ec") != 0) continue;
+
+                                char ec_file[MAX_PATH];
+                                snprintf(ec_file, sizeof(ec_file), "%s/%s", ec_dir, ec_ent->d_name);
+
+                                FILE_MANIFEST *ec_manifest = NULL;
+                                EC_GROUP *ec_group = ErasureCoding_LoadMetadata(ec_file, &ec_manifest);
+                                if (!ec_group) continue;
+
+                                for (uint32_t ci = 0; ci < ec_manifest->chunk_count && ec_attempts < 5; ci++)
+                                {
+                                    if (!ChunkStore_Has(ec_manifest->chunks[ci].hash))
+                                    {
+                                        ec_attempts++;
+                                        if (Health_RecoverChunk(ec_manifest->chunks[ci].hash, ec_group, ec_manifest))
+                                        {
+                                            ec_recovered++;
+                                            LOG("[daemon] EC recovered chunk %u from %s\n", ci, ec_ent->d_name);
+
+                                            if (g_daemon.dht_enabled)
+                                                DhtNode_AnnounceChunk(&g_daemon.dht_node,
+                                                    ec_manifest->chunks[ci].hash, g_daemon.listen_port);
+                                        }
+                                    }
+                                }
+
+                                Manifest_Destroy(ec_manifest);
+                                ErasureCoding_DestroyGroup(ec_group);
+                            }
+
+                            closedir(ec_dp);
+                        }
+#endif
+                        if (ec_recovered > 0)
+                        {
+                            LOG("[daemon] EC recovery pass: %u/%u chunks recovered\n",
+                                ec_recovered, ec_attempts);
+                            fflush(stdout);
+                        }
+                    }
+                }
+
+                last_health_check = now;
+            }
+        }
     }
 
     LOG("[daemon] Shutting down...\n");
@@ -1427,6 +2580,26 @@ int main(int argc, char *argv[])
 cleanup:
     // Stop IPC server
     IpcServer_Stop();
+
+    // Shutdown DHT
+    if (g_daemon.dht_enabled)
+    {
+        DhtNode_Shutdown(&g_daemon.dht_node);
+        LOG("[daemon] DHT node shut down\n");
+    }
+
+    // Save incentives ledger
+    {
+        char ledger_path[MAX_PATH];
+#ifdef _WIN32
+        const char *home = getenv("USERPROFILE");
+        if (home) snprintf(ledger_path, sizeof(ledger_path), "%s\\.wormhole\\storage_ledger.bin", home);
+#else
+        const char *home = getenv("HOME");
+        if (home) snprintf(ledger_path, sizeof(ledger_path), "%s/.wormhole/storage_ledger.bin", home);
+#endif
+        if (home) Ledger_Save(&g_daemon.ledger, ledger_path);
+    }
 
     // Disconnect relay
     if (g_daemon.relay_client)

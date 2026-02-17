@@ -9,8 +9,9 @@
 #include "common.h"
 #include <stdint.h>
 
-// Named pipe path
+// Named pipe path (default; use port-derived names for multi-daemon)
 #define IPC_PIPE_NAME "\\\\.\\pipe\\wormhole"
+#define IPC_PIPE_PREFIX "\\\\.\\pipe\\wormhole_"
 
 // IPC message framing: [4B little-endian length][1B command][payload...]
 // The length field includes the command byte and payload (not the length itself).
@@ -20,6 +21,7 @@
 #define IPC_CMD_GET        0x02  // Client->Daemon: retrieve chunk by hash
 #define IPC_CMD_STATUS     0x03  // Client->Daemon: request daemon stats
 #define IPC_CMD_SHUTDOWN   0x04  // Client->Daemon: request clean shutdown
+#define IPC_CMD_DHT_STATUS 0x05  // Client->Daemon: request DHT stats
 
 // IPC response status codes
 #define IPC_STATUS_OK        0x00
@@ -56,8 +58,10 @@ typedef uint32_t (*IpcCommandHandler)(
 // Start the IPC server on the named pipe.
 // handler: callback for incoming commands
 // context: opaque pointer passed to handler
+// pipe_name: pipe path (NULL = IPC_PIPE_NAME default)
 // Returns TRUE on success.
-BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context);
+BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context,
+                        const char *pipe_name);
 
 // Stop the IPC server and clean up resources.
 void IpcServer_Stop(void);
@@ -73,6 +77,9 @@ typedef struct IPC_CLIENT IPC_CLIENT;
 // Connect to the daemon's named pipe.
 // Returns allocated client handle, or NULL on failure.
 IPC_CLIENT *IpcClient_Connect(void);
+
+// Connect to a specific named pipe (for multi-daemon support).
+IPC_CLIENT *IpcClient_ConnectTo(const char *pipe_name);
 
 // Send a command and receive the response.
 // command:      IPC_CMD_* type

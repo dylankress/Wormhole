@@ -95,7 +95,7 @@ TEST test_default_count(void)
 
     WORMHOLE_CONFIG *config = Config_Load(path);
     ASSERT(config != NULL);
-    ASSERT_EQ(config->count, 4u);
+    ASSERT_EQ(config->count, 12u);
 
     Config_Destroy(config);
     PASS();
@@ -205,8 +205,8 @@ TEST test_config_full(void)
     WORMHOLE_CONFIG *config = Config_Load(path);
     ASSERT(config != NULL);
 
-    // Defaults set 4 entries. Fill remaining 60 slots.
-    for (uint32_t i = 0; i < 60; i++)
+    // Defaults set 12 entries. Fill remaining 52 slots.
+    for (uint32_t i = 0; i < 52; i++)
     {
         char key[32];
         snprintf(key, sizeof(key), "testkey_%u", i);
