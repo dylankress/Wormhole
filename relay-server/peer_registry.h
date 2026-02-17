@@ -106,3 +106,15 @@ uint32_t PeerRegistry_RemoveStalePeers(PEER_REGISTRY* registry, time_t current_t
 
 // Get registry statistics
 void PeerRegistry_GetStats(PEER_REGISTRY* registry, uint32_t* peer_count, uint32_t* bucket_count);
+
+// Find active peers for peer discovery (registered > min_age_sec, recent keepalive).
+// Excludes the requesting peer (exclude_peer_id). Results written to peers_out.
+// Returns: Number of peers written (up to max_peers).
+uint32_t PeerRegistry_FindActivePeers(
+    PEER_REGISTRY* registry,
+    const uint8_t exclude_peer_id[32],
+    time_t current_time,
+    time_t min_age_sec,
+    PEER_ENTRY** peers_out,
+    uint32_t max_peers
+);

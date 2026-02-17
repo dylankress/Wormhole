@@ -37,6 +37,7 @@ struct RELAY_CLIENT {
     RelayTicketCreatedCallback on_ticket_created;
     RelayPeerInfoCallback on_peer_info;
     RelayDisconnectedCallback on_disconnected;
+    RelayPeersFoundCallback on_peers_found;
     void* callback_context;
 };
 
@@ -58,6 +59,7 @@ RELAY_CLIENT* RelayClient_Create(const RELAY_CLIENT_CONFIG* config) {
     client->on_ticket_created = config->on_ticket_created;
     client->on_peer_info = config->on_peer_info;
     client->on_disconnected = config->on_disconnected;
+    client->on_peers_found = config->on_peers_found;
     client->callback_context = config->callback_context;
     
     // Resolve relay server address first
@@ -340,6 +342,25 @@ bool RelayClient_SendGoodbye(RELAY_CLIENT* client, uint8_t reason) {
     return success;
 }
 
+bool RelayClient_FindPeers(RELAY_CLIENT* client, uint16_t max_peers) {
+    if (!client || !client->connected) {
+        return false;
+    }
+
+    FindPeersMsg msg;
+    msg.message_type = RELAY_MSG_FIND_PEERS;
+    msg.session_id = client->session_id;
+    msg.max_peers = max_peers;
+
+    bool success = send_to_relay(client, &msg, sizeof(msg));
+
+    if (success) {
+        printf("[RelayClient] Sent FIND_PEERS (max %u)\n", max_peers);
+    }
+
+    return success;
+}
+
 bool RelayClient_ForwardPacket(RELAY_CLIENT* client, const uint8_t dest_peer_id[32],
                                const uint8_t* payload, uint16_t payload_len) {
     if (!client || !dest_peer_id || !payload || !client->connected) {
@@ -511,7 +532,80 @@ bool RelayClient_Poll(RELAY_CLIENT* client, int timeout_ms) {
             // Just acknowledge silently to avoid ping-pong packet loops
             break;
         }
-        
+
+        case RELAY_MSG_PEERS_FOUND: {
+            if (recv_len < (ssize_t)sizeof(PeersFoundMsg)) {
+                fprintf(stderr, "[RelayClient] PEERS_FOUND message too short\n");
+                break;
+            }
+
+            PeersFoundMsg* msg = (PeersFoundMsg*)buffer;
+            uint16_t peer_count = msg->peer_count;
+
+            if (peer_count > MAX_FIND_PEERS) {
+                printf("[RelayClient] Warning: PEERS_FOUND has %u peers, capping to %u\n",
+                       peer_count, MAX_FIND_PEERS);
+                peer_count = MAX_FIND_PEERS;
+            }
+
+            printf("[RelayClient] PEERS_FOUND (%u peers)\n", peer_count);
+
+            // Parse variable-length peer entries
+            DISCOVERED_PEER* peers = NULL;
+            if (peer_count > 0) {
+                peers = (DISCOVERED_PEER*)calloc(peer_count, sizeof(DISCOVERED_PEER));
+                if (!peers) {
+                    fprintf(stderr, "[RelayClient] Out of memory for PEERS_FOUND\n");
+                    break;
+                }
+
+                const uint8_t* read_ptr = buffer + sizeof(PeersFoundMsg);
+                const uint8_t* end_ptr = buffer + recv_len;
+                uint16_t parsed = 0;
+
+                for (uint16_t i = 0; i < peer_count; i++) {
+                    // Need at least peer_id(32) + endpoint_count(2)
+                    if (read_ptr + 34 > end_ptr) {
+                        fprintf(stderr, "[RelayClient] PEERS_FOUND truncated at peer %u\n", i);
+                        break;
+                    }
+
+                    memcpy(peers[i].peer_id, read_ptr, 32);
+                    read_ptr += 32;
+
+                    uint16_t ep_count;
+                    memcpy(&ep_count, read_ptr, 2);
+                    read_ptr += 2;
+
+                    if (ep_count > MAX_ENDPOINTS) {
+                        ep_count = MAX_ENDPOINTS;
+                    }
+
+                    size_t ep_bytes = ep_count * sizeof(ENDPOINT);
+                    if (read_ptr + ep_bytes > end_ptr) {
+                        fprintf(stderr, "[RelayClient] PEERS_FOUND truncated at peer %u endpoints\n", i);
+                        break;
+                    }
+
+                    memcpy(peers[i].endpoints, read_ptr, ep_bytes);
+                    peers[i].endpoint_count = ep_count;
+                    read_ptr += ep_bytes;
+                    parsed++;
+                }
+
+                if (client->on_peers_found && parsed > 0) {
+                    client->on_peers_found(client->callback_context, peers, parsed);
+                }
+
+                free(peers);
+            } else {
+                if (client->on_peers_found) {
+                    client->on_peers_found(client->callback_context, NULL, 0);
+                }
+            }
+            break;
+        }
+
         default:
             fprintf(stderr, "[RelayClient] Unknown message type: 0x%02X\n", msg_type);
             break;

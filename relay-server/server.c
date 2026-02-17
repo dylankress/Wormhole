@@ -42,6 +42,8 @@ static void handle_keepalive(RELAY_SERVER* server, const uint8_t* packet, size_t
                             const struct sockaddr* client_addr, socklen_t addr_len);
 static void handle_goodbye(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                           const struct sockaddr* client_addr, socklen_t addr_len);
+static void handle_find_peers(RELAY_SERVER* server, const uint8_t* packet, size_t len,
+                              const struct sockaddr* client_addr, socklen_t addr_len);
 
 // Send UDP packet
 static bool send_packet(int socket_fd, const void* data, size_t len,
@@ -299,6 +301,9 @@ int RelayServer_Run(RELAY_SERVER* server) {
                 break;
             case RELAY_MSG_GOODBYE:
                 handle_goodbye(server, packet_buffer, recv_len, (struct sockaddr*)&client_addr, addr_len);
+                break;
+            case RELAY_MSG_FIND_PEERS:
+                handle_find_peers(server, packet_buffer, recv_len, (struct sockaddr*)&client_addr, addr_len);
                 break;
             default:
                 fprintf(stderr, "[Server] Unknown message type: 0x%02X\n", msg_type);
@@ -847,4 +852,96 @@ static void handle_goodbye(RELAY_SERVER* server, const uint8_t* packet, size_t l
     else if (msg->reason == 0x02) reason_str = "transfer complete";
     
     printf("[Server] GOODBYE from client (reason: %s)\n", reason_str);
+}
+
+static void handle_find_peers(RELAY_SERVER* server, const uint8_t* packet, size_t len,
+                              const struct sockaddr* client_addr, socklen_t addr_len) {
+    printf("[Server] FIND_PEERS from client\n");
+
+    if (len < sizeof(FindPeersMsg)) {
+        fprintf(stderr, "[Server] FIND_PEERS message too short\n");
+        return;
+    }
+
+    const FindPeersMsg* msg = (const FindPeersMsg*)packet;
+
+    // Validate session
+    PEER_ENTRY* requester = PeerRegistry_FindBySessionID(&server->peer_registry, msg->session_id);
+    if (!requester) {
+        fprintf(stderr, "[Server] FIND_PEERS: Invalid session ID %llu\n",
+                (unsigned long long)msg->session_id);
+        return;
+    }
+
+    // Cap max_peers
+    uint16_t max_peers = msg->max_peers;
+    if (max_peers > MAX_FIND_PEERS) {
+        max_peers = MAX_FIND_PEERS;
+    }
+
+    // Find active peers (registered > 60s, recent keepalive, exclude requester)
+    PEER_ENTRY* found_peers[MAX_FIND_PEERS];
+    time_t now = time(NULL);
+    uint32_t peer_count = PeerRegistry_FindActivePeers(
+        &server->peer_registry,
+        requester->peer_id,
+        now,
+        60,  // min_age_sec: registered for at least 60 seconds
+        found_peers,
+        max_peers
+    );
+
+    // Build response: PeersFoundMsg header + per-peer { peer_id[32], endpoint_count(2), endpoints[] }
+    // Calculate total size
+    size_t response_size = sizeof(PeersFoundMsg);
+    for (uint32_t i = 0; i < peer_count; i++) {
+        response_size += 32 + 2 + (found_peers[i]->endpoint_count * sizeof(ENDPOINT));
+    }
+
+    uint8_t* response_buffer = (uint8_t*)malloc(response_size);
+    if (!response_buffer) {
+        fprintf(stderr, "[Server] Failed to allocate PEERS_FOUND response\n");
+        return;
+    }
+
+    PeersFoundMsg* response = (PeersFoundMsg*)response_buffer;
+    response->message_type = RELAY_MSG_PEERS_FOUND;
+    response->peer_count = (uint16_t)peer_count;
+
+    // Write peer entries
+    uint8_t* write_ptr = response_buffer + sizeof(PeersFoundMsg);
+    for (uint32_t i = 0; i < peer_count; i++) {
+        PEER_ENTRY* peer = found_peers[i];
+
+        // peer_id[32]
+        memcpy(write_ptr, peer->peer_id, 32);
+        write_ptr += 32;
+
+        // endpoint_count (uint16, little-endian — packed struct on LE arch)
+        uint16_t ep_count = peer->endpoint_count;
+        memcpy(write_ptr, &ep_count, 2);
+        write_ptr += 2;
+
+        // endpoints[]
+        memcpy(write_ptr, peer->endpoints, ep_count * sizeof(ENDPOINT));
+        write_ptr += ep_count * sizeof(ENDPOINT);
+    }
+
+    if (send_packet(server->socket_fd, response_buffer, response_size, client_addr, addr_len)) {
+#ifdef _WIN32
+        EnterCriticalSection(&server->stats_lock);
+#else
+        pthread_mutex_lock(&server->stats_lock);
+#endif
+        server->total_packets_sent++;
+#ifdef _WIN32
+        LeaveCriticalSection(&server->stats_lock);
+#else
+        pthread_mutex_unlock(&server->stats_lock);
+#endif
+
+        printf("[Server] PEERS_FOUND sent (%u peers)\n", peer_count);
+    }
+
+    free(response_buffer);
 }

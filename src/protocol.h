@@ -23,6 +23,15 @@
 #define CTRL_MSG_CHUNK_REQUEST       0x03
 #define CTRL_MSG_TRANSFER_COMPLETE   0x04
 
+// Chunk replication messages (P2P storage, Stream 0: bidirectional)
+#define CTRL_MSG_CHUNK_STORE_REQUEST   0x05  // "Please store this chunk"
+#define CTRL_MSG_CHUNK_STORE_ACK       0x06  // "I stored it"
+#define CTRL_MSG_CHUNK_QUERY           0x07  // "Do you have this chunk?"
+#define CTRL_MSG_CHUNK_QUERY_RESPONSE  0x08  // "Yes/No + chunk data if yes"
+
+// Target replication factor for P2P storage
+#define REPLICATION_TARGET 3
+
 // Control message framing: [1B type][4B payload_length][payload]
 #define CTRL_HEADER_SIZE 5
 

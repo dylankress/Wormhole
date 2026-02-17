@@ -1,6 +1,6 @@
 //
 // chunker.h
-// Splits a file into Blake3-hashed chunks and produces a FILE_MANIFEST.
+// Splits files into Blake3-hashed chunks and produces a FILE_MANIFEST.
 // by Dylan Kress
 //
 
@@ -12,3 +12,8 @@
 // and return a fully populated FILE_MANIFEST (including manifest_hash).
 // Returns NULL on failure.
 FILE_MANIFEST *Chunker_BuildManifest(const char *file_path);
+
+// Recursively enumerate a directory, chunk all files, and return a
+// version 2 (multi-file) FILE_MANIFEST with computed hashes.
+// Returns NULL on failure.
+FILE_MANIFEST *Chunker_BuildManifestFromDirectory(const char *dir_path);

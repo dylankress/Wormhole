@@ -1,0 +1,96 @@
+//
+// ipc.h
+// Wormhole - Named pipe IPC for daemon communication.
+// by Dylan Kress
+//
+
+#pragma once
+
+#include "common.h"
+#include <stdint.h>
+
+// Named pipe path
+#define IPC_PIPE_NAME "\\\\.\\pipe\\wormhole"
+
+// IPC message framing: [4B little-endian length][1B command][payload...]
+// The length field includes the command byte and payload (not the length itself).
+
+// IPC command types
+#define IPC_CMD_STORE      0x01  // Client->Daemon: chunk file and store
+#define IPC_CMD_GET        0x02  // Client->Daemon: retrieve chunk by hash
+#define IPC_CMD_STATUS     0x03  // Client->Daemon: request daemon stats
+#define IPC_CMD_SHUTDOWN   0x04  // Client->Daemon: request clean shutdown
+
+// IPC response status codes
+#define IPC_STATUS_OK        0x00
+#define IPC_STATUS_ERROR     0x01
+#define IPC_STATUS_NOT_FOUND 0x02
+
+// Maximum IPC message payload (1 MB should cover any chunk + framing)
+#define IPC_MAX_MESSAGE_SIZE (1 * 1024 * 1024)
+
+// IPC status response structure (returned by STATUS command)
+typedef struct {
+    uint32_t peer_count;
+    uint32_t chunk_count;
+    uint64_t storage_used;
+    BOOLEAN  relay_connected;
+    BOOLEAN  listener_active;
+} IPC_STATUS_INFO;
+
+// Callback invoked by the IPC server when a command arrives.
+// The handler should process the command and write a response into
+// response_out (caller-allocated, IPC_MAX_MESSAGE_SIZE bytes).
+// Returns the number of bytes written to response_out, or 0 on error.
+typedef uint32_t (*IpcCommandHandler)(
+    uint8_t   command,
+    const uint8_t *payload,
+    uint32_t  payload_size,
+    uint8_t  *response_out,
+    uint32_t  response_capacity,
+    void     *context
+);
+
+// --- Server API (used by wormholed) ---
+
+// Start the IPC server on the named pipe.
+// handler: callback for incoming commands
+// context: opaque pointer passed to handler
+// Returns TRUE on success.
+BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context);
+
+// Stop the IPC server and clean up resources.
+void IpcServer_Stop(void);
+
+// Check if the IPC server is running.
+BOOLEAN IpcServer_IsRunning(void);
+
+// --- Client API (used by wormhole CLI thin client) ---
+
+// Opaque IPC client handle
+typedef struct IPC_CLIENT IPC_CLIENT;
+
+// Connect to the daemon's named pipe.
+// Returns allocated client handle, or NULL on failure.
+IPC_CLIENT *IpcClient_Connect(void);
+
+// Send a command and receive the response.
+// command:      IPC_CMD_* type
+// payload:      command-specific data (may be NULL if payload_size is 0)
+// payload_size: length of payload
+// response_out: buffer for response data (caller-allocated)
+// response_capacity: size of response_out buffer
+// response_size_out: set to actual response size on success
+// Returns TRUE on success.
+BOOLEAN IpcClient_SendCommand(
+    IPC_CLIENT *client,
+    uint8_t     command,
+    const uint8_t *payload,
+    uint32_t    payload_size,
+    uint8_t    *response_out,
+    uint32_t    response_capacity,
+    uint32_t   *response_size_out
+);
+
+// Disconnect and free the client handle.
+void IpcClient_Disconnect(IPC_CLIENT *client);

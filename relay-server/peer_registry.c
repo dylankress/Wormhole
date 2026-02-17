@@ -514,6 +514,62 @@ uint32_t PeerRegistry_RemoveStalePeers(PEER_REGISTRY* registry, time_t current_t
     return removed;
 }
 
+uint32_t PeerRegistry_FindActivePeers(
+    PEER_REGISTRY* registry,
+    const uint8_t exclude_peer_id[32],
+    time_t current_time,
+    time_t min_age_sec,
+    PEER_ENTRY** peers_out,
+    uint32_t max_peers
+) {
+    if (!registry || !peers_out || max_peers == 0) {
+        return 0;
+    }
+
+#ifdef _WIN32
+    EnterCriticalSection(&registry->lock);
+#else
+    pthread_mutex_lock(&registry->lock);
+#endif
+
+    uint32_t found = 0;
+    const time_t keepalive_timeout = 60;  // Must have keepalive within 60s
+
+    for (uint32_t i = 0; i < registry->bucket_count && found < max_peers; i++) {
+        PEER_ENTRY* entry = registry->buckets[i];
+        while (entry && found < max_peers) {
+            // Skip the requesting peer
+            if (exclude_peer_id && peer_id_equals(entry->peer_id, exclude_peer_id)) {
+                entry = entry->next;
+                continue;
+            }
+
+            // Must be registered for at least min_age_sec
+            if (current_time - entry->registered_at < min_age_sec) {
+                entry = entry->next;
+                continue;
+            }
+
+            // Must have recent keepalive
+            if (current_time - entry->last_keepalive > keepalive_timeout) {
+                entry = entry->next;
+                continue;
+            }
+
+            peers_out[found++] = entry;
+            entry = entry->next;
+        }
+    }
+
+#ifdef _WIN32
+    LeaveCriticalSection(&registry->lock);
+#else
+    pthread_mutex_unlock(&registry->lock);
+#endif
+
+    return found;
+}
+
 void PeerRegistry_GetStats(PEER_REGISTRY* registry, uint32_t* peer_count, uint32_t* bucket_count) {
     if (!registry) {
         return;

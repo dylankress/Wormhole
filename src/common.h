@@ -57,6 +57,22 @@ static inline void PrintTimestamp(void)
 #endif
 }
 
+// Timestamp logging helper for stderr
+static inline void PrintTimestampErr(void)
+{
+#ifdef _WIN32
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	fprintf(stderr, "[%02d:%02d:%02d.%03d] ", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+#else
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	struct tm *tm_info = localtime(&ts.tv_sec);
+	fprintf(stderr, "[%02d:%02d:%02d.%03ld] ",
+		tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec, ts.tv_nsec / 1000000);
+#endif
+}
+
 // Logging macros with timestamps
 #define LOG(...) do { PrintTimestamp(); printf(__VA_ARGS__); } while(0)
-#define LOG_ERROR(...) do { PrintTimestamp(); fprintf(stderr, __VA_ARGS__); } while(0)
+#define LOG_ERROR(...) do { PrintTimestampErr(); fprintf(stderr, __VA_ARGS__); } while(0)

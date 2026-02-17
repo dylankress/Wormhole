@@ -19,6 +19,8 @@ typedef enum {
     RELAY_MSG_GOODBYE        = 0x07,  // Client → Relay: Closing connection
     RELAY_MSG_CREATE_TICKET  = 0x08,  // Client → Relay: Create transfer ticket
     RELAY_MSG_TICKET_CREATED = 0x09,  // Relay → Client: Ticket is "N-word-word"
+    RELAY_MSG_FIND_PEERS     = 0x0A,  // Client → Relay: Request active peers
+    RELAY_MSG_PEERS_FOUND    = 0x0B,  // Relay → Client: List of active peers
 } RELAY_MESSAGE_TYPE;
 
 // Use MSVC-compatible packing
@@ -104,6 +106,21 @@ typedef struct {
     uint8_t  reason;          // 0x00=upgraded to direct, 0x01=error, 0x02=transfer complete
 } GoodbyeMsg;
 
+// 10. FIND_PEERS: Request list of active peers for P2P storage
+typedef struct {
+    uint8_t  message_type;    // 0x0A
+    uint64_t session_id;      // Requester's session ID
+    uint16_t max_peers;       // Maximum peers to return (capped at MAX_FIND_PEERS)
+} FindPeersMsg;
+
+// 11. PEERS_FOUND: Response with list of active peers
+// Followed by peer_count × { peer_id[32], endpoint_count (uint16), endpoints[] }
+typedef struct {
+    uint8_t  message_type;    // 0x0B
+    uint16_t peer_count;      // Number of peers in response
+    // Followed by variable-length peer entries (see above)
+} PeersFoundMsg;
+
 #pragma pack(pop)
 
 // Protocol constants
@@ -112,6 +129,7 @@ typedef struct {
 #define MAX_FILENAME_LENGTH 256       // Maximum filename length
 #define MAX_PAYLOAD_LENGTH 65536      // Maximum forwarded packet size (64KB)
 #define TICKET_EXPIRY_SECONDS 3600    // Tickets expire after 1 hour
+#define MAX_FIND_PEERS 50             // Maximum peers returned by FIND_PEERS
 
 // Helper macros for endianness (little-endian)
 #define htole16(x) (x)  // No-op on x86/x64 (already little-endian)

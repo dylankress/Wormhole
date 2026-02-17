@@ -5,16 +5,18 @@
 
 #include "common.h"
 #include "protocol.h"
-#include "connection.h"
+#include "wire_format.h"
 #include "stream.h"
 #include "file_io.h"
 #include "crypto.h"
 #include "chunker.h"
+#include "config.h"
+#include "ipc.h"
 #include "relay/peer_id.h"
 #include "relay/relay_client.h"
 #include "relay/discovery.h"
 #include "relay/ticket.h"
-#include "relay/connection_manager.h"
+#include "relay_forwarder.h"
 
 // Global MsQuic state - accessible via extern in other files
 const QUIC_API_TABLE *MsQuic = NULL;
@@ -22,12 +24,83 @@ HQUIC Registration = NULL;
 HQUIC ServerConfiguration = NULL;
 HQUIC ClientConfiguration = NULL;
 
-// Keep-alive event for server (prevents exit while listening)
-HANDLE ServerShutdownEvent = NULL;
-
 // Relay configuration
-#define DEFAULT_RELAY_HOST "wormholerelay.com"  // WSL IP (change to "wormholerelay.com" for production)
-#define DEFAULT_RELAY_PORT 443              // Change to 443 for production
+#define DEFAULT_RELAY_HOST "wormholerelay.com"
+#define DEFAULT_RELAY_PORT 443
+
+//=============================================================================
+// Ctrl+C Cleanup
+//=============================================================================
+
+// Forward-declare for use in ConsoleCtrlHandler
+static void CleanupMsQuic(void);
+
+// Global state for clean Ctrl+C shutdown
+static volatile LONG g_shutdown_requested = 0;
+static RELAY_CLIENT* g_active_relay_client = NULL;
+static HQUIC g_active_listener = NULL;
+static FILE_MANIFEST* g_active_manifest = NULL;
+static HQUIC g_active_connection = NULL;   // Active QUIC connection for Ctrl+C cleanup
+static RELAY_FORWARDER* g_active_relay_forwarder = NULL;
+
+static BOOL WINAPI ConsoleCtrlHandler(DWORD ctrl_type)
+{
+	if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_CLOSE_EVENT)
+	{
+		if (InterlockedCompareExchange(&g_shutdown_requested, 1, 0) == 0)
+		{
+			LOG("\n[Shutdown] Ctrl+C received, cleaning up...\n");
+
+			// Gracefully disconnect from relay
+			if (g_active_relay_client)
+			{
+				RelayClient_SendGoodbye(g_active_relay_client, 0x01);
+				RelayClient_Destroy(g_active_relay_client);
+				g_active_relay_client = NULL;
+			}
+
+			// Stop QUIC listener if active
+			if (g_active_listener && MsQuic)
+			{
+				MsQuic->ListenerStop(g_active_listener);
+				MsQuic->ListenerClose(g_active_listener);
+				g_active_listener = NULL;
+			}
+
+			// Gracefully shut down active QUIC connection (sends CONNECTION_CLOSE)
+			if (g_active_connection && MsQuic)
+			{
+				MsQuic->ConnectionShutdown(g_active_connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+				Sleep(200);  // Let CONNECTION_CLOSE frame be transmitted
+				g_active_connection = NULL;
+			}
+
+			// Clean up MsQuic
+			CleanupMsQuic();
+
+			// Free manifest
+			if (g_active_manifest)
+			{
+				Manifest_Destroy(g_active_manifest);
+				g_active_manifest = NULL;
+			}
+
+			// Stop relay forwarder before WSACleanup to avoid WSANOTINITIALISED
+			if (g_active_relay_forwarder)
+			{
+				RelayForwarder_Stop(g_active_relay_forwarder);
+				g_active_relay_forwarder = NULL;
+			}
+
+#ifdef _WIN32
+			WSACleanup();
+#endif
+			LOG("[Shutdown] Cleanup complete\n");
+		}
+		return TRUE;  // Handled
+	}
+	return FALSE;
+}
 
 //=============================================================================
 // Forward Declarations
@@ -37,11 +110,28 @@ static BOOLEAN InitializeMsQuic(void);
 static void CleanupMsQuic(void);
 static BOOLEAN ServerLoadConfiguration(void);
 static BOOLEAN ClientLoadConfiguration(void);
-static BOOLEAN RunServer(void);
-static BOOLEAN RunClient(const char *target_host, const char *file_path);
 static int cmd_send(const char *filepath);
 static int cmd_receive(const char *ticket);
+static int cmd_store(const char *filepath);
+static int cmd_get(const char *hash_hex);
+static int cmd_status(void);
+static int cmd_config(int argc, char *argv[]);
 static void PrintUsage(void);
+
+// Helper: check if path is a directory
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
+static BOOLEAN IsDirectory(const char *path)
+{
+#ifdef _WIN32
+	DWORD attrs = GetFileAttributesA(path);
+	return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY));
+#else
+	struct stat st;
+	return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+#endif
+}
 
 // Send/Receive command callbacks
 static QUIC_STATUS QUIC_API ServerListenerCallback_Send(HQUIC Listener, void* Context, QUIC_LISTENER_EVENT* Event);
@@ -166,9 +256,9 @@ static BOOLEAN ServerLoadConfiguration(void)
 
 	// Step 3: Create QUIC settings
 	QUIC_SETTINGS settings = { 0 };
-	settings.IdleTimeoutMs = 300000;  // 300 seconds (5 minutes) - increased for large file transfers
+	settings.IdleTimeoutMs = 30000;   // 30 seconds — detect dead peer promptly (keepalive is 10s)
 	settings.IsSet.IdleTimeoutMs = TRUE;
-	settings.DisconnectTimeoutMs = 300000;  // 300 seconds disconnect timeout
+	settings.DisconnectTimeoutMs = 30000;  // Match idle timeout — cache recovery can block callbacks
 	settings.IsSet.DisconnectTimeoutMs = TRUE;
 	settings.KeepAliveIntervalMs = 10000;  // Send keep-alive every 10 seconds
 	settings.IsSet.KeepAliveIntervalMs = TRUE;
@@ -195,17 +285,19 @@ static BOOLEAN ServerLoadConfiguration(void)
 	settings.InitialWindowPackets = 10;  // 10 packets initially (default: 10, but explicit)
 	settings.IsSet.InitialWindowPackets = TRUE;
 
-	// DISABLE congestion control for LAN testing (no backoff on packet loss)
-	settings.CongestionControlAlgorithm = QUIC_CONGESTION_CONTROL_ALGORITHM_MAX;
-	settings.IsSet.CongestionControlAlgorithm = TRUE;
-
-	// EXPERIMENT 2.3: Force conservative MTU to bypass PMTUD issues
-	settings.MinimumMtu = 1200;  // Force conservative MTU
+	// MTU settings: allow PMTUD up to standard Ethernet MTU
+	settings.MinimumMtu = 1200;  // QUIC minimum (safe baseline)
 	settings.IsSet.MinimumMtu = TRUE;
-	settings.MaximumMtu = 1200;  // Prevent PMTUD
+	settings.MaximumMtu = 1500;  // Standard Ethernet MTU, let PMTUD discover path MTU
 	settings.IsSet.MaximumMtu = TRUE;
 
-	LOG("[server] Flow control: StreamRecv=16MB, ConnFlow=64MB, InitWindow=10pkts, CongestionControl=DISABLED, MTU=1200\n");
+	settings.CongestionControlAlgorithm = QUIC_CONGESTION_CONTROL_ALGORITHM_BBR;
+	settings.IsSet.CongestionControlAlgorithm = TRUE;
+
+	settings.EcnEnabled = TRUE;
+	settings.IsSet.EcnEnabled = TRUE;
+
+	LOG("[server] Flow control: StreamRecv=16MB, ConnFlow=64MB, InitWindow=10pkts, CongestionControl=BBR, MTU=1200-1500, ECN=on\n");
 
 	// Step 4: Create configuration
 	QUIC_BUFFER alpn_buffer;
@@ -257,9 +349,9 @@ static BOOLEAN ClientLoadConfiguration(void)
 
 	// Step 2: Create QUIC settings
 	QUIC_SETTINGS settings = { 0 };
-	settings.IdleTimeoutMs = 300000;  // 300 seconds (5 minutes) - increased for large file transfers
+	settings.IdleTimeoutMs = 30000;   // 30 seconds — detect dead peer promptly (keepalive is 10s)
 	settings.IsSet.IdleTimeoutMs = TRUE;
-	settings.DisconnectTimeoutMs = 300000;  // 300 seconds disconnect timeout
+	settings.DisconnectTimeoutMs = 30000;  // Match idle timeout — cache recovery can block callbacks
 	settings.IsSet.DisconnectTimeoutMs = TRUE;
 	settings.KeepAliveIntervalMs = 10000;  // Send keep-alive every 10 seconds
 	settings.IsSet.KeepAliveIntervalMs = TRUE;
@@ -278,15 +370,17 @@ static BOOLEAN ClientLoadConfiguration(void)
 	settings.InitialWindowPackets = 10;
 	settings.IsSet.InitialWindowPackets = TRUE;
 
-	// DISABLE congestion control for LAN testing (no backoff on packet loss)
-	settings.CongestionControlAlgorithm = QUIC_CONGESTION_CONTROL_ALGORITHM_MAX;
+	// MTU settings: allow PMTUD up to standard Ethernet MTU
+	settings.MinimumMtu = 1200;  // QUIC minimum (safe baseline)
+	settings.IsSet.MinimumMtu = TRUE;
+	settings.MaximumMtu = 1500;  // Standard Ethernet MTU, let PMTUD discover path MTU
+	settings.IsSet.MaximumMtu = TRUE;
+
+	settings.CongestionControlAlgorithm = QUIC_CONGESTION_CONTROL_ALGORITHM_BBR;
 	settings.IsSet.CongestionControlAlgorithm = TRUE;
 
-	// EXPERIMENT 2.3: Force conservative MTU to bypass PMTUD issues
-	settings.MinimumMtu = 1200;  // Force conservative MTU
-	settings.IsSet.MinimumMtu = TRUE;
-	settings.MaximumMtu = 1200;  // Prevent PMTUD
-	settings.IsSet.MaximumMtu = TRUE;
+	settings.EcnEnabled = TRUE;
+	settings.IsSet.EcnEnabled = TRUE;
 
 	// Allow peer (server) to create bidirectional streams
 	settings.PeerBidiStreamCount = 10;  // Allow up to 10 bidirectional streams from peer
@@ -294,7 +388,7 @@ static BOOLEAN ClientLoadConfiguration(void)
 	settings.PeerUnidiStreamCount = 10;  // Allow up to 10 unidirectional streams from peer
 	settings.IsSet.PeerUnidiStreamCount = TRUE;
 
-	LOG("[client] Flow control: StreamRecv=16MB, ConnFlow=64MB, InitWindow=10pkts, CongestionControl=DISABLED, MTU=1200, PeerStreams=10\n");
+	LOG("[client] Flow control: StreamRecv=16MB, ConnFlow=64MB, InitWindow=10pkts, CongestionControl=BBR, MTU=1200-1500, ECN=on, PeerStreams=10\n");
 
 	// Step 3: Create configuration
 	QUIC_BUFFER alpn_buffer;
@@ -332,204 +426,7 @@ static BOOLEAN ClientLoadConfiguration(void)
 }
 
 //=============================================================================
-// Server & Client Runners
-//=============================================================================
-
-// RunServer - Creates listener and waits for incoming connections
-static BOOLEAN RunServer(void)
-{
-	QUIC_STATUS status;
-	HQUIC listener = NULL;
-
-	LOG("[server] Starting server on port %d...\n", WORMHOLE_DEFAULT_PORT);
-
-	// Create shutdown event (manual-reset event)
-	ServerShutdownEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	if (ServerShutdownEvent == NULL)
-	{
-		LOG_ERROR("[server] ERROR: Failed to create shutdown event\n");
-		return FALSE;
-	}
-
-	// Create listener
-	status = MsQuic->ListenerOpen(
-		Registration,
-		ServerListenerCallback,
-		NULL,  // Context
-		&listener
-	);
-
-	if (QUIC_FAILED(status))
-	{
-		LOG_ERROR("[server] ERROR: ListenerOpen failed: 0x%x\n", status);
-		CloseHandle(ServerShutdownEvent);
-		return FALSE;
-	}
-
-	// Start listening on all interfaces, default port
-	QUIC_ADDR addr = { 0 };
-	QuicAddrSetFamily(&addr, QUIC_ADDRESS_FAMILY_UNSPEC);  // IPv4 + IPv6
-	QuicAddrSetPort(&addr, WORMHOLE_DEFAULT_PORT);
-
-	QUIC_BUFFER alpn_buffer;
-	alpn_buffer.Buffer = (uint8_t*)WORMHOLE_ALPN;
-	alpn_buffer.Length = (uint32_t)strlen(WORMHOLE_ALPN);
-
-	status = MsQuic->ListenerStart(listener, &alpn_buffer, 1, &addr);
-	if (QUIC_FAILED(status))
-	{
-		LOG_ERROR("[server] ERROR: ListenerStart failed: 0x%x\n", status);
-		MsQuic->ListenerClose(listener);
-		CloseHandle(ServerShutdownEvent);
-		return FALSE;
-	}
-
-	LOG("[server] Listening on port %d (press Ctrl+C to stop)\n", WORMHOLE_DEFAULT_PORT);
-	LOG("[server] Waiting for incoming file transfers...\n\n");
-
-	// Wait for shutdown signal (Ctrl+C sets this event)
-	WaitForSingleObject(ServerShutdownEvent, INFINITE);
-
-	LOG("\n[server] Shutting down...\n");
-
-	// Stop listener
-	MsQuic->ListenerStop(listener);
-	MsQuic->ListenerClose(listener);
-	CloseHandle(ServerShutdownEvent);
-
-	return TRUE;
-}
-
-// RunClient - Connects to server and sends file
-static BOOLEAN RunClient(const char *target_host, const char *file_path)
-{
-	QUIC_STATUS status;
-	HQUIC connection = NULL;
-
-	LOG("[client] Connecting to %s:%d...\n", target_host, WORMHOLE_DEFAULT_PORT);
-
-	// Validate file exists
-	if (!FileExists(file_path))
-	{
-		LOG_ERROR("[client] ERROR: File does not exist: %s\n", file_path);
-		return FALSE;
-	}
-
-	// Create connection context
-	typedef struct {
-		char *file_path;
-		BOOLEAN connected;
-		HANDLE connect_event;
-		HANDLE transfer_complete_event;
-	} CLIENT_CONNECTION_CONTEXT;
-
-	CLIENT_CONNECTION_CONTEXT *conn_ctx = (CLIENT_CONNECTION_CONTEXT*)malloc(sizeof(CLIENT_CONNECTION_CONTEXT));
-	if (conn_ctx == NULL)
-	{
-		LOG_ERROR("[client] ERROR: Failed to allocate connection context\n");
-		return FALSE;
-	}
-
-	conn_ctx->file_path = _strdup(file_path);
-	conn_ctx->connected = FALSE;
-	conn_ctx->connect_event = CreateEvent(NULL, FALSE, FALSE, NULL);
-	conn_ctx->transfer_complete_event = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-	if (conn_ctx->connect_event == NULL || conn_ctx->transfer_complete_event == NULL || conn_ctx->file_path == NULL)
-	{
-		LOG_ERROR("[client] ERROR: Failed to allocate resources\n");
-		if (conn_ctx->file_path) free(conn_ctx->file_path);
-		if (conn_ctx->connect_event) CloseHandle(conn_ctx->connect_event);
-		if (conn_ctx->transfer_complete_event) CloseHandle(conn_ctx->transfer_complete_event);
-		free(conn_ctx);
-		return FALSE;
-	}
-
-	// Create connection
-	status = MsQuic->ConnectionOpen(
-		Registration,
-		ClientConnectionCallback,
-		conn_ctx,
-		&connection
-	);
-
-	if (QUIC_FAILED(status))
-	{
-		LOG_ERROR("[client] ERROR: ConnectionOpen failed: 0x%x\n", status);
-		free(conn_ctx->file_path);
-		CloseHandle(conn_ctx->connect_event);
-		CloseHandle(conn_ctx->transfer_complete_event);
-		free(conn_ctx);
-		return FALSE;
-	}
-
-	// Start connection
-	status = MsQuic->ConnectionStart(
-		connection,
-		ClientConfiguration,
-		QUIC_ADDRESS_FAMILY_UNSPEC,
-		target_host,
-		WORMHOLE_DEFAULT_PORT
-	);
-
-	if (QUIC_FAILED(status))
-	{
-		LOG_ERROR("[client] ERROR: ConnectionStart failed: 0x%x\n", status);
-		MsQuic->ConnectionClose(connection);
-		free(conn_ctx->file_path);
-		CloseHandle(conn_ctx->connect_event);
-		CloseHandle(conn_ctx->transfer_complete_event);
-		free(conn_ctx);
-		return FALSE;
-	}
-
-	LOG("[client] Connection initiated, waiting for handshake...\n");
-
-	// Wait for connection to complete (or fail)
-	// The ClientConnectionCallback will signal this event when CONNECTED
-	DWORD wait_result = WaitForSingleObject(conn_ctx->connect_event, 10000);  // 10 second timeout
-
-	if (wait_result != WAIT_OBJECT_0)
-	{
-		LOG_ERROR("[client] ERROR: Connection timeout or failed\n");
-		MsQuic->ConnectionShutdown(connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-		MsQuic->ConnectionClose(connection);
-		free(conn_ctx->file_path);
-		CloseHandle(conn_ctx->connect_event);
-		CloseHandle(conn_ctx->transfer_complete_event);
-		free(conn_ctx);
-		return FALSE;
-	}
-
-	LOG("[client] Connected! Sending file...\n");
-
-	// ChunkSendFile will be called from ClientConnectionCallback when CONNECTED event fires
-	// Wait for transfer to complete (or timeout after 120 seconds for large files)
-	LOG("[client] Waiting for transfer to complete...\n");
-	wait_result = WaitForSingleObject(conn_ctx->transfer_complete_event, 120000);  // 120 second timeout
-
-	if (wait_result != WAIT_OBJECT_0)
-	{
-		LOG_ERROR("[client] WARNING: Transfer timeout or didn't complete\n");
-	}
-	else
-	{
-		LOG("[client] Transfer complete!\n");
-	}
-
-	LOG("[client] Closing connection...\n");
-
-	// Gracefully shut down connection
-	// Note: The callback will clean up conn_ctx when SHUTDOWN_COMPLETE fires
-	MsQuic->ConnectionShutdown(connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-	MsQuic->ConnectionClose(connection);
-
-	LOG("[client] Done!\n");
-	return TRUE;
-}
-
-//=============================================================================
-// New CLI Commands (Send/Receive)
+// CLI Commands (Send/Receive)
 //=============================================================================
 
 // Global state for relay callbacks
@@ -621,8 +518,12 @@ typedef struct {
 	FILE_MANIFEST* manifest;
 	BOOLEAN receiver_connected;
 	BOOLEAN transfer_started;
+	BOOLEAN transfer_failed;        // Receiver disconnected without completing
+	BOOLEAN peer_disconnected;      // Set by SHUTDOWN_INITIATED_BY_PEER/TRANSPORT
+	uint64_t peer_error_code;       // Error code from SHUTDOWN_INITIATED_BY_PEER (0 = graceful)
 	HANDLE receiver_connect_event;
 	HANDLE transfer_done_event;
+	HQUIC connection;
 } SEND_SERVER_CONTEXT;
 
 // Server listener callback for cmd_send
@@ -691,6 +592,8 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 				return QUIC_STATUS_SUCCESS;
 			}
 			ctx->transfer_started = TRUE;
+			ctx->connection = Connection;
+			g_active_connection = Connection;
 
 			LOG("[Send] Receiver connected! Starting chunk-based file transfer...\n");
 
@@ -700,19 +603,57 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 			return QUIC_STATUS_SUCCESS;
 		}
 		
+	case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
+	{
+		LOG("[Send] Receiver disconnected (error: 0x%llx)\n",
+			(unsigned long long)Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode);
+		ctx->peer_error_code = Event->SHUTDOWN_INITIATED_BY_PEER.ErrorCode;
+		ctx->peer_disconnected = TRUE;
+		return QUIC_STATUS_SUCCESS;
+	}
+
+	case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
+	{
+		LOG("[Send] Connection lost (status: 0x%x)\n", Event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status);
+		ctx->peer_disconnected = TRUE;
+		return QUIC_STATUS_SUCCESS;
+	}
+
 	case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
 	{
 		LOG("[Send] Connection shutdown complete\n");
-		// Connection already closed by main loop or MsQuic, don't close again
+		MsQuic->ConnectionClose(Connection);
+		g_active_connection = NULL;
+
+		// If receiver disconnected (not sender-initiated cleanup), check error code
+		if (ctx->peer_disconnected && ctx->transfer_started && !ctx->transfer_failed)
+		{
+			if (ctx->peer_error_code == 0)
+			{
+				// Graceful close (error 0) = receiver completed successfully
+				SetEvent(ctx->transfer_done_event);
+			}
+			else
+			{
+				// Non-zero error = actual failure, allow reconnection
+				LOG("[Send] Receiver disconnected before transfer complete. Waiting for reconnection...\n");
+				ctx->receiver_connected = FALSE;
+				ctx->transfer_started = FALSE;
+				ctx->connection = NULL;
+				ctx->peer_disconnected = FALSE;
+				ctx->transfer_failed = TRUE;
+				SetEvent(ctx->transfer_done_event);
+			}
+		}
 		return QUIC_STATUS_SUCCESS;
 	}
-		
+
 		case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
 		{
 			// We don't expect streams from receiver (sender initiates)
 			return QUIC_STATUS_SUCCESS;
 		}
-		
+
 		default:
 			return QUIC_STATUS_SUCCESS;
 	}
@@ -745,6 +686,7 @@ static QUIC_STATUS QUIC_API ClientConnectionCallback_Receive(
 		{
 			LOG("[Receive] Connected to sender!\n");
 			ctx->connected = TRUE;
+			g_active_connection = Connection;
 			SetEvent(ctx->connect_event);
 			return QUIC_STATUS_SUCCESS;
 		}
@@ -1005,47 +947,76 @@ static QUIC_STATUS QUIC_API RaceConnectionCallback(
 // cmd_send - Send a file and get a ticket
 static int cmd_send(const char* filepath)
 {
+	// Install Ctrl+C handler for clean shutdown
+	SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+
 	LOG("\n═══════════════════════════════════════\n");
 	LOG("  WORMHOLE SEND\n");
 	LOG("═══════════════════════════════════════\n\n");
-	
-	// Check if file exists
-	if (!FileExists(filepath))
+
+	BOOLEAN is_directory = IsDirectory(filepath);
+
+	// Check if file/directory exists
+	if (!is_directory && !FileExists(filepath))
 	{
 		LOG_ERROR("Error: File not found: %s\n", filepath);
 		return 1;
 	}
-	
-	uint64_t filesize = 0;
-	if (!GetWormholeFileSize(filepath, &filesize))
-	{
-		LOG_ERROR("Error: Failed to get file size\n");
-		return 1;
-	}
-	
+
+	FILE_MANIFEST* manifest = NULL;
 	char* filename = NULL;
 	uint32_t filename_len = 0;
-	ExtractFilename(filepath, &filename, &filename_len);
-	if (!filename)
-	{
-		LOG_ERROR("Error: Failed to extract filename\n");
-		return 1;
-	}
-	
-	LOG("[Send] File: %s\n", filename);
-	LOG("[Send] Size: %llu bytes\n\n", (unsigned long long)filesize);
+	uint64_t filesize = 0;
 
-	// Build content-addressed manifest (chunks + Blake3 hashes)
-	LOG("[Send] Building file manifest...\n");
-	FILE_MANIFEST* manifest = Chunker_BuildManifest(filepath);
-	if (!manifest)
+	if (is_directory)
 	{
-		LOG_ERROR("Error: Failed to build file manifest\n");
-		free(filename);
-		return 1;
+		// Multi-file directory transfer (manifest version 2)
+		LOG("[Send] Directory: %s\n", filepath);
+		LOG("[Send] Building directory manifest...\n");
+		manifest = Chunker_BuildManifestFromDirectory(filepath);
+		if (!manifest)
+		{
+			LOG_ERROR("Error: Failed to build directory manifest\n");
+			return 1;
+		}
+		filesize = manifest->file_size;
+		LOG("[Send] Manifest v2: %u files, %u chunks, %llu bytes total (Blake3 hashed)\n",
+			manifest->file_count, manifest->chunk_count,
+			(unsigned long long)manifest->file_size);
+		// Use directory name as the display name
+		ExtractFilename(filepath, &filename, &filename_len);
 	}
-	LOG("[Send] Manifest: %u chunks of %u bytes (Blake3 hashed)\n",
-		manifest->chunk_count, manifest->chunk_size);
+	else
+	{
+		// Single-file transfer (manifest version 1)
+		filesize = 0;
+		if (!GetWormholeFileSize(filepath, &filesize))
+		{
+			LOG_ERROR("Error: Failed to get file size\n");
+			return 1;
+		}
+
+		ExtractFilename(filepath, &filename, &filename_len);
+		if (!filename)
+		{
+			LOG_ERROR("Error: Failed to extract filename\n");
+			return 1;
+		}
+
+		LOG("[Send] File: %s\n", filename);
+		LOG("[Send] Size: %llu bytes\n\n", (unsigned long long)filesize);
+
+		LOG("[Send] Building file manifest...\n");
+		manifest = Chunker_BuildManifest(filepath);
+		if (!manifest)
+		{
+			LOG_ERROR("Error: Failed to build file manifest\n");
+			free(filename);
+			return 1;
+		}
+		LOG("[Send] Manifest: %u chunks of %u bytes (Blake3 hashed)\n",
+			manifest->chunk_count, manifest->chunk_size);
+	}
 	
 #ifdef _WIN32
 	// Initialize Winsock on Windows
@@ -1090,6 +1061,7 @@ static int cmd_send(const char* filepath)
 	relay_config.on_ticket_created = on_ticket_created;
 	relay_config.on_peer_info = on_peer_info;
 	relay_config.on_disconnected = on_relay_disconnected;
+	relay_config.on_peers_found = NULL;
 	relay_config.callback_context = NULL;
 
 	RELAY_CLIENT* relay_client = RelayClient_Create(&relay_config);
@@ -1104,11 +1076,15 @@ static int cmd_send(const char* filepath)
 		return 1;
 	}
 
+	// Track active resources for Ctrl+C cleanup
+	g_active_relay_client = relay_client;
+	g_active_manifest = manifest;
+
 	// Discover endpoints
 	LOG("[Send] Discovering network endpoints...\n");
 	ENDPOINT endpoints[MAX_ENDPOINTS];
 	uint16_t endpoint_count = Discovery_FindEndpoints(endpoints, MAX_ENDPOINTS);
-	
+
 	if (endpoint_count == 0)
 	{
 		LOG("[Send] Warning: No endpoints found, using placeholder\n");
@@ -1127,7 +1103,7 @@ static int cmd_send(const char* filepath)
 			endpoints[i].port = WORMHOLE_DEFAULT_PORT;
 		}
 	}
-	
+
 	// Register with relay (with retry for UDP packet loss)
 	LOG("[Send] Registering with relay server...\n");
 	
@@ -1162,12 +1138,18 @@ static int cmd_send(const char* filepath)
 	if (!registered)
 	{
 		LOG_ERROR("Error: Failed to connect to relay after %d attempts (timeout)\n", MAX_REGISTER_ATTEMPTS);
+		LOG("  Troubleshooting:\n");
+		LOG("  - Check your internet connection\n");
+		LOG("  - Verify DNS can resolve %s\n", DEFAULT_RELAY_HOST);
+		LOG("  - Check if a firewall is blocking UDP port %d\n", DEFAULT_RELAY_PORT);
+		LOG("  - The relay server at %s may be temporarily down\n", DEFAULT_RELAY_HOST);
+		g_active_relay_client = NULL;
 		RelayClient_Destroy(relay_client);
 		Manifest_Destroy(manifest);
 		free(filename);
 		return 1;
 	}
-	
+
 	// Add reflected public IP as connection endpoint (for hole punching)
 	if (g_reflected_addr_ready && endpoint_count < MAX_ENDPOINTS)
 	{
@@ -1327,6 +1309,7 @@ static int cmd_send(const char* filepath)
 	RelayClient_SendGoodbye(relay_client, 0x00);  // 0x00 = upgrading to direct
 	RelayClient_Destroy(relay_client);
 	relay_client = NULL;
+	g_active_relay_client = NULL;
 
 	// Initialize MsQuic for file transfer
 	if (!InitializeMsQuic())
@@ -1359,6 +1342,10 @@ static int cmd_send(const char* filepath)
 	server_ctx.manifest = manifest;
 	server_ctx.receiver_connected = FALSE;
 	server_ctx.transfer_started = FALSE;
+	server_ctx.transfer_failed = FALSE;
+	server_ctx.peer_disconnected = FALSE;
+	server_ctx.peer_error_code = UINT64_MAX;
+	server_ctx.connection = NULL;
 	server_ctx.receiver_connect_event = CreateEvent(NULL, FALSE, FALSE, NULL);
 	server_ctx.transfer_done_event = CreateEvent(NULL, FALSE, FALSE, NULL);
 
@@ -1424,11 +1411,42 @@ static int cmd_send(const char* filepath)
 
 	LOG("[Send] QUIC server listening on port %d\n", WORMHOLE_DEFAULT_PORT);
 
+	// Track listener for Ctrl+C cleanup
+	g_active_listener = listener;
+
+	// Start relay forwarder alongside QUIC listener for fallback connectivity.
+	// This lets receivers behind symmetric NAT connect via relay.
+	RELAY_FORWARDER* send_forwarder = NULL;
+	if (g_peer_info_ready)
+	{
+		RELAY_FORWARDER_CONFIG fwd_cfg;
+		memset(&fwd_cfg, 0, sizeof(fwd_cfg));
+		fwd_cfg.relay_host = DEFAULT_RELAY_HOST;
+		fwd_cfg.relay_port = DEFAULT_RELAY_PORT;
+		fwd_cfg.keypair = &keypair;
+		memcpy(fwd_cfg.remote_peer_id, g_peer_id, 32);
+		fwd_cfg.our_endpoints = endpoints;
+		fwd_cfg.our_endpoint_count = endpoint_count;
+		fwd_cfg.local_quic_port = WORMHOLE_DEFAULT_PORT;
+
+		send_forwarder = RelayForwarder_Start(&fwd_cfg);
+		if (send_forwarder)
+		{
+			g_active_relay_forwarder = send_forwarder;
+			LOG("[Send] Relay forwarder started (fallback for restricted NAT)\n");
+		}
+		else
+		{
+			LOG("[Send] Warning: Relay forwarder failed to start (direct-only mode)\n");
+		}
+	}
+
 	// Phase 3: Wait for receiver to connect via QUIC
 	BOOLEAN transfer_completed = FALSE;
 
 	for (int i = 0; i < (timeout_ms / poll_interval_ms); i++)
 	{
+		if (g_shutdown_requested) break;
 		Sleep(poll_interval_ms);
 
 		// Check if receiver connected via QUIC
@@ -1436,30 +1454,95 @@ static int cmd_send(const char* filepath)
 		{
 			LOG("[Send] Receiver connected! Transferring file...\n");
 
-			// Wait for transfer to complete (with timeout)
-			// 60 minutes to support large files (5GB @ 50 Mbps = ~13 minutes)
-			DWORD wait_result = WaitForSingleObject(server_ctx.transfer_done_event, 3600000);
+			// Wait for transfer with periodic progress feedback (check every 5 seconds)
+			const DWORD check_interval_ms = 5000;
+			const DWORD max_transfer_ms = 3600000;  // 60 minutes max
+			DWORD elapsed_ms = 0;
 
-			if (wait_result == WAIT_OBJECT_0)
+			while (elapsed_ms < max_transfer_ms && !g_shutdown_requested)
 			{
-				LOG("\n[Send] File transfer complete!\n");
-				transfer_completed = TRUE;
+				DWORD wait_result = WaitForSingleObject(server_ctx.transfer_done_event, check_interval_ms);
+				if (wait_result == WAIT_OBJECT_0)
+				{
+					if (server_ctx.transfer_failed)
+					{
+						// Receiver disconnected — will continue outer loop
+						LOG("\n[Send] Waiting for receiver to reconnect...\n");
+					}
+					else
+					{
+						LOG("\n[Send] File transfer complete!\n");
+						transfer_completed = TRUE;
+					}
+					break;
+				}
+				elapsed_ms += check_interval_ms;
+
+				if (elapsed_ms % 30000 == 0)
+				{
+					LOG("[Send] Transfer in progress... (%u minutes elapsed)\n", elapsed_ms / 60000);
+				}
+			}
+
+			if (transfer_completed)
+			{
+				break;  // Success — exit outer loop
+			}
+			else if (server_ctx.transfer_failed)
+			{
+				// Receiver disconnected — reset and wait for new receiver
+				server_ctx.transfer_failed = FALSE;
+				continue;  // Back to outer loop
 			}
 			else
 			{
-				LOG_ERROR("\n[Send] File transfer timed out or failed\n");
+				// Timeout or shutdown — exit
+				if (!g_shutdown_requested && elapsed_ms >= max_transfer_ms)
+				{
+					LOG_ERROR("\n[Send] File transfer timed out after 60 minutes\n");
+					LOG("  Possible causes:\n");
+					LOG("  - Network connection dropped\n");
+					LOG("  - Receiver disconnected unexpectedly\n");
+					LOG("  - File too large for current connection speed\n");
+				}
+				break;
 			}
+		}
 
-			break;
+		// Periodic waiting feedback (every 5 minutes)
+		if (i > 0 && (i * poll_interval_ms) % 300000 == 0)
+		{
+			LOG("[Send] Still waiting for receiver... (%u minutes elapsed)\n",
+				(i * poll_interval_ms) / 60000);
 		}
 	}
 
-	if (!transfer_completed && !server_ctx.receiver_connected)
+	if (!transfer_completed && !server_ctx.receiver_connected && !g_shutdown_requested)
 	{
 		LOG("\n[Send] Timeout: No receiver connected within 30 minutes\n");
+		LOG("  The ticket may have expired. Try running 'wormhole send' again.\n");
 	}
 
 	// Cleanup
+	g_active_listener = NULL;
+	g_active_relay_client = NULL;
+	g_active_manifest = NULL;
+
+	if (send_forwarder)
+	{
+		if (g_active_relay_forwarder == send_forwarder)
+			g_active_relay_forwarder = NULL;
+		RelayForwarder_Stop(send_forwarder);
+		send_forwarder = NULL;
+	}
+
+	g_active_connection = NULL;
+	if (server_ctx.connection)
+	{
+		MsQuic->ConnectionShutdown(server_ctx.connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+		Sleep(200);  // Let CONNECTION_CLOSE reach receiver
+	}
+
 	MsQuic->ListenerStop(listener);
 	MsQuic->ListenerClose(listener);
 	CloseHandle(server_ctx.receiver_connect_event);
@@ -1468,11 +1551,11 @@ static int cmd_send(const char* filepath)
 
 	Manifest_Destroy(manifest);
 	free(filename);
-	
+
 #ifdef _WIN32
 	WSACleanup();
 #endif
-	
+
 	LOG("\n[Send] Session ended\n");
 	return transfer_completed ? 0 : 1;
 }
@@ -1480,6 +1563,9 @@ static int cmd_send(const char* filepath)
 // cmd_receive - Receive a file using a ticket
 static int cmd_receive(const char* ticket)
 {
+	// Install Ctrl+C handler for clean shutdown
+	SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+
 	LOG("\n═══════════════════════════════════════\n");
 	LOG("  WORMHOLE RECEIVE\n");
 	LOG("═══════════════════════════════════════\n\n");
@@ -1529,26 +1615,32 @@ static int cmd_receive(const char* ticket)
 	RELAY_CLIENT_CONFIG relay_config;
 	relay_config.relay_host = DEFAULT_RELAY_HOST;
 	relay_config.relay_port = DEFAULT_RELAY_PORT;
-	relay_config.local_port = WORMHOLE_DEFAULT_PORT;  // Bind to QUIC port for consistent NAT mapping
+	relay_config.local_port = 0;  // Ephemeral port — receiver is QUIC client, doesn't need fixed port
 	relay_config.keypair = &keypair;
 	relay_config.on_connected = on_relay_connected;
 	relay_config.on_ticket_created = on_ticket_created;
 	relay_config.on_peer_info = on_peer_info;
 	relay_config.on_disconnected = on_relay_disconnected;
+	relay_config.on_peers_found = NULL;
 	relay_config.callback_context = NULL;
 
 	RELAY_CLIENT* relay_client = RelayClient_Create(&relay_config);
 	if (!relay_client)
 	{
 		LOG_ERROR("Error: Failed to create relay client\n");
+		LOG("  Check your network connection and try again.\n");
+		LOG("  If the problem persists, the relay server may be down.\n");
 		return 1;
 	}
+
+	// Track for Ctrl+C cleanup
+	g_active_relay_client = relay_client;
 
 	// Discover endpoints
 	LOG("[Receive] Discovering network endpoints...\n");
 	ENDPOINT endpoints[MAX_ENDPOINTS];
 	uint16_t endpoint_count = Discovery_FindEndpoints(endpoints, MAX_ENDPOINTS);
-	
+
 	if (endpoint_count == 0)
 	{
 		memset(&endpoints[0], 0, sizeof(ENDPOINT));
@@ -1601,10 +1693,16 @@ static int cmd_receive(const char* ticket)
 	if (!registered)
 	{
 		LOG_ERROR("Error: Failed to connect to relay after %d attempts (timeout)\n", MAX_REGISTER_ATTEMPTS);
+		LOG("  Troubleshooting:\n");
+		LOG("  - Check your internet connection\n");
+		LOG("  - Verify DNS can resolve %s\n", DEFAULT_RELAY_HOST);
+		LOG("  - Check if a firewall is blocking UDP port %d\n", DEFAULT_RELAY_PORT);
+		LOG("  - The relay server at %s may be temporarily down\n", DEFAULT_RELAY_HOST);
+		g_active_relay_client = NULL;
 		RelayClient_Destroy(relay_client);
 		return 1;
 	}
-	
+
 	// Lookup sender
 	LOG("[Receive] Looking up sender...\n");
 	if (!RelayClient_LookupTicket(relay_client, ticket))
@@ -1623,6 +1721,10 @@ static int cmd_receive(const char* ticket)
 	if (!g_peer_info_ready)
 	{
 		LOG_ERROR("Error: Ticket not found or expired\n");
+		LOG("  - Make sure the sender is still running 'wormhole send'\n");
+		LOG("  - Check that you typed the ticket correctly\n");
+		LOG("  - Tickets expire after 1 hour\n");
+		g_active_relay_client = NULL;
 		RelayClient_Destroy(relay_client);
 		return 1;
 	}
@@ -1666,6 +1768,7 @@ static int cmd_receive(const char* ticket)
 	RelayClient_SendGoodbye(relay_client, 0x00);  // 0x00 = upgrading to direct
 	RelayClient_Destroy(relay_client);
 	relay_client = NULL;
+	g_active_relay_client = NULL;
 
 	// Get Downloads folder path
 	char downloads_path[MAX_PATH];
@@ -1761,6 +1864,14 @@ static int cmd_receive(const char* ticket)
 		for (uint16_t i = 0; i < g_peer_endpoint_count; i++)
 		{
 			const ENDPOINT* ep = &g_peer_endpoints[i];
+
+			// Skip relay endpoints — they speak relay protocol, not QUIC.
+			// The relay forwarder path handles QUIC-over-relay separately.
+			if (ep->priority >= 200)
+			{
+				par_ctx.connections[i] = NULL;
+				continue;
+			}
 
 			char ip_str[INET6_ADDRSTRLEN];
 			uint16_t port;
@@ -1882,64 +1993,111 @@ static int cmd_receive(const char* ticket)
 		}
 	}
 	
+	// =========================================================================
+	// Relay Forwarding Fallback
+	// If direct connections failed, try tunneling QUIC through the relay.
+	// =========================================================================
+	RELAY_FORWARDER* recv_forwarder = NULL;
+
 	if (!connected)
 	{
-		// Count endpoint types attempted for detailed error message
-		uint16_t lan_count = 0, ipv6_count = 0, public_count = 0, relay_count = 0;
-		for (uint16_t i = 0; i < g_peer_endpoint_count; i++)
+		LOG("\n[Receive] Direct connections failed. Attempting relay-forwarded connection...\n");
+
+		RELAY_FORWARDER_CONFIG fwd_cfg;
+		memset(&fwd_cfg, 0, sizeof(fwd_cfg));
+		fwd_cfg.relay_host = DEFAULT_RELAY_HOST;
+		fwd_cfg.relay_port = DEFAULT_RELAY_PORT;
+		fwd_cfg.keypair = &keypair;
+		memcpy(fwd_cfg.remote_peer_id, g_peer_id, 32);
+		fwd_cfg.our_endpoints = endpoints;
+		fwd_cfg.our_endpoint_count = endpoint_count;
+		fwd_cfg.local_quic_port = 0;  // Receiver mode: proxy provides port
+
+		recv_forwarder = RelayForwarder_Start(&fwd_cfg);
+		if (recv_forwarder)
+			g_active_relay_forwarder = recv_forwarder;
+		if (recv_forwarder && RelayForwarder_IsReady(recv_forwarder))
 		{
-			if (g_peer_endpoints[i].priority == 0)
+			uint16_t proxy_port = RelayForwarder_GetProxyPort(recv_forwarder);
+			LOG("[Receive] Relay forwarder started on 127.0.0.1:%u\n", proxy_port);
+
+			// Connect MsQuic to the local proxy port
+			HQUIC relay_conn = NULL;
+			QUIC_STATUS status = MsQuic->ConnectionOpen(
+				Registration,
+				ClientConnectionCallback_Receive,
+				&client_ctx,
+				&relay_conn
+			);
+
+			if (QUIC_SUCCEEDED(status))
 			{
-				lan_count++;
-			}
-			else if (g_peer_endpoints[i].priority == 75)
-			{
-				ipv6_count++;
-			}
-			else if (g_peer_endpoints[i].priority == 100)
-			{
-				public_count++;
-			}
-			else if (g_peer_endpoints[i].priority >= 200)
-			{
-				relay_count++;
+				status = MsQuic->ConnectionStart(
+					relay_conn,
+					ClientConfiguration,
+					QUIC_ADDRESS_FAMILY_INET,
+					"127.0.0.1",
+					proxy_port
+				);
+
+				if (QUIC_SUCCEEDED(status))
+				{
+					LOG("[Receive] Connecting to sender via relay...\n");
+
+					// Wait for connection (15 second timeout for relay path)
+					DWORD wait_result = WaitForSingleObject(client_ctx.connect_event, 15000);
+					if (wait_result == WAIT_OBJECT_0 && client_ctx.connected)
+					{
+						connection = relay_conn;
+						connected = TRUE;
+						LOG("[Receive] Connected via relay forwarding!\n");
+					}
+					else
+					{
+						LOG("[Receive] Relay-forwarded connection timed out\n");
+						MsQuic->ConnectionShutdown(relay_conn, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+						MsQuic->ConnectionClose(relay_conn);
+					}
+				}
+				else
+				{
+					LOG_ERROR("[Receive] Failed to start relay connection: 0x%x\n", status);
+					MsQuic->ConnectionClose(relay_conn);
+				}
 			}
 		}
-		
+		else
+		{
+			LOG("[Receive] Relay forwarder failed to start\n");
+		}
+	}
+
+	if (!connected)
+	{
 		LOG("\n");
 		LOG("╔══════════════════════════════════════════════════════════╗\n");
-		LOG("║  CONNECTION FAILED - No Direct Path Available           ║\n");
+		LOG("║  CONNECTION FAILED                                       ║\n");
 		LOG("╠══════════════════════════════════════════════════════════╣\n");
 		LOG("║                                                          ║\n");
-		LOG("║  Attempted %u connection methods:                        ║\n", g_peer_endpoint_count);
-		if (lan_count > 0)
-			LOG("║   • %u LAN endpoints (same network)         - FAILED    ║\n", lan_count);
-		if (ipv6_count > 0)
-			LOG("║   • %u IPv6 endpoints                       - FAILED    ║\n", ipv6_count);
-		if (public_count > 0)
-			LOG("║   • %u Public IP hole punch attempts        - FAILED    ║\n", public_count);
-		if (relay_count > 0)
-			LOG("║   • %u Relay forwarding attempts            - FAILED    ║\n", relay_count);
+		LOG("║  All connection methods failed (direct + relay).         ║\n");
 		LOG("║                                                          ║\n");
-		LOG("║  Possible causes:                                        ║\n");
-		LOG("║   • Both peers behind Symmetric NAT (restrictive)       ║\n");
-		LOG("║   • Firewall blocking UDP connections                   ║\n");
-		LOG("║   • Mobile carrier blocking peer-to-peer traffic        ║\n");
-		LOG("║                                                          ║\n");
-		LOG("║  Solutions:                                              ║\n");
-		LOG("║   • Try from a different network                        ║\n");
-		LOG("║   • Use a VPN with port forwarding enabled              ║\n");
-		LOG("║   • Relay forwarding (coming soon)                      ║\n");
+		LOG("║  Troubleshooting:                                        ║\n");
+		LOG("║   - Is the sender still running 'wormhole send'?        ║\n");
+		LOG("║   - Check firewall settings on both machines             ║\n");
+		LOG("║   - Try from a different network                         ║\n");
+		LOG("║   - Both peers may be behind restrictive NAT             ║\n");
 		LOG("║                                                          ║\n");
 		LOG("╚══════════════════════════════════════════════════════════╝\n");
-		
+
+		if (recv_forwarder)
+		{
+			if (g_active_relay_forwarder == recv_forwarder)
+				g_active_relay_forwarder = NULL;
+			RelayForwarder_Stop(recv_forwarder);
+		}
 		CloseHandle(client_ctx.connect_event);
 		CloseHandle(client_ctx.transfer_done_event);
 		CleanupMsQuic();
-		if (relay_client)
-		{
-			RelayClient_Destroy(relay_client);
-		}
 #ifdef _WIN32
 		WSACleanup();
 #endif
@@ -1951,41 +2109,323 @@ static int cmd_receive(const char* ticket)
 	LOG("║  Waiting for file transfer...                             ║\n");
 	LOG("╚═══════════════════════════════════════════════════════════╝\n\n");
 	
-	// Wait for file transfer to complete (60 minute timeout for large files)
-	DWORD wait_result = WaitForSingleObject(client_ctx.transfer_done_event, 3600000);
-	
+	// Wait for file transfer with periodic progress feedback
 	BOOLEAN transfer_completed = FALSE;
-	if (wait_result == WAIT_OBJECT_0)
+	const DWORD check_interval_ms = 5000;
+	const DWORD max_transfer_ms = 3600000;  // 60 minutes max
+	DWORD elapsed_ms = 0;
+
+	while (elapsed_ms < max_transfer_ms && !g_shutdown_requested)
 	{
-		LOG("\n[Receive] ✅ File transfer complete!\n");
-		transfer_completed = TRUE;
+		DWORD wait_result = WaitForSingleObject(client_ctx.transfer_done_event, check_interval_ms);
+		if (wait_result == WAIT_OBJECT_0)
+		{
+			LOG("\n[Receive] File transfer complete!\n");
+			transfer_completed = TRUE;
+			break;
+		}
+		elapsed_ms += check_interval_ms;
+
+		if (elapsed_ms % 30000 == 0)
+		{
+			LOG("[Receive] Transfer in progress... (%u minutes elapsed)\n", elapsed_ms / 60000);
+		}
 	}
-	else
+
+	if (!transfer_completed && !g_shutdown_requested)
 	{
-		LOG_ERROR("\n[Receive] ⚠️ File transfer timed out or failed\n");
+		LOG_ERROR("\n[Receive] File transfer timed out or failed\n");
+		LOG("  Possible causes:\n");
+		LOG("  - Sender disconnected or lost network\n");
+		LOG("  - Connection was interrupted by a firewall\n");
 	}
 	
 	// Cleanup
+	g_active_connection = NULL;
 	if (connection)
 	{
+		MsQuic->ConnectionShutdown(connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+		Sleep(200);  // Let CONNECTION_CLOSE reach sender
 		MsQuic->ConnectionClose(connection);
 	}
 	CloseHandle(client_ctx.connect_event);
 	CloseHandle(client_ctx.transfer_done_event);
 	CleanupMsQuic();
 	
+	if (recv_forwarder)
+	{
+		if (g_active_relay_forwarder == recv_forwarder)
+			g_active_relay_forwarder = NULL;
+		RelayForwarder_Stop(recv_forwarder);
+	}
+
 	if (relay_client)
 	{
 		RelayClient_SendGoodbye(relay_client, transfer_completed ? 0x02 : 0x01);
 		RelayClient_Destroy(relay_client);
 	}
-	
+
 #ifdef _WIN32
 	WSACleanup();
 #endif
-	
+
 	LOG("\n[Receive] Session ended\n");
 	return transfer_completed ? 0 : 1;
+}
+
+//=============================================================================
+// Thin Client Commands (communicate with wormholed daemon via IPC)
+//=============================================================================
+
+static int cmd_store(const char *filepath)
+{
+	if (!FileExists(filepath))
+	{
+		LOG_ERROR("Error: File not found: %s\n", filepath);
+		return 1;
+	}
+
+	IPC_CLIENT *client = IpcClient_Connect();
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		return 1;
+	}
+
+	// Build payload: [2B LE path_len][filepath]
+	uint32_t path_len = (uint32_t)strlen(filepath);
+	uint32_t payload_size = 2 + path_len;
+	uint8_t *payload = (uint8_t *)malloc(payload_size);
+	if (!payload)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	WriteUint16LE(payload, (uint16_t)path_len);
+	memcpy(payload + 2, filepath, path_len);
+
+	uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+	if (!response)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		free(payload);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	uint32_t response_size = 0;
+
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_STORE,
+		payload, payload_size,
+		response, IPC_MAX_MESSAGE_SIZE, &response_size);
+	free(payload);
+
+	if (!ok || response_size < 1 || response[0] != IPC_STATUS_OK)
+	{
+		LOG_ERROR("Error: Store command failed\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	LOG("[Store] File stored successfully\n");
+	free(response);
+	IpcClient_Disconnect(client);
+	return 0;
+}
+
+static int cmd_get(const char *hash_hex)
+{
+	if (strlen(hash_hex) != 64)
+	{
+		LOG_ERROR("Error: Hash must be 64 hex characters\n");
+		return 1;
+	}
+
+	IPC_CLIENT *client = IpcClient_Connect();
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		return 1;
+	}
+
+	uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+	if (!response)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	uint32_t response_size = 0;
+
+	// Convert 64-char hex string to 32-byte binary hash
+	uint8_t hash_bin[WH_HASH_SIZE];
+	for (int i = 0; i < WH_HASH_SIZE; i++)
+	{
+		unsigned int byte_val;
+		if (sscanf(hash_hex + i * 2, "%2x", &byte_val) != 1)
+		{
+			LOG_ERROR("Error: Invalid hex character in hash\n");
+			free(response);
+			IpcClient_Disconnect(client);
+			return 1;
+		}
+		hash_bin[i] = (uint8_t)byte_val;
+	}
+
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_GET,
+		hash_bin, WH_HASH_SIZE,
+		response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 1 || response[0] != IPC_STATUS_OK)
+	{
+		if (response_size >= 1 && response[0] == IPC_STATUS_NOT_FOUND)
+			LOG_ERROR("Error: Chunk not found\n");
+		else
+			LOG_ERROR("Error: Get command failed\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	// Write chunk data to stdout (skip status byte)
+	if (response_size > 1)
+	{
+		fwrite(response + 1, 1, response_size - 1, stdout);
+	}
+
+	free(response);
+	IpcClient_Disconnect(client);
+	return 0;
+}
+
+static int cmd_status(void)
+{
+	IPC_CLIENT *client = IpcClient_Connect();
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		return 1;
+	}
+
+	uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+	if (!response)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	uint32_t response_size = 0;
+
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_STATUS,
+		NULL, 0,
+		response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	// Daemon sends: [1B status][4B peers][4B chunks][8B storage][1B relay][1B listener] = 19 bytes
+	if (!ok || response_size < 19 || response[0] != IPC_STATUS_OK)
+	{
+		LOG_ERROR("Error: Status command failed\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t peers    = ReadUint32LE(response + 1);
+	uint32_t chunks   = ReadUint32LE(response + 5);
+	uint64_t storage  = ReadUint64LE(response + 9);
+	BOOLEAN  relay    = response[17];
+	BOOLEAN  listener = response[18];
+
+	LOG("\nWormhole Daemon Status\n");
+	LOG("══════════════════════\n");
+	LOG("  Peers:         %u\n", peers);
+	LOG("  Chunks:        %u\n", chunks);
+	LOG("  Storage Used:  %llu bytes\n", (unsigned long long)storage);
+	LOG("  Relay:         %s\n", relay ? "connected" : "disconnected");
+	LOG("  Listener:      %s\n\n", listener ? "active" : "inactive");
+
+	free(response);
+	IpcClient_Disconnect(client);
+	return 0;
+}
+
+static int cmd_config(int argc, char *argv[])
+{
+	// argv[0] = "config", argv[1] = subcommand, argv[2..] = args
+	if (argc < 2)
+	{
+		LOG_ERROR("Usage: wormhole config <list|get|set> [key] [value]\n");
+		return 1;
+	}
+
+	WORMHOLE_CONFIG *config = Config_LoadDefault();
+	if (!config)
+	{
+		LOG_ERROR("Error: Failed to load config\n");
+		return 1;
+	}
+
+	int result = 0;
+
+	if (strcmp(argv[1], "list") == 0)
+	{
+		LOG("\nWormhole Configuration (~/.wormhole/config)\n");
+		LOG("════════════════════════════════════════════\n");
+		LOG("  max_storage_gb     = %llu\n",
+			(unsigned long long)Config_GetUint64(config, "max_storage_gb",
+				CONFIG_DEFAULT_MAX_STORAGE_GB));
+		LOG("  replication_target = %llu\n",
+			(unsigned long long)Config_GetUint64(config, "replication_target",
+				CONFIG_DEFAULT_REPLICATION_TARGET));
+		LOG("  relay_host         = %s\n",
+			Config_GetString(config, "relay_host", CONFIG_DEFAULT_RELAY_HOST));
+		LOG("  relay_port         = %llu\n\n",
+			(unsigned long long)Config_GetUint64(config, "relay_port",
+				CONFIG_DEFAULT_RELAY_PORT));
+	}
+	else if (strcmp(argv[1], "get") == 0)
+	{
+		if (argc < 3)
+		{
+			LOG_ERROR("Usage: wormhole config get <key>\n");
+			result = 1;
+		}
+		else
+		{
+			const char *val = Config_GetString(config, argv[2], NULL);
+			if (val)
+				LOG("%s\n", val);
+			else
+				LOG_ERROR("Key not found: %s\n", argv[2]);
+		}
+	}
+	else if (strcmp(argv[1], "set") == 0)
+	{
+		if (argc < 4)
+		{
+			LOG_ERROR("Usage: wormhole config set <key> <value>\n");
+			result = 1;
+		}
+		else
+		{
+			Config_Set(config, argv[2], argv[3]);
+			if (Config_Save(config))
+				LOG("Config updated: %s = %s\n", argv[2], argv[3]);
+			else
+			{
+				LOG_ERROR("Error: Failed to save config\n");
+				result = 1;
+			}
+		}
+	}
+	else
+	{
+		LOG_ERROR("Unknown config subcommand: %s\n", argv[1]);
+		result = 1;
+	}
+
+	Config_Destroy(config);
+	return result;
 }
 
 //=============================================================================
@@ -1994,17 +2434,22 @@ static int cmd_receive(const char* ticket)
 
 static void PrintUsage(void)
 {
-	LOG("\nWormhole - Secure P2P File Transfer\n\n");
+	LOG("\nWormhole - Secure P2P File Transfer & Storage\n\n");
 	LOG("Usage:\n");
-	LOG("  wormhole.exe send <filename>      Send a file and get a ticket\n");
-	LOG("  wormhole.exe receive <ticket>     Receive a file using a ticket\n");
-	LOG("  wormhole.exe --help               Show this help message\n\n");
+	LOG("  wormhole send <file|directory>    Send a file or directory\n");
+	LOG("  wormhole receive <ticket>         Receive a file using a ticket\n");
+	LOG("  wormhole store <file>             Store file chunks via daemon\n");
+	LOG("  wormhole get <hash>               Retrieve a chunk by hash\n");
+	LOG("  wormhole status                   Show daemon status\n");
+	LOG("  wormhole config list              Show all settings\n");
+	LOG("  wormhole config get <key>         Get a config value\n");
+	LOG("  wormhole config set <key> <val>   Set a config value\n");
+	LOG("  wormhole --help                   Show this help message\n\n");
 	LOG("Examples:\n");
-	LOG("  wormhole.exe send document.pdf\n");
-	LOG("  wormhole.exe receive 7-guitar-battery\n\n");
-	LOG("Legacy commands (Phase 1 - for testing):\n");
-	LOG("  wormhole.exe -server                             Start server mode\n");
-	LOG("  wormhole.exe -client -target:<host> -file:<path> Client mode\n\n");
+	LOG("  wormhole send document.pdf\n");
+	LOG("  wormhole send ./my-project/\n");
+	LOG("  wormhole receive 7-guitar-battery\n");
+	LOG("  wormhole config set max_storage_gb 20\n\n");
 }
 
 //=============================================================================
@@ -2013,27 +2458,19 @@ static void PrintUsage(void)
 
 int main(int argc, char *argv[])
 {
-	BOOLEAN success = FALSE;
-	BOOLEAN is_server = FALSE;
-	BOOLEAN is_client = FALSE;
-	char *target_host = NULL;
-	char *file_path = NULL;
-
 	LOG("=== Wormhole - Secure P2P File Transfer ===\n\n");
 
-	// Check for no arguments or help
 	if (argc < 2)
 	{
 		PrintUsage();
 		return 1;
 	}
 
-	// Check for new send/receive commands first
 	if (strcmp(argv[1], "send") == 0)
 	{
 		if (argc < 3)
 		{
-			LOG_ERROR("ERROR: Missing filename\n");
+			LOG_ERROR("ERROR: Missing filename or directory\n");
 			PrintUsage();
 			return 1;
 		}
@@ -2049,81 +2486,43 @@ int main(int argc, char *argv[])
 		}
 		return cmd_receive(argv[2]);
 	}
+	else if (strcmp(argv[1], "store") == 0)
+	{
+		if (argc < 3)
+		{
+			LOG_ERROR("ERROR: Missing filename\n");
+			PrintUsage();
+			return 1;
+		}
+		return cmd_store(argv[2]);
+	}
+	else if (strcmp(argv[1], "get") == 0)
+	{
+		if (argc < 3)
+		{
+			LOG_ERROR("ERROR: Missing chunk hash\n");
+			PrintUsage();
+			return 1;
+		}
+		return cmd_get(argv[2]);
+	}
+	else if (strcmp(argv[1], "status") == 0)
+	{
+		return cmd_status();
+	}
+	else if (strcmp(argv[1], "config") == 0)
+	{
+		return cmd_config(argc - 1, argv + 1);
+	}
 	else if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)
 	{
 		PrintUsage();
 		return 0;
 	}
-
-	// Legacy command-line parsing (Phase 1 compatibility)
-	for (int i = 1; i < argc; i++)
+	else
 	{
-		if (_stricmp(argv[i], "-server") == 0)
-		{
-			is_server = TRUE;
-		}
-		else if (_stricmp(argv[i], "-client") == 0)
-		{
-			is_client = TRUE;
-		}
-		else if (strncmp(argv[i], "-target:", 8) == 0)
-		{
-			target_host = argv[i] + 8;
-		}
-		else if (strncmp(argv[i], "-file:", 6) == 0)
-		{
-			file_path = argv[i] + 6;
-		}
-	}
-
-	// Validate legacy arguments
-	if (!is_server && !is_client)
-	{
-		LOG_ERROR("ERROR: Unknown command or must specify either -server or -client\n\n");
+		LOG_ERROR("ERROR: Unknown command: %s\n\n", argv[1]);
 		PrintUsage();
 		return 1;
 	}
-
-	if (is_server && is_client)
-	{
-		LOG_ERROR("ERROR: Cannot specify both -server and -client\n\n");
-		PrintUsage();
-		return 1;
-	}
-
-	if (is_client && (target_host == NULL || file_path == NULL))
-	{
-		LOG_ERROR("ERROR: Client mode requires -target:<host> and -file:<path>\n\n");
-		PrintUsage();
-		return 1;
-	}
-
-	// Initialize MsQuic
-	if (!InitializeMsQuic())
-	{
-		LOG_ERROR("ERROR: Failed to initialize MsQuic\n");
-		return 1;
-	}
-
-	// Run server or client (legacy mode)
-	if (is_server)
-	{
-		if (ServerLoadConfiguration())
-		{
-			success = RunServer();
-		}
-	}
-	else  // is_client
-	{
-		if (ClientLoadConfiguration())
-		{
-			success = RunClient(target_host, file_path);
-		}
-	}
-
-	// Cleanup
-	CleanupMsQuic();
-
-	LOG("\n=== Wormhole - Exit ===\n");
-	return success ? 0 : 1;
 }

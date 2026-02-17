@@ -24,6 +24,13 @@ typedef int socklen_t;
 // Forward declarations
 typedef struct RELAY_CLIENT RELAY_CLIENT;
 
+// Discovered peer info (returned by PEERS_FOUND)
+typedef struct {
+    uint8_t  peer_id[32];
+    ENDPOINT endpoints[MAX_ENDPOINTS];
+    uint16_t endpoint_count;
+} DISCOVERED_PEER;
+
 // Relay client callbacks
 typedef void (*RelayConnectedCallback)(void* context, uint64_t session_id,
                                        const uint8_t observed_addr[16],
@@ -32,6 +39,7 @@ typedef void (*RelayTicketCreatedCallback)(void* context, const char* ticket);
 typedef void (*RelayPeerInfoCallback)(void* context, const uint8_t peer_id[32],
                                      const ENDPOINT* endpoints, uint16_t endpoint_count);
 typedef void (*RelayDisconnectedCallback)(void* context);
+typedef void (*RelayPeersFoundCallback)(void* context, const DISCOVERED_PEER* peers, uint16_t peer_count);
 
 // Relay client configuration
 typedef struct {
@@ -45,6 +53,7 @@ typedef struct {
     RelayTicketCreatedCallback on_ticket_created;
     RelayPeerInfoCallback on_peer_info;
     RelayDisconnectedCallback on_disconnected;
+    RelayPeersFoundCallback on_peers_found;
     void* callback_context;           // User context for callbacks
 } RELAY_CLIENT_CONFIG;
 
@@ -85,6 +94,11 @@ bool RelayClient_SendGoodbye(RELAY_CLIENT* client, uint8_t reason);
 // Returns: true if sent successfully, false on failure
 bool RelayClient_ForwardPacket(RELAY_CLIENT* client, const uint8_t dest_peer_id[32],
                                const uint8_t* payload, uint16_t payload_len);
+
+// Request list of active peers from relay for P2P storage discovery
+// max_peers: Maximum number of peers to request (capped at 50 server-side)
+// Returns: true if request sent successfully, false on failure
+bool RelayClient_FindPeers(RELAY_CLIENT* client, uint16_t max_peers);
 
 // Process incoming messages from relay (call this in a loop or polling thread)
 // timeout_ms: Timeout in milliseconds (0 = non-blocking, -1 = blocking)
