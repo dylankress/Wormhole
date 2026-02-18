@@ -87,6 +87,7 @@ BOOLEAN TransferState_Save(const uint8_t manifest_hash[32],
                            const BOOLEAN *chunks_received, uint32_t total_chunks)
 {
     if (!chunks_received || total_chunks == 0) return FALSE;
+    if (total_chunks > 0x1FFFFFFF) return FALSE;  // ~500M chunks = ~128TB at 256KB
 
     char path[MAX_PATH];
     if (!GetStatePath(manifest_hash, path, sizeof(path))) return FALSE;
@@ -141,6 +142,11 @@ BOOLEAN TransferState_Load(const uint8_t manifest_hash[32],
 
     uint32_t total_chunks = ReadUint32LE(header);
     if (total_chunks == 0)
+    {
+        fclose(fh);
+        return FALSE;
+    }
+    if (total_chunks > 0x1FFFFFFF)  // ~500M chunks = ~128TB at 256KB
     {
         fclose(fh);
         return FALSE;

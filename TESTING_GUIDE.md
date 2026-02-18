@@ -95,24 +95,828 @@ cd relay-server
 
 Output: `relay-server/build/relay-server`
 
-## Step 6: Manual Integration Test
+---
 
-Quick smoke test for end-to-end file transfer (requires relay server running):
+## Cross-Network Manual Testing Guide
 
-```bash
-# Terminal 1 — Create a test file and send it
-dd if=/dev/urandom of=test_10mb.bin bs=1M count=10
-md5sum test_10mb.bin
-wormhole.exe send test_10mb.bin
-# Note the ticket code (e.g., "3-guitar-battery")
+Steps 6–22 cover comprehensive manual testing of **every user-facing feature** across a real network. Run these after all 15 unit tests and the E2E daemon tests pass.
 
-# Terminal 2 — Receive it
-wormhole.exe receive 3-guitar-battery
-md5sum ~/Downloads/test_10mb.bin
-# MD5 hashes should match
+### Setup & Prerequisites
+
+#### Network Topology
+
+You need at minimum:
+
+| Machine | Role | OS | Notes |
+|---------|------|----|-------|
+| **Machine A** | Sender / Daemon A | Windows | Has `wormhole.exe` and `wormholed.exe` in `src\build\` |
+| **Machine B** | Receiver / Daemon B | Windows | Same build, different machine (or same machine, different terminal for LAN tests) |
+| **Relay** | Relay server | Linux / WSL | Runs `relay-server/build/relay-server` |
+
+For LAN-only tests (Steps 6–9), you can use a single Windows machine with two terminals.
+For relay/NAT tests (Steps 10–11), you need the relay server reachable from both machines.
+For multi-daemon tests (Steps 13–17), run two daemon instances on different ports.
+
+#### Firewall & Ports
+
+Open these ports on the relevant machines:
+
+| Port | Protocol | Used By | Direction |
+|------|----------|---------|-----------|
+| 443 | UDP | Relay server | Inbound on relay machine |
+| 4567 | UDP | QUIC transfers | Inbound on sender (listener) |
+| 4568 | UDP | DHT | Inbound on all daemon machines |
+
+On Windows: `netsh advfirewall firewall add rule name="Wormhole QUIC" dir=in action=allow protocol=UDP localport=4567`
+
+#### Test File Creation
+
+Create these files on Machine A before starting. Use the same files for all tests.
+
+```bat
+REM Small file — fits in 1 chunk (< 256KB)
+fsutil file createnew test_1kb.bin 1024
+
+REM Medium file — multiple chunks
+REM (PowerShell, since fsutil creates zero-filled files)
+powershell -Command "$bytes = New-Object byte[] 10485760; (New-Object Random).NextBytes($bytes); [IO.File]::WriteAllBytes('test_10mb.bin', $bytes)"
+
+REM Large file — stress test (100MB = ~400 chunks)
+powershell -Command "$bytes = New-Object byte[] 104857600; (New-Object Random).NextBytes($bytes); [IO.File]::WriteAllBytes('test_100mb.bin', $bytes)"
+
+REM Directory with nested subdirectories
+mkdir test_dir\sub1\nested
+mkdir test_dir\sub2
+echo hello > test_dir\root.txt
+echo world > test_dir\sub1\a.txt
+echo nested > test_dir\sub1\nested\deep.txt
+powershell -Command "$bytes = New-Object byte[] 524288; (New-Object Random).NextBytes($bytes); [IO.File]::WriteAllBytes('test_dir\sub2\binary.bin', $bytes)"
+
+REM Compute reference hashes
+certutil -hashfile test_1kb.bin MD5
+certutil -hashfile test_10mb.bin MD5
+certutil -hashfile test_100mb.bin MD5
+certutil -hashfile test_dir\sub1\a.txt MD5
+certutil -hashfile test_dir\sub1\nested\deep.txt MD5
+certutil -hashfile test_dir\sub2\binary.bin MD5
 ```
 
-## Test Inventory
+**Record all MD5 hashes** — you'll compare these after every transfer test.
+
+---
+
+### Step 6: Relay Server Smoke Test
+
+Verify the relay server starts and accepts connections.
+
+**On Relay Machine (Linux/WSL):**
+
+```bash
+cd relay-server
+./build.sh
+./build/relay-server -p 443 -w ../deps/eff_large_wordlist.txt --public-addr <RELAY_PUBLIC_IP>
+```
+
+**Expected output:**
+
+```
+[relay] Starting on port 443
+[relay] Loaded 7776 words from wordlist
+[relay] Public address: <RELAY_PUBLIC_IP>:443
+[relay] Listening...
+```
+
+**Pass criteria:**
+- [ ] Server starts without errors
+- [ ] Wordlist loads successfully (7776 words)
+- [ ] Server stays running, no crash
+
+**From Machine A, verify connectivity:**
+
+```bat
+REM Quick test — register and get a ticket
+wormhole.exe send test_1kb.bin
+REM Should print a ticket like "3-guitar-battery" and wait for receiver
+REM Press Ctrl+C to cancel after seeing the ticket
+```
+
+- [ ] Ticket is generated (format: `N-word-word`)
+- [ ] Relay log shows REGISTER and CREATE_TICKET messages
+
+---
+
+### Step 7: Single File Transfer — Small (LAN)
+
+Test basic send/receive with a 1KB file on the same network.
+
+**Machine A (sender):**
+
+```bat
+wormhole.exe send test_1kb.bin
+REM Note the ticket code
+```
+
+**Machine B (receiver):**
+
+```bat
+wormhole.exe receive <ticket>
+```
+
+**Pass criteria:**
+- [ ] Receiver connects to sender (check for "Connected" log message)
+- [ ] File appears in `%USERPROFILE%\Downloads\test_1kb.bin`
+- [ ] MD5 of received file matches original
+- [ ] Transfer completes in under 2 seconds
+- [ ] Both processes exit cleanly
+
+```bat
+REM On Machine B:
+certutil -hashfile %USERPROFILE%\Downloads\test_1kb.bin MD5
+REM Compare with original hash
+```
+
+---
+
+### Step 8: Single File Transfer — Medium (10MB, LAN)
+
+Test multi-chunk transfer with progress display.
+
+**Machine A:**
+
+```bat
+wormhole.exe send test_10mb.bin
+```
+
+**Machine B:**
+
+```bat
+wormhole.exe receive <ticket>
+```
+
+**Pass criteria:**
+- [ ] Progress bar displays during transfer (percentage, speed, ETA)
+- [ ] Speed display is reasonable (not 0 B/s, not absurdly high)
+- [ ] ETA counts down
+- [ ] MD5 matches after transfer
+- [ ] Transfer completes without errors
+
+---
+
+### Step 9: Single File Transfer — Large (100MB+)
+
+Stress test with a large file.
+
+**Machine A:**
+
+```bat
+wormhole.exe send test_100mb.bin
+```
+
+**Machine B:**
+
+```bat
+wormhole.exe receive <ticket>
+```
+
+**Pass criteria:**
+- [ ] Transfer starts and progress bar updates smoothly
+- [ ] No stalls or hangs mid-transfer
+- [ ] Memory usage stays reasonable (check Task Manager — should not spike above ~200MB)
+- [ ] MD5 matches after transfer
+- [ ] Total transfer time is reasonable for network speed
+
+---
+
+### Step 10: Single File Transfer — Relay Fallback
+
+Force transfer through the relay when direct connection fails.
+
+**Setup:** Block direct UDP between Machine A and Machine B using a firewall rule so only relay-forwarded QUIC works.
+
+```bat
+REM On Machine B — block direct UDP from Machine A
+netsh advfirewall firewall add rule name="Block Wormhole Direct" dir=in action=block protocol=UDP remoteip=<MACHINE_A_IP> localport=4567
+```
+
+**Machine A:**
+
+```bat
+wormhole.exe send test_10mb.bin
+```
+
+**Machine B:**
+
+```bat
+wormhole.exe receive <ticket>
+```
+
+**Pass criteria:**
+- [ ] Direct connection attempts fail (hole-punch probes time out)
+- [ ] Transfer falls back to relay-forwarded path
+- [ ] File transfers completely through relay
+- [ ] MD5 matches
+- [ ] Performance is slower than direct (expected — data routes through relay)
+
+**Cleanup:**
+
+```bat
+netsh advfirewall firewall delete rule name="Block Wormhole Direct"
+```
+---
+
+### Step 11: Directory Transfer
+
+Test multi-file directory transfer with nested subdirectories.
+
+**Machine A:**
+
+```bat
+wormhole.exe send test_dir
+```
+
+**Machine B:**
+
+```bat
+wormhole.exe receive <ticket>
+```
+
+**Pass criteria:**
+- [ ] Manifest v2 is used (multi-file transfer)
+- [ ] Directory structure is preserved in `%USERPROFILE%\Downloads\test_dir\`
+- [ ] All files present: `root.txt`, `sub1\a.txt`, `sub1\nested\deep.txt`, `sub2\binary.bin`
+- [ ] MD5 of each file matches the original
+- [ ] Empty directories are handled (if any)
+- [ ] Path separators are correct on Windows (backslash in filesystem, forward slash in manifest)
+
+```bat
+REM Verify structure
+dir /s %USERPROFILE%\Downloads\test_dir\
+REM Verify content of each file
+certutil -hashfile %USERPROFILE%\Downloads\test_dir\sub1\a.txt MD5
+certutil -hashfile %USERPROFILE%\Downloads\test_dir\sub1\nested\deep.txt MD5
+certutil -hashfile %USERPROFILE%\Downloads\test_dir\sub2\binary.bin MD5
+```
+
+---
+
+### Step 12: Resumable Transfer
+
+Test that an interrupted transfer can be resumed from where it left off.
+
+**Machine A:**
+
+```bat
+wormhole.exe send test_100mb.bin
+REM Note the ticket
+```
+
+**Machine B:**
+
+```bat
+wormhole.exe receive <ticket>
+REM Wait until progress reaches ~30-50%, then press Ctrl+C
+```
+
+**Verify checkpoint state was saved:**
+
+```bat
+REM Check for .state file
+dir %USERPROFILE%\.wormhole\transfers\*.state
+REM Should see a file named <manifest_hash>.state
+```
+
+**Resume — Machine A must send again with the same file:**
+
+```bat
+REM Machine A:
+wormhole.exe send test_100mb.bin
+REM Note the NEW ticket
+
+REM Machine B:
+wormhole.exe receive <new_ticket>
+```
+
+**Pass criteria:**
+- [ ] First transfer interrupted cleanly (no crash, no orphan files)
+- [ ] `.state` file exists in `~\.wormhole\transfers\`
+- [ ] Resumed transfer starts from where it left off (progress bar doesn't start at 0%)
+- [ ] Transfer completes successfully
+- [ ] MD5 of final file matches original
+- [ ] `.state` file is cleaned up after successful completion
+
+---
+
+### Step 13: Daemon Basics — Start, Config, Status
+
+Test the persistent daemon and CLI management commands.
+
+**Start the daemon:**
+
+```bat
+REM Start in foreground (to see logs)
+src\build\wormholed.exe --port 4567 --no-relay
+```
+
+**In another terminal, test CLI commands:**
+
+```bat
+REM Check status
+wormhole.exe status
+REM Expected: shows chunk count, peer count, uptime
+
+REM List all config
+wormhole.exe config list
+REM Expected: shows all keys with current values
+
+REM Get a specific config value
+wormhole.exe config get max_storage_gb
+REM Expected: "max_storage_gb = 10" (or current value)
+
+REM Set a config value
+wormhole.exe config set max_storage_gb 20
+wormhole.exe config get max_storage_gb
+REM Expected: "max_storage_gb = 20"
+
+REM Reset it back
+wormhole.exe config set max_storage_gb 10
+```
+
+**Pass criteria:**
+- [ ] Daemon starts and shows "IPC server started" in logs
+- [ ] `status` command returns daemon info (chunk count, peer count)
+- [ ] `config list` shows all config keys with defaults
+- [ ] `config get` returns correct value for a specific key
+- [ ] `config set` persists the value (survives daemon restart)
+- [ ] Config file at `~\.wormhole\config` is updated on disk
+
+---
+
+### Step 14: Daemon Store & Get
+
+Test storing a file via the daemon and retrieving a chunk by hash.
+
+**With daemon running (from Step 13):**
+
+```bat
+REM Store a file
+wormhole.exe store test_10mb.bin
+REM Expected: prints chunk hashes as they're stored
+REM Record one of the printed hashes
+
+REM Verify status shows chunks
+wormhole.exe status
+REM Chunk count should be > 0
+
+REM Retrieve a chunk by hash
+wormhole.exe get <chunk_hash> -o retrieved_chunk.bin
+REM Expected: chunk written to retrieved_chunk.bin
+```
+
+**Pass criteria:**
+- [ ] `store` command prints chunk hashes (one per 256KB chunk)
+- [ ] `status` shows correct chunk count (10MB = ~40 chunks)
+- [ ] `get` retrieves the correct chunk data
+- [ ] Chunk files exist on disk in `~\.wormhole\store\<prefix>\<hash>`
+- [ ] Erasure coding metadata saved (if `ec_enabled = 1`): check `~\.wormhole\ec\*.ec`
+
+```bat
+REM Verify EC metadata was created
+dir %USERPROFILE%\.wormhole\ec\*.ec
+```
+
+---
+
+### Step 15: Erasure Coding & Recovery
+
+Test that erasure coding generates parity chunks and can recover missing data.
+
+**Prerequisites:** Daemon running with `ec_enabled = 1` (default). Shorter health check interval for faster testing.
+
+```bat
+REM Set short health check interval
+wormhole.exe config set health_check_interval_sec 15
+
+REM Restart daemon to pick up the new interval
+REM (Ctrl+C the old daemon, restart)
+wormholed.exe --port 4567 --no-relay
+
+REM Store a file
+wormhole.exe store test_10mb.bin
+```
+
+**Verify EC metadata:**
+
+```bat
+dir %USERPROFILE%\.wormhole\ec\*.ec
+REM Should see .ec files corresponding to the stored chunks
+```
+
+**Simulate chunk loss:**
+
+```bat
+REM Pick a chunk hash from the store output
+REM Delete it from disk
+dir %USERPROFILE%\.wormhole\store\
+REM Navigate into a prefix directory, delete one chunk file
+del %USERPROFILE%\.wormhole\store\<prefix>\<chunk_hash_file>
+```
+
+**Wait for health check cycle (~15 seconds), then verify recovery:**
+
+```bat
+REM Watch daemon logs for:
+REM   "[daemon] EC recovered chunk ..."
+REM Or re-check the store directory:
+dir %USERPROFILE%\.wormhole\store\<prefix>\
+REM The deleted chunk should reappear
+
+REM Verify via get
+wormhole.exe get <deleted_chunk_hash> -o recovered.bin
+```
+
+**Pass criteria:**
+- [ ] `.ec` metadata files are created during store
+- [ ] Deleting a chunk triggers recovery on next health check
+- [ ] Daemon log shows "EC recovered chunk" message
+- [ ] Recovered chunk is identical (retrievable via `get`)
+- [ ] Health check reports accurate stats (checked/healthy/degraded counts)
+
+---
+
+### Step 16: Multi-Daemon Peer Discovery (FIND_PEERS)
+
+Test that two daemons can discover each other via the relay's FIND_PEERS protocol.
+
+**Prerequisites:** Relay server running.
+
+**Machine A — Daemon A:**
+
+```bat
+wormholed.exe --port 4567
+REM Connects to relay, registers peer ID
+```
+
+**Machine B — Daemon B:**
+
+```bat
+wormholed.exe --port 4567
+REM Also connects to relay
+```
+
+**Pass criteria:**
+- [ ] Both daemons register with the relay (relay log shows two REGISTER messages)
+- [ ] Each daemon logs discovered peers from FIND_PEERS responses
+- [ ] Daemon A can see Daemon B's peer ID and endpoints
+- [ ] Daemon B can see Daemon A's peer ID and endpoints
+
+**Test chunk replication:**
+
+```bat
+REM On Machine A:
+wormhole.exe store test_1kb.bin
+REM Daemon A should attempt to replicate to Daemon B (replication_target=3)
+
+REM Check Daemon B logs for incoming CHUNK_STORE_REQUEST
+REM Check Daemon B's store directory for replicated chunks
+```
+
+- [ ] Daemon A attempts replication to discovered peers
+- [ ] Daemon B receives and stores the replicated chunks
+- [ ] `status` on both daemons shows the correct chunk count
+
+---
+
+### Step 17: DHT Discovery & Chunk Announcement
+
+Test Kademlia DHT bootstrap, STORE, and FIND_VALUE operations.
+
+**Prerequisites:** Relay server running (acts as DHT bootstrap node).
+
+**Machine A — Daemon A (DHT enabled):**
+
+```bat
+wormhole.exe config set dht_enabled 1
+wormhole.exe config set dht_port 4568
+REM Restart daemon
+wormholed.exe --port 4567
+```
+
+**Machine B — Daemon B (DHT enabled):**
+
+```bat
+wormhole.exe config set dht_enabled 1
+wormhole.exe config set dht_port 4568
+REM Restart daemon
+wormholed.exe --port 4567
+```
+
+**Wait for DHT bootstrap (~10 seconds), then store a file:**
+
+```bat
+REM On Machine A:
+wormhole.exe store test_1kb.bin
+REM Daemon A should announce chunk locations to DHT via STORE messages
+```
+
+**Pass criteria:**
+- [ ] Both daemons bootstrap from relay (logs: "DHT bootstrap complete" or similar)
+- [ ] Routing tables populate (each daemon knows about the other)
+- [ ] Chunk STORE messages sent after storing file (daemon log shows DHT STORE)
+- [ ] FIND_VALUE from Machine B can locate chunks stored on Machine A
+- [ ] DHT routing table persists across daemon restart (`~\.wormhole\dht_routing_table.bin` exists)
+
+```bat
+REM Verify DHT state persists
+dir %USERPROFILE%\.wormhole\dht_routing_table.bin
+dir %USERPROFILE%\.wormhole\dht_store.bin
+```
+
+---
+
+### Step 18: Proof-of-Storage Challenges
+
+Observe proof-of-storage challenge/response between peers.
+
+**Prerequisites:** Two daemons running with stored chunks (from Steps 16–17).
+
+This test is observational — proof challenges happen automatically during health checks.
+
+```bat
+REM On Machine A, set short health check interval:
+wormhole.exe config set health_check_interval_sec 15
+REM Restart daemon
+```
+
+**Watch daemon logs for proof activity:**
+
+```
+[daemon] Sending proof challenge to <peer_id> for chunk <hash>
+[daemon] Proof response from <peer_id>: VALID
+```
+
+**Pass criteria:**
+- [ ] Proof challenges are sent to peers holding replicated chunks
+- [ ] Peers respond with valid proofs (Blake3(seed || chunk_data))
+- [ ] Invalid proofs are flagged (test by corrupting a chunk on the peer)
+- [ ] Proof cache is populated (`~\.wormhole\proofs\` directory has files)
+
+---
+
+### Step 19: Storage Ledger & Incentives
+
+Test that the storage ledger tracks reciprocity and enforces the accept/reject threshold.
+
+**Prerequisites:** Two daemons running.
+
+**Test balanced storage:**
+
+```bat
+REM Machine A stores a file (chunks replicate to B)
+wormhole.exe store test_1kb.bin
+
+REM Machine B stores a file (chunks replicate to A)
+REM (on Machine B)
+wormhole.exe store test_1kb.bin
+
+REM Both daemons should accept each other's storage (balanced ratio)
+```
+
+**Test unbalanced storage (ratio enforcement):**
+
+```bat
+REM Set strict ratio
+wormhole.exe config set min_storage_ratio 0.5
+
+REM If Machine A has stored much more on B than B has stored on A,
+REM B should start rejecting A's CHUNK_STORE_REQUEST
+REM Watch daemon B logs for "Rejecting storage from <peer_id>: ratio too low"
+```
+
+**Verify ledger persistence:**
+
+```bat
+REM Check ledger file exists
+dir %USERPROFILE%\.wormhole\storage_ledger.bin
+
+REM Stop daemon (Ctrl+C)
+REM Restart daemon
+wormholed.exe --port 4567
+
+REM Watch logs for "Loaded ledger" with correct peer count
+```
+
+**Pass criteria:**
+- [ ] Balanced peers accept each other's storage requests
+- [ ] Unbalanced peers are rejected when ratio < `min_storage_ratio`
+- [ ] Ledger file exists on disk (`storage_ledger.bin`)
+- [ ] Ledger survives daemon restart (log shows "Loaded ledger")
+- [ ] `status` command shows ledger info (if exposed)
+
+---
+
+### Step 20: Config Verification — All Keys
+
+Test every configurable key to verify it's read, applied, and persisted.
+
+```bat
+REM Test each config key:
+wormhole.exe config set relay_host wormholerelay.com
+wormhole.exe config get relay_host
+
+wormhole.exe config set relay_port 443
+wormhole.exe config get relay_port
+
+wormhole.exe config set max_storage_gb 5
+wormhole.exe config get max_storage_gb
+
+wormhole.exe config set replication_target 2
+wormhole.exe config get replication_target
+
+wormhole.exe config set dht_enabled 1
+wormhole.exe config get dht_enabled
+
+wormhole.exe config set dht_port 4568
+wormhole.exe config get dht_port
+
+wormhole.exe config set ec_enabled 1
+wormhole.exe config get ec_enabled
+
+wormhole.exe config set ec_data_shards 4
+wormhole.exe config get ec_data_shards
+
+wormhole.exe config set ec_parity_shards 2
+wormhole.exe config get ec_parity_shards
+
+wormhole.exe config set health_check_interval_sec 1800
+wormhole.exe config get health_check_interval_sec
+
+wormhole.exe config set min_storage_ratio 0.5
+wormhole.exe config get min_storage_ratio
+
+wormhole.exe config set proof_cache_count 8
+wormhole.exe config get proof_cache_count
+```
+
+**Pass criteria:**
+- [ ] Each `config set` + `config get` roundtrips correctly
+- [ ] Values persist in `~\.wormhole\config` (check file contents)
+- [ ] Invalid values are rejected gracefully (e.g., `config set max_storage_gb -1`)
+- [ ] Config changes take effect after daemon restart
+
+---
+
+### Step 21: Ctrl+C / Graceful Shutdown
+
+Test that all components shut down cleanly.
+
+**Daemon shutdown:**
+
+```bat
+REM Start daemon with some stored data
+wormholed.exe --port 4567
+
+REM Store some data
+wormhole.exe store test_10mb.bin
+
+REM Press Ctrl+C on the daemon
+```
+
+**Pass criteria:**
+- [ ] Daemon shuts down within 5 seconds of Ctrl+C
+- [ ] Log shows "Shutting down..." and cleanup messages
+- [ ] Storage ledger saved (log: "Ledger saved")
+- [ ] DHT routing table saved (if DHT was enabled)
+- [ ] No orphan processes left (check Task Manager: no `wormholed.exe` remaining)
+- [ ] Named pipe `\\.\pipe\wormhole` is released (subsequent daemon start works)
+
+**Client shutdown (sender waiting for receiver):**
+
+```bat
+wormhole.exe send test_10mb.bin
+REM Press Ctrl+C while waiting
+```
+
+- [ ] Client exits cleanly
+- [ ] No orphan MsQuic threads or UDP sockets
+- [ ] Ticket is not left dangling on relay (relay cleans up stale peers after 60s)
+
+**Client shutdown (mid-transfer):**
+
+```bat
+REM Start a large transfer
+wormhole.exe send test_100mb.bin
+REM In another terminal:
+wormhole.exe receive <ticket>
+REM Press Ctrl+C on the RECEIVER mid-transfer
+```
+
+- [ ] Receiver exits, partial file stays in Downloads (for resume)
+- [ ] `.state` file is written for resumable transfer
+- [ ] Sender detects disconnection and exits cleanly (doesn't hang)
+
+---
+
+### Step 22: Error Cases
+
+Test graceful handling of common error conditions.
+
+**Invalid ticket:**
+
+```bat
+wormhole.exe receive 99-nonexistent-ticket
+REM Expected: "Ticket not found" or similar error, clean exit
+```
+
+- [ ] Clear error message
+- [ ] Exit code non-zero
+
+**Unreachable relay:**
+
+```bat
+REM Point to a non-existent relay
+wormhole.exe config set relay_host 192.0.2.1
+wormhole.exe config set relay_port 9999
+wormhole.exe send test_1kb.bin
+REM Expected: connection timeout, error message
+```
+
+- [ ] Times out within a reasonable period (not hanging forever)
+- [ ] Clear error message about relay being unreachable
+- [ ] Clean exit
+
+```bat
+REM Reset relay config
+wormhole.exe config set relay_host wormholerelay.com
+wormhole.exe config set relay_port 443
+```
+
+**Daemon not running (CLI commands):**
+
+```bat
+REM Make sure no daemon is running
+wormhole.exe store test_1kb.bin
+REM Expected: "Cannot connect to daemon" or similar
+
+wormhole.exe status
+wormhole.exe get <some_hash> -o out.bin
+```
+
+- [ ] Each command shows clear error about daemon not running
+- [ ] No crash or hang
+
+**Corrupt chunk in store:**
+
+```bat
+REM Start daemon, store a file
+wormholed.exe --port 4567 --no-relay
+wormhole.exe store test_1kb.bin
+
+REM Corrupt a chunk on disk (overwrite with garbage)
+REM Find a chunk file:
+dir %USERPROFILE%\.wormhole\store\
+REM Overwrite it:
+echo CORRUPTED > %USERPROFILE%\.wormhole\store\<prefix>\<chunk_file>
+
+REM Try to retrieve it
+wormhole.exe get <chunk_hash> -o out.bin
+REM Expected: hash verification failure, error message
+```
+
+- [ ] Daemon detects hash mismatch on read
+- [ ] Error message indicates corruption
+- [ ] Health check flags corrupted chunk (if health monitoring runs)
+
+---
+
+## Results Tracking
+
+Copy this checklist and fill in results after each test run.
+
+| # | Test | Status | Notes |
+|---|------|--------|-------|
+| 6 | Relay Server Smoke Test | ⬜ | |
+| 7 | Single File Transfer — Small (LAN) | ⬜ | |
+| 8 | Single File Transfer — Medium (LAN) | ⬜ | |
+| 9 | Single File Transfer — Large (100MB+) | ⬜ | |
+| 10 | Single File Transfer — Relay Fallback | ⬜ | |
+| 11 | Directory Transfer | ⬜ | |
+| 12 | Resumable Transfer | ⬜ | |
+| 13 | Daemon Basics — Config, Status | ⬜ | |
+| 14 | Daemon Store & Get | ⬜ | |
+| 15 | Erasure Coding & Recovery | ⬜ | |
+| 16 | Multi-Daemon Peer Discovery | ⬜ | |
+| 17 | DHT Discovery & Chunk Announcement | ⬜ | |
+| 18 | Proof-of-Storage Challenges | ⬜ | |
+| 19 | Storage Ledger & Incentives | ⬜ | |
+| 20 | Config Verification — All Keys | ⬜ | |
+| 21 | Ctrl+C / Graceful Shutdown | ⬜ | |
+| 22 | Error Cases | ⬜ | |
+
+**Status key:** ✅ PASS | ❌ FAIL | ⏭️ SKIP | ⬜ NOT RUN
+
+---
+
+## Unit Test Inventory
 
 | # | Test | What It Covers | Link Dependencies |
 |---|------|---------------|-------------------|
@@ -130,10 +934,11 @@ md5sum ~/Downloads/test_10mb.bin
 | 12 | `test_dht_lookup` | Shortlist seeding, response convergence, FIND_VALUE early termination, max iteration | `dht_lookup.obj`, `routing_table.obj` |
 | 13 | `test_proof` | Proof computation determinism, wrong seed detection, pre-compute cache hit/miss | `proof.obj`, Blake3 objs, libsodium |
 | 14 | `test_incentives` | Balanced/unbalanced ledger, ratio enforcement, save/load roundtrip | `incentives.obj` |
+| 15 | `test_health` | EC-based chunk recovery, health check stats, degraded chunk detection, replication needs | `health.obj`, `erasure.obj`, `chunk_store.obj`, `manifest.obj`, `file_io.obj`, Blake3 objs, `rs.c`, ole32.lib |
 
 All tests use the `greatest.h` single-header test framework. Tests that need filesystem access use `setup_test_home()`/`cleanup_test_home()` to redirect HOME to a temp directory.
 
-## Step 7: End-to-End Daemon Tests
+## Step 23: End-to-End Daemon Tests
 
 `test_e2e.bat` runs an automated smoke test of the full daemon loop on a single machine with no relay server needed.
 

@@ -39,6 +39,9 @@
 // Control message framing: [1B type][4B payload_length][payload]
 #define CTRL_HEADER_SIZE 5
 
+// Maximum control message payload (16MB — well above any legitimate payload)
+#define MAX_CTRL_PAYLOAD (16 * 1024 * 1024)
+
 // Data frame (Stream 1: unidirectional sender->receiver)
 // [4B chunk_index][32B chunk_hash][4B chunk_data_size][data]
 #define DATA_FRAME_HEADER_SIZE (4 + 32 + 4)  // 40 bytes

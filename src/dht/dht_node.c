@@ -18,6 +18,7 @@ typedef int ssize_t;
 #include <netdb.h>
 #include <unistd.h>
 #include <poll.h>
+#include <fcntl.h>
 #endif
 
 #include "dht_node.h"
@@ -27,6 +28,7 @@ typedef int ssize_t;
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 
 #define DHT_MAX_PACKET_SIZE 2048
 
@@ -72,7 +74,11 @@ static void EnsureWormholeDir(void)
 static void SockaddrToNodeInfo(const struct sockaddr_storage *addr,
                                 uint8_t *addr_type, uint8_t *addr_out, uint16_t *port)
 {
+    // Initialize all outputs to zero in case of unknown address family
+    *addr_type = 0;
     memset(addr_out, 0, 16);
+    *port = 0;
+
     if (addr->ss_family == AF_INET) {
         const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
         *addr_type = DHT_ADDR_IPV4;
@@ -284,6 +290,9 @@ static void HandleFindNode(DHT_NODE *node, uint8_t *data, size_t len,
     uint32_t count = RoutingTable_FindClosest(&node->routing_table,
                                                msg->target_id, closest, DHT_K);
 
+    // Cap at DHT_K to prevent oversized responses
+    if (count > DHT_K) count = DHT_K;
+
     // Build response: header + 1B count + N * NODE_INFO
     size_t resp_len = sizeof(DHT_HEADER) + 1 + count * sizeof(DHT_NODE_INFO);
     uint8_t *resp = (uint8_t *)malloc(resp_len);
@@ -318,6 +327,9 @@ static void HandleFindNodeResponse(DHT_NODE *node, uint8_t *data, size_t len)
 
     DHT_HEADER *hdr = (DHT_HEADER *)data;
     uint8_t node_count = data[sizeof(DHT_HEADER)];
+
+    // Cap node_count at DHT_K to prevent processing bogus responses
+    if (node_count > DHT_K) node_count = DHT_K;
 
     // Verify response length
     size_t expected_len = sizeof(DHT_HEADER) + 1 + node_count * sizeof(DHT_NODE_INFO);
@@ -687,11 +699,25 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
     node->socket_fd = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (node->socket_fd < 0) {
         fprintf(stderr, "[DHT] Failed to create UDP socket\n");
+        DhtStore_Destroy(&node->value_store);
 #ifdef _WIN32
         WSACleanup();
 #endif
         return FALSE;
     }
+
+    // Set non-blocking mode so DhtNode_Poll can drain multiple packets
+#ifdef _WIN32
+    {
+        u_long nonblocking = 1;
+        ioctlsocket((SOCKET)node->socket_fd, FIONBIO, &nonblocking);
+    }
+#else
+    {
+        int flags = fcntl(node->socket_fd, F_GETFL, 0);
+        if (flags >= 0) fcntl(node->socket_fd, F_SETFL, flags | O_NONBLOCK);
+    }
+#endif
 
     // Bind to port
     struct sockaddr_in bind_addr;
@@ -702,6 +728,7 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
 
     if (bind(node->socket_fd, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) != 0) {
         fprintf(stderr, "[DHT] Failed to bind to port %u\n", port);
+        DhtStore_Destroy(&node->value_store);
 #ifdef _WIN32
         closesocket(node->socket_fd);
         WSACleanup();
@@ -770,14 +797,27 @@ void DhtNode_Poll(DHT_NODE *node, int timeout_ms)
 #endif
 
     if (ready > 0) {
-        uint8_t buf[DHT_MAX_PACKET_SIZE];
-        struct sockaddr_storage from_addr;
-        socklen_t from_len = sizeof(from_addr);
+        // Drain all queued packets (up to a cap to prevent starvation)
+        int max_reads = 64;
+        for (int r = 0; r < max_reads; r++) {
+            uint8_t buf[DHT_MAX_PACKET_SIZE];
+            struct sockaddr_storage from_addr;
+            socklen_t from_len = sizeof(from_addr);
 
-        ssize_t n = recvfrom(node->socket_fd, (char *)buf, sizeof(buf), 0,
-                              (struct sockaddr *)&from_addr, &from_len);
-        if (n >= (ssize_t)DHT_HEADER_SIZE) {
-            DhtDispatchMessage(node, buf, (size_t)n, &from_addr, from_len);
+            ssize_t n = recvfrom(node->socket_fd, (char *)buf, sizeof(buf), 0,
+                                  (struct sockaddr *)&from_addr, &from_len);
+            if (n < 0) {
+#ifdef _WIN32
+                // WSAEWOULDBLOCK means no more data available
+                if (WSAGetLastError() == WSAEWOULDBLOCK) break;
+#else
+                if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+#endif
+                break;  // Other error, stop reading
+            }
+            if (n >= (ssize_t)DHT_HEADER_SIZE) {
+                DhtDispatchMessage(node, buf, (size_t)n, &from_addr, from_len);
+            }
         }
     }
 
@@ -868,8 +908,8 @@ void DhtNode_RefreshBuckets(DHT_NODE *node)
         uint8_t random_id[32];
         GenerateRandomIdForBucket(node->routing_table.self_id, b, random_id);
 
-        // Send FIND_NODE to first node in bucket
-        ROUTING_NODE *target = &bucket->nodes[0];
+        // Send FIND_NODE to a random node in bucket (avoid always picking first)
+        ROUTING_NODE *target = &bucket->nodes[rand() % bucket->count];
         DhtNode_SendFindNode(node, target->addr, target->addr_type,
                               target->port, random_id);
 
@@ -885,6 +925,8 @@ void DhtNode_ExpirePendingRPCs(DHT_NODE *node)
         DHT_PENDING_RPC *rpc = &node->pending_rpcs[i];
         double elapsed_ms = difftime(now, rpc->sent_at) * 1000.0;
         if (elapsed_ms >= DHT_RPC_TIMEOUT_MS) {
+            // Mark the target node as failed so it can be evicted from routing table
+            RoutingTable_MarkFailed(&node->routing_table, rpc->target_id);
             RemovePendingRPC(node, i);
             // Don't increment i — swapped last element into this slot
         } else {

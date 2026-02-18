@@ -198,7 +198,11 @@ void DhtLookup_HandleResponse(DHT_ITERATIVE_LOOKUP *lookup,
                      nodes[i].addr, nodes[i].port);
     }
 
-    lookup->iteration++;
+    // Only increment iteration when a full round completes (no more queries in flight)
+    if (lookup->queries_in_flight == 0)
+    {
+        lookup->iteration++;
+    }
 
     // Check completion: max iterations or no more pending nodes
     if (lookup->iteration >= DHT_LOOKUP_MAX_ITERATIONS)

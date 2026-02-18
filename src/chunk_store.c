@@ -6,6 +6,8 @@
 
 #include "chunk_store.h"
 #include "file_io.h"
+#include "proof.h"
+#include <blake3.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -17,6 +19,25 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <dirent.h>
+#endif
+
+#ifdef _WIN32
+static CRITICAL_SECTION g_store_lock;
+static INIT_ONCE g_store_lock_once = INIT_ONCE_STATIC_INIT;
+
+static BOOL CALLBACK InitStoreLock(PINIT_ONCE InitOnce, PVOID Parameter, PVOID *lpContext)
+{
+    (void)InitOnce;
+    (void)Parameter;
+    (void)lpContext;
+    InitializeCriticalSection(&g_store_lock);
+    return TRUE;
+}
+
+static void EnsureStoreLock(void)
+{
+    InitOnceExecuteOnce(&g_store_lock_once, InitStoreLock, NULL, NULL);
+}
 #endif
 
 //=============================================================================
@@ -95,6 +116,9 @@ static BOOLEAN EnsureDir(const char *dir)
 
 BOOLEAN ChunkStore_Init(void)
 {
+#ifdef _WIN32
+    EnsureStoreLock();
+#endif
     char base[MAX_PATH];
     if (!GetStoreBasePath(base, sizeof(base))) return FALSE;
 
@@ -199,6 +223,18 @@ BOOLEAN ChunkStore_Get(const uint8_t hash[WH_HASH_SIZE],
     fclose(fh);
 
     if (read != (size_t)fsize) return FALSE;
+
+    // Verify Blake3 hash to detect on-disk corruption
+    blake3_hasher hasher;
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, data_out, read);
+    uint8_t computed_hash[WH_HASH_SIZE];
+    blake3_hasher_finalize(&hasher, computed_hash, WH_HASH_SIZE);
+    if (memcmp(computed_hash, hash, WH_HASH_SIZE) != 0)
+    {
+        LOG_ERROR("[ChunkStore] ERROR: Chunk data corrupted on disk (hash mismatch)\n");
+        return FALSE;
+    }
 
     *size_out = (uint32_t)read;
 
@@ -317,10 +353,27 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
 {
     if (!peer_id) return FALSE;
 
-    if (!EnsureReplicaDirs(hash)) return FALSE;
+#ifdef _WIN32
+    EnsureStoreLock();
+    EnterCriticalSection(&g_store_lock);
+#endif
+
+    if (!EnsureReplicaDirs(hash))
+    {
+#ifdef _WIN32
+        LeaveCriticalSection(&g_store_lock);
+#endif
+        return FALSE;
+    }
 
     char path[MAX_PATH];
-    if (!GetReplicaPath(hash, path, sizeof(path))) return FALSE;
+    if (!GetReplicaPath(hash, path, sizeof(path)))
+    {
+#ifdef _WIN32
+        LeaveCriticalSection(&g_store_lock);
+#endif
+        return FALSE;
+    }
 
     // Read existing replicas
     uint8_t existing_peers[MAX_REPLICAS][32];
@@ -347,6 +400,9 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
         {
             if (memcmp(existing_peers[i], peer_id, 32) == 0)
             {
+#ifdef _WIN32
+                LeaveCriticalSection(&g_store_lock);
+#endif
                 return TRUE;  // Already tracked
             }
         }
@@ -355,6 +411,9 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     // Add the new peer
     if (count >= MAX_REPLICAS)
     {
+#ifdef _WIN32
+        LeaveCriticalSection(&g_store_lock);
+#endif
         return FALSE;  // At capacity
     }
 
@@ -363,7 +422,13 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
 
     // Write updated file
     fh = fopen(path, "wb");
-    if (!fh) return FALSE;
+    if (!fh)
+    {
+#ifdef _WIN32
+        LeaveCriticalSection(&g_store_lock);
+#endif
+        return FALSE;
+    }
 
     uint8_t count_buf[4];
     count_buf[0] = (uint8_t)(count);
@@ -375,6 +440,9 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     fwrite(existing_peers, 32, count, fh);
     fclose(fh);
 
+#ifdef _WIN32
+    LeaveCriticalSection(&g_store_lock);
+#endif
     return TRUE;
 }
 
@@ -434,8 +502,19 @@ static BOOLEAN GetAccessTimePath(char *path, size_t path_len)
 
 void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
 {
+#ifdef _WIN32
+    EnsureStoreLock();
+    EnterCriticalSection(&g_store_lock);
+#endif
+
     char path[MAX_PATH];
-    if (!GetAccessTimePath(path, sizeof(path))) return;
+    if (!GetAccessTimePath(path, sizeof(path)))
+    {
+#ifdef _WIN32
+        LeaveCriticalSection(&g_store_lock);
+#endif
+        return;
+    }
 
     // Read existing entries, update or append
     FILE *fh = fopen(path, "r+b");
@@ -443,7 +522,13 @@ void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
     {
         // Create new file
         fh = fopen(path, "wb");
-        if (!fh) return;
+        if (!fh)
+        {
+#ifdef _WIN32
+            LeaveCriticalSection(&g_store_lock);
+#endif
+            return;
+        }
 
         uint8_t entry[ACCESS_ENTRY_SIZE];
         memcpy(entry, hash, WH_HASH_SIZE);
@@ -459,6 +544,9 @@ void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
 
         fwrite(entry, 1, ACCESS_ENTRY_SIZE, fh);
         fclose(fh);
+#ifdef _WIN32
+        LeaveCriticalSection(&g_store_lock);
+#endif
         return;
     }
 
@@ -512,6 +600,9 @@ void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
     }
 
     fclose(fh);
+#ifdef _WIN32
+    LeaveCriticalSection(&g_store_lock);
+#endif
 }
 
 uint64_t ChunkStore_GetTotalSize(void)
@@ -599,7 +690,7 @@ typedef struct {
     uint8_t  hash[WH_HASH_SIZE];
     uint64_t access_time;    // Lower = older = evict first
     uint32_t replica_count;  // Higher = safer to evict
-    uint32_t file_size;
+    uint64_t file_size;
 } EVICTION_CANDIDATE;
 
 // Compare for eviction priority: prefer high replica count, then oldest access
@@ -702,10 +793,10 @@ uint64_t ChunkStore_Evict(uint64_t bytes_to_free)
             {
 #ifdef _WIN32
                 _fseeki64(cfh, 0, SEEK_END);
-                candidates[valid].file_size = (uint32_t)_ftelli64(cfh);
+                candidates[valid].file_size = (uint64_t)_ftelli64(cfh);
 #else
                 fseeko(cfh, 0, SEEK_END);
-                candidates[valid].file_size = (uint32_t)ftello(cfh);
+                candidates[valid].file_size = (uint64_t)ftello(cfh);
 #endif
                 fclose(cfh);
             }
@@ -741,15 +832,65 @@ uint64_t ChunkStore_Evict(uint64_t bytes_to_free)
             freed += candidates[i].file_size;
             evicted++;
 
-            char hex[9];
+            // Clean up orphaned replica metadata
+            char replica_path[MAX_PATH];
+            if (GetReplicaPath(candidates[i].hash, replica_path, sizeof(replica_path)))
+            {
+                remove(replica_path);
+            }
+
+            // Clean up orphaned proof cache
+            Proof_DeleteCache(candidates[i].hash);
+
+            char hex[65];
             HashToHex(candidates[i].hash, hex);
-            hex[8] = '\0';
-            LOG("[evict] Removed chunk %s... (%u bytes, %u replicas)\n",
-                hex, candidates[i].file_size, candidates[i].replica_count);
+            hex[64] = '\0';
+            LOG("[evict] Removed chunk %.8s... (%llu bytes, %u replicas)\n",
+                hex, (unsigned long long)candidates[i].file_size, candidates[i].replica_count);
         }
     }
 
     free(candidates);
+
+    // Rewrite access_times.dat to remove entries for evicted/missing chunks
+    if (evicted > 0)
+    {
+#ifdef _WIN32
+        EnsureStoreLock();
+        EnterCriticalSection(&g_store_lock);
+#endif
+        FILE *old_fh = fopen(at_path, "rb");
+        if (old_fh)
+        {
+            char tmp_path[MAX_PATH];
+            snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+            FILE *new_fh = fopen(tmp_path, "wb");
+            if (new_fh)
+            {
+                uint8_t at_entry[ACCESS_ENTRY_SIZE];
+                while (fread(at_entry, 1, ACCESS_ENTRY_SIZE, old_fh) == ACCESS_ENTRY_SIZE)
+                {
+                    // Only keep entries for chunks that still exist in the store
+                    if (ChunkStore_Has(at_entry))
+                    {
+                        fwrite(at_entry, 1, ACCESS_ENTRY_SIZE, new_fh);
+                    }
+                }
+                fclose(new_fh);
+                fclose(old_fh);
+                // Replace old file with cleaned version
+                remove(at_path);
+                rename(tmp_path, at_path);
+            }
+            else
+            {
+                fclose(old_fh);
+            }
+        }
+#ifdef _WIN32
+        LeaveCriticalSection(&g_store_lock);
+#endif
+    }
 
     LOG("[evict] Evicted %u chunks, freed %llu bytes\n",
         evicted, (unsigned long long)freed);

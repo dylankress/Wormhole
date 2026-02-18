@@ -164,6 +164,39 @@ bool RateLimiter_CheckAndUpdate(RATE_LIMITER* limiter, const struct sockaddr* ad
         entry = entry->next;
     }
     
+    // Cap table size to prevent unbounded growth
+    if (limiter->tracked_ips >= MAX_TRACKED_IPS) {
+        // Force cleanup of stale entries while still holding the lock
+        uint32_t removed = 0;
+        const time_t stale_timeout = 60;
+        for (uint32_t b = 0; b < limiter->bucket_count; b++) {
+            IP_ENTRY** p = &limiter->buckets[b];
+            IP_ENTRY* e = limiter->buckets[b];
+            while (e) {
+                if (now - e->window_start > stale_timeout) {
+                    *p = e->next;
+                    IP_ENTRY* to_free = e;
+                    e = e->next;
+                    free(to_free);
+                    limiter->tracked_ips--;
+                    removed++;
+                } else {
+                    p = &e->next;
+                    e = e->next;
+                }
+            }
+        }
+        // If still at capacity after cleanup, reject new entry
+        if (limiter->tracked_ips >= MAX_TRACKED_IPS) {
+#ifdef _WIN32
+            LeaveCriticalSection(&limiter->lock);
+#else
+            pthread_mutex_unlock(&limiter->lock);
+#endif
+            return false;
+        }
+    }
+
     // Create new entry
     IP_ENTRY* new_entry = (IP_ENTRY*)malloc(sizeof(IP_ENTRY));
     if (!new_entry) {
@@ -174,12 +207,12 @@ bool RateLimiter_CheckAndUpdate(RATE_LIMITER* limiter, const struct sockaddr* ad
 #endif
         return false;
     }
-    
+
     memcpy(new_entry->ip_addr, ip, 16);
     new_entry->addr_type = addr_type;
     new_entry->packet_count = 1;
     new_entry->window_start = now;
-    
+
     // Insert at head
     new_entry->next = limiter->buckets[bucket];
     limiter->buckets[bucket] = new_entry;

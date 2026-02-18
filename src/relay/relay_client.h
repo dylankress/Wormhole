@@ -40,6 +40,7 @@ typedef void (*RelayPeerInfoCallback)(void* context, const uint8_t peer_id[32],
                                      const ENDPOINT* endpoints, uint16_t endpoint_count);
 typedef void (*RelayDisconnectedCallback)(void* context);
 typedef void (*RelayPeersFoundCallback)(void* context, const DISCOVERED_PEER* peers, uint16_t peer_count);
+typedef void (*RelayPunchRequestCallback)(void* context, const uint8_t requester_id[32]);
 
 // Relay client configuration
 typedef struct {
@@ -54,6 +55,7 @@ typedef struct {
     RelayPeerInfoCallback on_peer_info;
     RelayDisconnectedCallback on_disconnected;
     RelayPeersFoundCallback on_peers_found;
+    RelayPunchRequestCallback on_punch_request;
     void* callback_context;           // User context for callbacks
 } RELAY_CLIENT_CONFIG;
 
@@ -120,3 +122,9 @@ int RelayClient_GetSocket(RELAY_CLIENT* client);
 // addr_len: Output for address length
 // Returns: true if successful
 bool RelayClient_GetRelayAddr(RELAY_CLIENT* client, struct sockaddr_storage* addr, socklen_t* addr_len);
+
+// Check if a hole-punch ACK (0x11) has been received
+bool RelayClient_GetPunchAckReceived(RELAY_CLIENT* client);
+
+// Reset the hole-punch ACK flag
+void RelayClient_ResetPunchAck(RELAY_CLIENT* client);

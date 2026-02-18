@@ -20,8 +20,21 @@ static uint32_t hash_peer_id(const uint8_t peer_id[32], uint32_t bucket_count) {
     return hash & (bucket_count - 1);  // Assumes bucket_count is power of 2
 }
 
-// Generate unique session ID (simple incrementing counter + timestamp)
+// Generate unique session ID using /dev/urandom for better entropy.
+// Falls back to timestamp + counter if urandom is unavailable.
+// NOTE: Session IDs are not cryptographic secrets, but better randomness
+// prevents guessing by malicious peers.
 static uint64_t generate_session_id(void) {
+    uint64_t id = 0;
+    FILE *f = fopen("/dev/urandom", "rb");
+    if (f) {
+        if (fread(&id, sizeof(id), 1, f) == 1 && id != 0) {
+            fclose(f);
+            return id;
+        }
+        fclose(f);
+    }
+    // Fallback: timestamp + incrementing counter
     static uint64_t counter = 0;
     counter++;
     return ((uint64_t)time(NULL) << 32) | (counter & 0xFFFFFFFF);
@@ -193,6 +206,9 @@ uint64_t PeerRegistry_RegisterPeer(
     return session_id;
 }
 
+/* WARNING: Returned pointer may be invalidated by concurrent PeerRegistry_RemoveStalePeers().
+   Currently safe because the server is single-threaded (recv loop + periodic cleanup in same thread),
+   but callers must not hold this pointer across operations that could trigger cleanup. */
 PEER_ENTRY* PeerRegistry_FindByPeerID(PEER_REGISTRY* registry, const uint8_t peer_id[32]) {
     if (!registry || !peer_id) {
         return NULL;

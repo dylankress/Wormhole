@@ -18,6 +18,7 @@ typedef struct {
     HANDLE              pipe_handle;
     HANDLE              thread_handle;
     volatile LONG       running;
+    volatile LONG       stopping;
     IpcCommandHandler   handler;
     void               *handler_context;
     char                pipe_name[256];
@@ -27,6 +28,7 @@ static IPC_SERVER g_ipc_server = {
     .pipe_handle      = INVALID_HANDLE_VALUE,
     .thread_handle    = NULL,
     .running          = 0,
+    .stopping         = 0,
     .handler          = NULL,
     .handler_context  = NULL,
     .pipe_name        = {0},
@@ -146,12 +148,25 @@ static void IpcServerHandleClient(HANDLE client_pipe, IPC_SERVER *server)
     // Process commands until the client disconnects or server stops
     while (InterlockedCompareExchange(&server->running, 1, 1) == 1)
     {
+        // Check if server is shutting down
+        if (InterlockedCompareExchange(&server->stopping, 0, 0))
+        {
+            break;
+        }
+
         uint8_t *msg = NULL;
         uint32_t msg_size = 0;
 
         if (!IpcReadMessage(client_pipe, &msg, &msg_size))
         {
             break;  // Client disconnected or read error
+        }
+
+        // Re-check stopping flag after blocking read
+        if (InterlockedCompareExchange(&server->stopping, 0, 0))
+        {
+            free(msg);
+            break;
         }
 
         if (msg_size < 1)
@@ -323,6 +338,7 @@ BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context,
 
     g_ipc_server.handler = handler;
     g_ipc_server.handler_context = context;
+    InterlockedExchange(&g_ipc_server.stopping, 0);
     InterlockedExchange(&g_ipc_server.running, 1);
 
     g_ipc_server.thread_handle = CreateThread(
@@ -348,6 +364,9 @@ void IpcServer_Stop(void)
 
     LOG("[ipc] Stopping server...\n");
 
+    // Signal all handler threads to stop before closing handles
+    InterlockedExchange(&g_ipc_server.stopping, 1);
+
     // Connect to our own pipe to unblock ConnectNamedPipe
     HANDLE dummy = CreateFileA(
         g_ipc_server.pipe_name,
@@ -369,8 +388,12 @@ void IpcServer_Stop(void)
         g_ipc_server.thread_handle = NULL;
     }
 
+    // Brief wait for in-flight client handler threads to notice stopping flag
+    Sleep(100);
+
     g_ipc_server.handler = NULL;
     g_ipc_server.handler_context = NULL;
+    InterlockedExchange(&g_ipc_server.stopping, 0);
 
     LOG("[ipc] Server stopped\n");
 }

@@ -9,6 +9,8 @@
 #include <shlobj.h>  // For SHGetKnownFolderPath
 #include <windows.h>
 #pragma comment(lib, "shell32.lib")
+#else
+#include <unistd.h>  // For usleep()
 #endif
 
 BOOLEAN FileExists(const char *path)
@@ -130,18 +132,38 @@ BOOLEAN WriteFileChunkWithRetry(FILE *handle, const uint8_t *data, size_t length
 	const int MAX_RETRIES = 3;
 	const int RETRY_DELAY_MS = 100;
 
+	// Save original position so we can seek back on retry
+#ifdef _WIN32
+	int64_t original_pos = _ftelli64(handle);
+#else
+	off_t original_pos = ftello(handle);
+#endif
+
 	for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+		// Seek back to original position before each retry
+		if (attempt > 0) {
+#ifdef _WIN32
+			_fseeki64(handle, original_pos, SEEK_SET);
+#else
+			fseeko(handle, original_pos, SEEK_SET);
+#endif
+		}
+
 		size_t written = fwrite(data, 1, length, handle);
-		
+
 		if (written == length) {
 			return TRUE;  // Success!
 		}
-		
+
 		// Failed - retry if we have attempts left
 		if (attempt < MAX_RETRIES - 1) {
-			LOG_ERROR("Write failed (attempt %d/%d), retrying...\n", 
+			LOG_ERROR("Write failed (attempt %d/%d), retrying...\n",
 					attempt + 1, MAX_RETRIES);
-			Sleep(RETRY_DELAY_MS);  // Windows Sleep (milliseconds)
+#ifdef _WIN32
+			Sleep(RETRY_DELAY_MS);
+#else
+			usleep(RETRY_DELAY_MS * 1000);
+#endif
 			clearerr(handle);  // Clear error flag
 		}
 	}

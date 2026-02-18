@@ -22,7 +22,7 @@
 #endif
 
 // Rate limit configuration
-#define MAX_PACKETS_PER_SECOND 1000
+#define MAX_PACKETS_PER_SECOND 10000
 #define RATE_LIMIT_WINDOW_SECONDS 1
 #define MAX_TRACKED_IPS 10000
 

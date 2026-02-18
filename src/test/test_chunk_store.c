@@ -5,6 +5,7 @@
 
 #include "../chunk_store.h"
 #include "greatest.h"
+#include <blake3.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -62,6 +63,15 @@ static void make_hash(uint8_t hash[WH_HASH_SIZE], uint8_t value)
     memset(hash, value, WH_HASH_SIZE);
 }
 
+// Helper: compute real Blake3 hash from data.
+static void compute_hash(const uint8_t *data, uint32_t size, uint8_t hash[WH_HASH_SIZE])
+{
+    blake3_hasher hasher;
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, data, size);
+    blake3_hasher_finalize(&hasher, hash, WH_HASH_SIZE);
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -87,11 +97,11 @@ TEST test_put_has(void)
 
 TEST test_put_get_roundtrip(void)
 {
-    uint8_t hash[WH_HASH_SIZE];
-    make_hash(hash, 0xB2);
-
     const char *msg = "Round-trip test data for chunk store!";
     uint32_t msg_len = (uint32_t)strlen(msg);
+
+    uint8_t hash[WH_HASH_SIZE];
+    compute_hash((const uint8_t *)msg, msg_len, hash);
 
     ASSERT(ChunkStore_Put(hash, (const uint8_t *)msg, msg_len));
 
@@ -105,11 +115,11 @@ TEST test_put_get_roundtrip(void)
 
 TEST test_dedup(void)
 {
-    uint8_t hash[WH_HASH_SIZE];
-    make_hash(hash, 0xC3);
-
     uint8_t data[] = "Deduplicated chunk data";
     uint32_t size = (uint32_t)(sizeof(data) - 1);
+
+    uint8_t hash[WH_HASH_SIZE];
+    compute_hash(data, size, hash);
 
     // Put the same hash twice — both should succeed
     ASSERT(ChunkStore_Put(hash, data, size));
@@ -150,13 +160,13 @@ TEST test_get_nonexistent(void)
 
 TEST test_large_chunk(void)
 {
-    uint8_t hash[WH_HASH_SIZE];
-    make_hash(hash, 0xF6);
-
     // Full 256 KB chunk
     uint8_t *data = (uint8_t *)malloc(WH_CHUNK_SIZE);
     ASSERT(data != NULL);
     memset(data, 0x42, WH_CHUNK_SIZE);
+
+    uint8_t hash[WH_HASH_SIZE];
+    compute_hash(data, WH_CHUNK_SIZE, hash);
 
     ASSERT(ChunkStore_Put(hash, data, WH_CHUNK_SIZE));
     ASSERT(ChunkStore_Has(hash));
@@ -178,11 +188,11 @@ TEST test_multiple_chunks(void)
     // Store several chunks with different hashes
     for (uint8_t i = 0; i < 5; i++)
     {
-        uint8_t hash[WH_HASH_SIZE];
-        make_hash(hash, (uint8_t)(0x10 + i));
-
         uint8_t data[64];
         memset(data, i, sizeof(data));
+
+        uint8_t hash[WH_HASH_SIZE];
+        compute_hash(data, sizeof(data), hash);
 
         ASSERT(ChunkStore_Put(hash, data, sizeof(data)));
     }
@@ -190,8 +200,11 @@ TEST test_multiple_chunks(void)
     // Verify all exist and contain correct data
     for (uint8_t i = 0; i < 5; i++)
     {
+        uint8_t data[64];
+        memset(data, i, sizeof(data));
+
         uint8_t hash[WH_HASH_SIZE];
-        make_hash(hash, (uint8_t)(0x10 + i));
+        compute_hash(data, sizeof(data), hash);
 
         ASSERT(ChunkStore_Has(hash));
 
@@ -200,9 +213,7 @@ TEST test_multiple_chunks(void)
         ASSERT(ChunkStore_Get(hash, buf, &read_size));
         ASSERT_EQ(read_size, 64u);
 
-        uint8_t expected[64];
-        memset(expected, i, sizeof(expected));
-        ASSERT_MEM_EQ(buf, expected, 64);
+        ASSERT_MEM_EQ(buf, data, 64);
     }
     PASS();
 }
@@ -405,13 +416,13 @@ TEST test_total_size(void)
 
 TEST test_evict_frees_chunks(void)
 {
-    uint8_t h1[WH_HASH_SIZE], h2[WH_HASH_SIZE];
-    make_hash(h1, 0x33);
-    make_hash(h2, 0x34);
-
     uint8_t d1[512], d2[512];
     memset(d1, 0xB0, sizeof(d1));
     memset(d2, 0xB1, sizeof(d2));
+
+    uint8_t h1[WH_HASH_SIZE], h2[WH_HASH_SIZE];
+    compute_hash(d1, sizeof(d1), h1);
+    compute_hash(d2, sizeof(d2), h2);
 
     ASSERT(ChunkStore_Put(h1, d1, sizeof(d1)));
     ASSERT(ChunkStore_Put(h2, d2, sizeof(d2)));
@@ -435,17 +446,17 @@ TEST test_evict_frees_chunks(void)
 
 TEST test_evict_prefers_replicated(void)
 {
-    uint8_t h_replicated[WH_HASH_SIZE], h_local[WH_HASH_SIZE];
-    make_hash(h_replicated, 0x35);
-    make_hash(h_local, 0x36);
+    uint8_t data_replicated[256], data_local[256];
+    memset(data_replicated, 0xC0, sizeof(data_replicated));
+    memset(data_local, 0xC1, sizeof(data_local));
 
-    uint8_t data[256];
-    memset(data, 0xC0, sizeof(data));
+    uint8_t h_replicated[WH_HASH_SIZE], h_local[WH_HASH_SIZE];
+    compute_hash(data_replicated, sizeof(data_replicated), h_replicated);
+    compute_hash(data_local, sizeof(data_local), h_local);
 
     // Store both chunks
-    ASSERT(ChunkStore_Put(h_replicated, data, sizeof(data)));
-    memset(data, 0xC1, sizeof(data));
-    ASSERT(ChunkStore_Put(h_local, data, sizeof(data)));
+    ASSERT(ChunkStore_Put(h_replicated, data_replicated, sizeof(data_replicated)));
+    ASSERT(ChunkStore_Put(h_local, data_local, sizeof(data_local)));
 
     // Trigger access times via Get
     uint8_t buf[WH_CHUNK_SIZE];

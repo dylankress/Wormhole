@@ -30,6 +30,7 @@
 #include "incentives.h"
 #include "health.h"
 #include "erasure.h"
+#include "../deps/blake3/blake3.h"
 
 // POSIX includes for Linux EC recovery directory scan
 #ifndef _WIN32
@@ -45,7 +46,7 @@
 #define DAEMON_RELAY_HOST       "wormholerelay.com"
 #define DAEMON_RELAY_PORT       443
 #define DAEMON_KEEPALIVE_SEC    30    // Relay keepalive interval
-#define DAEMON_DISCOVERY_SEC   60    // Peer discovery interval
+#define DAEMON_DISCOVERY_SEC   30    // Peer discovery interval
 
 //=============================================================================
 // Global MsQuic State
@@ -90,10 +91,23 @@ typedef struct {
     // Incentives (Phase 4)
     STORAGE_LEDGER      ledger;
 
+    // Our own endpoints (saved for hole-punch)
+    ENDPOINT            our_endpoints[MAX_ENDPOINTS];
+    uint16_t            our_endpoint_count;
+
     // Stats
     volatile LONG       peer_count;
     volatile LONG       chunk_count;
     volatile LONGLONG   storage_used;
+
+    // Pending DHT announcements (deferred when routing table empty)
+    uint8_t             pending_announce_hashes[16][WH_HASH_SIZE];
+    uint32_t            pending_announce_count;
+
+    // Synchronization
+    CRITICAL_SECTION    ledger_lock;
+    CRITICAL_SECTION    dht_lock;
+    CRITICAL_SECTION    peers_lock;
 } DAEMON_STATE;
 
 static DAEMON_STATE g_daemon = { 0 };
@@ -128,6 +142,85 @@ typedef struct {
     uint32_t  recv_size;
     uint32_t  recv_capacity;
 } DAEMON_STREAM_CONTEXT;
+
+// Per-stream context for outbound replication streams: accumulates fragmented data
+typedef struct {
+    uint8_t  *recv_buf;
+    size_t    recv_used;
+    size_t    recv_capacity;
+} REPLICA_STREAM_CONTEXT;
+
+//=============================================================================
+// Buffer accumulation helpers (same pattern as stream.c)
+//=============================================================================
+
+static BOOLEAN DaemonAccumulateBuffer(uint8_t **buf, size_t *used, size_t *capacity,
+                                       const uint8_t *data, size_t data_len)
+{
+    size_t needed = *used + data_len;
+    if (needed > *capacity)
+    {
+        size_t new_cap = (*capacity == 0) ? 65536 : *capacity;
+        while (new_cap < needed) new_cap *= 2;
+        uint8_t *new_buf = (uint8_t *)realloc(*buf, new_cap);
+        if (!new_buf) return FALSE;
+        *buf = new_buf;
+        *capacity = new_cap;
+    }
+    memcpy(*buf + *used, data, data_len);
+    *used += data_len;
+    return TRUE;
+}
+
+static void DaemonConsumeBuffer(uint8_t *buf, size_t *used, size_t consumed)
+{
+    if (consumed >= *used)
+    {
+        *used = 0;
+    }
+    else
+    {
+        memmove(buf, buf + consumed, *used - consumed);
+        *used -= consumed;
+    }
+}
+
+//=============================================================================
+// 0-RTT Session Ticket Helpers (per-peer tickets for daemon)
+//=============================================================================
+
+static BOOLEAN Daemon_SaveSessionTicket(const uint8_t *ticket, uint32_t len)
+{
+    const char *home = getenv("USERPROFILE");
+    if (!home) home = getenv("HOME");
+    if (!home) return FALSE;
+    char path[260];
+    snprintf(path, sizeof(path), "%s\\.wormhole\\session_ticket_daemon", home);
+    FILE *f = fopen(path, "wb");
+    if (!f) return FALSE;
+    fwrite(&len, sizeof(len), 1, f);
+    fwrite(ticket, 1, len, f);
+    fclose(f);
+    return TRUE;
+}
+
+static uint8_t *Daemon_LoadSessionTicket(uint32_t *out_len)
+{
+    const char *home = getenv("USERPROFILE");
+    if (!home) home = getenv("HOME");
+    if (!home) return NULL;
+    char path[260];
+    snprintf(path, sizeof(path), "%s\\.wormhole\\session_ticket_daemon", home);
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint32_t len;
+    if (fread(&len, sizeof(len), 1, f) != 1 || len > 65536) { fclose(f); return NULL; }
+    uint8_t *ticket = (uint8_t *)malloc(len);
+    if (!ticket || fread(ticket, 1, len, f) != len) { free(ticket); fclose(f); return NULL; }
+    fclose(f);
+    *out_len = len;
+    return ticket;
+}
 
 //=============================================================================
 // Forward Declarations
@@ -206,7 +299,7 @@ static BOOLEAN Daemon_InitMsQuic(void)
 
     const QUIC_REGISTRATION_CONFIG reg_config = {
         "wormholed",
-        QUIC_EXECUTION_PROFILE_LOW_LATENCY
+        QUIC_EXECUTION_PROFILE_TYPE_MAX_THROUGHPUT  // Optimize for bulk file transfer
     };
 
     status = MsQuic->RegistrationOpen(&reg_config, &DaemonRegistration);
@@ -295,7 +388,7 @@ static BOOLEAN Daemon_LoadServerConfig(void)
     settings.IsSet.DisconnectTimeoutMs = TRUE;
     settings.KeepAliveIntervalMs = 10000;
     settings.IsSet.KeepAliveIntervalMs = TRUE;
-    settings.ServerResumptionLevel = QUIC_SERVER_RESUME_ONLY;
+    settings.ServerResumptionLevel = QUIC_SERVER_RESUME_AND_ZERORTT;
     settings.IsSet.ServerResumptionLevel = TRUE;
     settings.PeerBidiStreamCount = 1;
     settings.IsSet.PeerBidiStreamCount = TRUE;
@@ -303,11 +396,11 @@ static BOOLEAN Daemon_LoadServerConfig(void)
     // Flow control
     settings.StreamRecvWindowDefault = 16777216;   // 16 MB
     settings.IsSet.StreamRecvWindowDefault = TRUE;
-    settings.SendBufferingEnabled = TRUE;
+    settings.SendBufferingEnabled = FALSE;  // Zero-copy: MsQuic uses our buffers directly
     settings.IsSet.SendBufferingEnabled = TRUE;
     settings.ConnFlowControlWindow = 67108864;     // 64 MB
     settings.IsSet.ConnFlowControlWindow = TRUE;
-    settings.InitialWindowPackets = 10;
+    settings.InitialWindowPackets = 20;  // 2x default for faster start
     settings.IsSet.InitialWindowPackets = TRUE;
 
     // MTU
@@ -315,6 +408,12 @@ static BOOLEAN Daemon_LoadServerConfig(void)
     settings.IsSet.MinimumMtu = TRUE;
     settings.MaximumMtu = 1500;
     settings.IsSet.MaximumMtu = TRUE;
+
+    // Congestion control
+    settings.CongestionControlAlgorithm = QUIC_CONGESTION_CONTROL_ALGORITHM_BBR;
+    settings.IsSet.CongestionControlAlgorithm = TRUE;
+    settings.EcnEnabled = TRUE;
+    settings.IsSet.EcnEnabled = TRUE;
 
     // Create configuration
     QUIC_BUFFER alpn_buffer;
@@ -497,6 +596,12 @@ static QUIC_STATUS QUIC_API Daemon_ConnectionCallback(
                 stream_ctx = NULL;
             }
         }
+        if (!stream_ctx)
+        {
+            LOG_ERROR("[daemon] Failed to allocate stream context, closing stream\n");
+            MsQuic->StreamClose(Event->PEER_STREAM_STARTED.Stream);
+            break;
+        }
         MsQuic->SetCallbackHandler(
             Event->PEER_STREAM_STARTED.Stream,
             (void *)Daemon_StreamCallback,
@@ -558,11 +663,45 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
 
         LOG("[daemon] CHUNK_STORE_REQUEST: %u bytes\n", data_size);
 
+        // Verify Blake3 hash of received data matches claimed hash
+        {
+            blake3_hasher hasher;
+            blake3_hasher_init(&hasher);
+            blake3_hasher_update(&hasher, chunk_data, data_size);
+            uint8_t computed_hash[32];
+            blake3_hasher_finalize(&hasher, computed_hash, 32);
+            if (memcmp(computed_hash, hash, 32) != 0)
+            {
+                LOG("[daemon] Rejecting chunk: hash mismatch\n");
+                // Send NACK
+                uint32_t ack_size = CTRL_HEADER_SIZE + WH_HASH_SIZE + 1;
+                uint8_t *ack = (uint8_t *)malloc(ack_size);
+                if (ack)
+                {
+                    ack[0] = CTRL_MSG_CHUNK_STORE_ACK;
+                    WriteUint32LE(ack + 1, WH_HASH_SIZE + 1);
+                    memcpy(ack + CTRL_HEADER_SIZE, hash, WH_HASH_SIZE);
+                    ack[CTRL_HEADER_SIZE + WH_HASH_SIZE] = 0x01;  // failure
+
+                    QUIC_BUFFER *send_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+                    if (!send_buf) { free(ack); return; }
+                    send_buf->Buffer = ack;
+                    send_buf->Length = ack_size;
+                    QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, QUIC_SEND_FLAG_NONE, send_buf);
+                    if (QUIC_FAILED(send_status)) { free(ack); free(send_buf); }
+                }
+                return;
+            }
+        }
+
         // Ledger enforcement — reject storage from unbalanced peers
         BOOLEAN accepted = TRUE;
         if (peer_id)
         {
-            if (!Ledger_ShouldAcceptStorage(&g_daemon.ledger, peer_id, (uint64_t)data_size))
+            EnterCriticalSection(&g_daemon.ledger_lock);
+            BOOLEAN should_accept = Ledger_ShouldAcceptStorage(&g_daemon.ledger, peer_id, (uint64_t)data_size);
+            LeaveCriticalSection(&g_daemon.ledger_lock);
+            if (!should_accept)
             {
                 LOG("[daemon] Rejecting storage from peer (ledger ratio too unbalanced)\n");
                 accepted = FALSE;
@@ -571,7 +710,10 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
         else
         {
             uint8_t zero_id[32] = {0};
-            if (!Ledger_ShouldAcceptStorage(&g_daemon.ledger, zero_id, (uint64_t)data_size))
+            EnterCriticalSection(&g_daemon.ledger_lock);
+            BOOLEAN should_accept = Ledger_ShouldAcceptStorage(&g_daemon.ledger, zero_id, (uint64_t)data_size);
+            LeaveCriticalSection(&g_daemon.ledger_lock);
+            if (!should_accept)
             {
                 LOG("[daemon] Rejecting storage from unidentified peer\n");
                 accepted = FALSE;
@@ -588,7 +730,11 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
                 InterlockedIncrement(&g_daemon.chunk_count);
                 InterlockedExchangeAdd64(&g_daemon.storage_used, (LONGLONG)data_size);
                 if (peer_id)
+                {
+                    EnterCriticalSection(&g_daemon.ledger_lock);
                     Ledger_RecordWeStored(&g_daemon.ledger, peer_id, (uint64_t)data_size);
+                    LeaveCriticalSection(&g_daemon.ledger_lock);
+                }
             }
         }
 
@@ -708,7 +854,9 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
             if (peer_id)
             {
                 ChunkStore_SetReplicaLocation(hash, peer_id);
+                EnterCriticalSection(&g_daemon.ledger_lock);
                 Ledger_RecordStoredForUs(&g_daemon.ledger, peer_id, (uint64_t)WH_CHUNK_SIZE);
+                LeaveCriticalSection(&g_daemon.ledger_lock);
             }
         }
         else
@@ -863,19 +1011,25 @@ static QUIC_STATUS QUIC_API Daemon_StreamCallback(
             LOG("[daemon]   msg_type=0x%02x payload_len=%u remaining=%u\n",
                 msg_type, payload_len, remaining);
 
-            if (remaining < CTRL_HEADER_SIZE + payload_len)
+            if (payload_len > MAX_CTRL_PAYLOAD)
             {
-                LOG_ERROR("[daemon]   Incomplete message, %u < %u\n",
-                    remaining, CTRL_HEADER_SIZE + payload_len);
+                LOG_ERROR("[daemon]   Payload too large: %u\n", payload_len);
+                break;
+            }
+
+            size_t frame_size = (size_t)CTRL_HEADER_SIZE + payload_len;
+            if (remaining < frame_size)
+            {
+                LOG_ERROR("[daemon]   Incomplete message, %u < %zu\n",
+                    remaining, frame_size);
                 break;
             }
 
             Daemon_HandlePeerMessage(Stream, msg_type,
                 data + CTRL_HEADER_SIZE, payload_len, peer_id);
 
-            uint32_t consumed = CTRL_HEADER_SIZE + payload_len;
-            data += consumed;
-            remaining -= consumed;
+            data += frame_size;
+            remaining -= (uint32_t)frame_size;
         }
         break;
     }
@@ -931,8 +1085,22 @@ static BOOLEAN Daemon_LoadClientConfig(void)
     settings.IsSet.PeerBidiStreamCount = TRUE;
     settings.StreamRecvWindowDefault = 16777216;
     settings.IsSet.StreamRecvWindowDefault = TRUE;
-    settings.SendBufferingEnabled = TRUE;
+    settings.SendBufferingEnabled = FALSE;  // Zero-copy: MsQuic uses our buffers directly
     settings.IsSet.SendBufferingEnabled = TRUE;
+
+    // Connection flow control + congestion settings (match server config)
+    settings.ConnFlowControlWindow = 67108864;  // 64 MB
+    settings.IsSet.ConnFlowControlWindow = TRUE;
+    settings.InitialWindowPackets = 20;  // Faster ramp-up
+    settings.IsSet.InitialWindowPackets = TRUE;
+    settings.MinimumMtu = 1200;
+    settings.IsSet.MinimumMtu = TRUE;
+    settings.MaximumMtu = 1500;
+    settings.IsSet.MaximumMtu = TRUE;
+    settings.CongestionControlAlgorithm = QUIC_CONGESTION_CONTROL_ALGORITHM_BBR;
+    settings.IsSet.CongestionControlAlgorithm = TRUE;
+    settings.EcnEnabled = TRUE;
+    settings.IsSet.EcnEnabled = TRUE;
 
     QUIC_BUFFER alpn_buffer;
     alpn_buffer.Buffer = (uint8_t *)WORMHOLE_ALPN;
@@ -963,6 +1131,109 @@ static BOOLEAN Daemon_LoadClientConfig(void)
 }
 
 //=============================================================================
+// Hole-Punch — NAT traversal for cross-network replication
+//=============================================================================
+
+// Fire-and-forget connection callback for NAT mapping (punch connections)
+static QUIC_STATUS QUIC_API Daemon_PunchConnectionCallback(
+    HQUIC Connection, void *Context, QUIC_CONNECTION_EVENT *Event)
+{
+    UNREFERENCED_PARAMETER(Context);
+
+    switch (Event->Type)
+    {
+    case QUIC_CONNECTION_EVENT_CONNECTED:
+        LOG("[punch] NAT mapping connection succeeded\n");
+        MsQuic->ConnectionShutdown(Connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+        break;
+
+    case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
+    case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER:
+        // Expected — the connection is just for NAT mapping
+        break;
+
+    case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
+        MsQuic->ConnectionClose(Connection);
+        break;
+
+    default:
+        break;
+    }
+
+    return QUIC_STATUS_SUCCESS;
+}
+
+// Called when a remote peer sends a PUNCH_REQUEST (0x10) via relay FORWARD
+static void Daemon_OnPunchRequest(void *context, const uint8_t requester_id[32])
+{
+    UNREFERENCED_PARAMETER(context);
+
+    // Look up requester's endpoints from discovered peers
+    const ENDPOINT *ep = NULL;
+    EnterCriticalSection(&g_daemon.peers_lock);
+    LONG count = InterlockedCompareExchange(&g_daemon.discovered_peer_count, 0, 0);
+    for (LONG i = 0; i < count; i++)
+    {
+        if (memcmp(g_daemon.discovered_peers[i].peer_id, requester_id, 32) == 0)
+        {
+            DISCOVERED_PEER *peer = &g_daemon.discovered_peers[i];
+            // Prefer IPv4, fall back to IPv6
+            for (uint16_t j = 0; j < peer->endpoint_count; j++)
+            {
+                if (peer->endpoints[j].addr_type == 0x04) { ep = &peer->endpoints[j]; break; }
+            }
+            if (!ep)
+            {
+                for (uint16_t j = 0; j < peer->endpoint_count; j++)
+                {
+                    if (peer->endpoints[j].addr_type == 0x06) { ep = &peer->endpoints[j]; break; }
+                }
+            }
+            break;
+        }
+    }
+
+    // Copy endpoint data before releasing lock
+    ENDPOINT ep_copy;
+    if (ep)
+    {
+        memcpy(&ep_copy, ep, sizeof(ENDPOINT));
+    }
+    LeaveCriticalSection(&g_daemon.peers_lock);
+
+    if (!ep) return;
+
+    char addr_str[INET6_ADDRSTRLEN];
+    uint16_t port;
+    if (!Endpoint_ToString(&ep_copy, addr_str, sizeof(addr_str), &port)) return;
+
+    QUIC_ADDRESS_FAMILY family = (ep_copy.addr_type == 0x06)
+        ? QUIC_ADDRESS_FAMILY_INET6 : QUIC_ADDRESS_FAMILY_INET;
+
+    // Open QUIC connection from port 4567 to requester (creates NAT mapping)
+    HQUIC punch_conn = NULL;
+    if (QUIC_SUCCEEDED(MsQuic->ConnectionOpen(DaemonRegistration,
+            Daemon_PunchConnectionCallback, NULL, &punch_conn)))
+    {
+        if (QUIC_SUCCEEDED(MsQuic->ConnectionStart(
+                punch_conn, DaemonClientConfig, family, addr_str, port)))
+        {
+            LOG("[punch] Opened connection to %s:%u (NAT mapping)\n", addr_str, port);
+        }
+        else
+        {
+            MsQuic->ConnectionClose(punch_conn);
+        }
+    }
+
+    // Send PUNCH_ACK back via relay FORWARD
+    uint8_t ack[33];
+    ack[0] = 0x11;
+    memcpy(ack + 1, g_daemon.keypair.public_key, 32);
+    RelayClient_ForwardPacket(g_daemon.relay_client, requester_id, ack, sizeof(ack));
+}
+
+//=============================================================================
 // Chunk Replication — replicate to discovered peers
 //=============================================================================
 
@@ -978,15 +1249,29 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaConnectionCallback(
         LOG("[replicate] Connected to peer for replication\n");
         break;
 
+    case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
+    {
+        const uint8_t *ticket = Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket;
+        uint32_t ticket_len = Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
+        Daemon_SaveSessionTicket(ticket, ticket_len);
+        LOG("[replicate] Session ticket saved (%u bytes) for 0-RTT\n", ticket_len);
+        break;
+    }
+
     case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
+    {
+        REPLICA_STREAM_CONTEXT *rctx =
+            (REPLICA_STREAM_CONTEXT *)calloc(1, sizeof(REPLICA_STREAM_CONTEXT));
         MsQuic->SetCallbackHandler(
             Event->PEER_STREAM_STARTED.Stream,
             (void *)Daemon_ReplicaStreamCallback,
-            NULL
+            rctx
         );
         break;
+    }
 
     case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
+        // Context is NULL for outbound replica connections (no allocation to free)
         MsQuic->ConnectionClose(Connection);
         break;
 
@@ -1001,25 +1286,51 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaConnectionCallback(
 static QUIC_STATUS QUIC_API Daemon_ReplicaStreamCallback(
     HQUIC Stream, void *Context, QUIC_STREAM_EVENT *Event)
 {
-    UNREFERENCED_PARAMETER(Context);
+    REPLICA_STREAM_CONTEXT *rctx = (REPLICA_STREAM_CONTEXT *)Context;
 
     switch (Event->Type)
     {
     case QUIC_STREAM_EVENT_RECEIVE:
     {
-        // Parse CHUNK_STORE_ACK responses
+        // Accumulate incoming data into buffer
         for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++)
         {
             const QUIC_BUFFER *buf = &Event->RECEIVE.Buffers[i];
-            if (buf->Length >= CTRL_HEADER_SIZE)
+            if (rctx)
             {
-                uint8_t msg_type = buf->Buffer[0];
-                uint32_t payload_len = ReadUint32LE(buf->Buffer + 1);
-                if (buf->Length >= CTRL_HEADER_SIZE + payload_len)
+                if (!DaemonAccumulateBuffer(&rctx->recv_buf, &rctx->recv_used,
+                                             &rctx->recv_capacity, buf->Buffer, buf->Length))
                 {
-                    Daemon_HandlePeerMessage(Stream, msg_type,
-                        buf->Buffer + CTRL_HEADER_SIZE, payload_len, NULL);
+                    LOG_ERROR("[replicate] Failed to accumulate stream data\n");
+                    break;
                 }
+            }
+        }
+
+        // Parse complete control messages from accumulated buffer
+        if (rctx)
+        {
+            while (rctx->recv_used >= CTRL_HEADER_SIZE)
+            {
+                uint8_t msg_type = rctx->recv_buf[0];
+                uint32_t payload_len = ReadUint32LE(rctx->recv_buf + 1);
+                if (payload_len > MAX_CTRL_PAYLOAD)
+                {
+                    LOG_ERROR("[replicate] Payload too large: %u\n", payload_len);
+                    rctx->recv_used = 0;  // Reset buffer on protocol error
+                    break;
+                }
+
+                size_t frame_size = (size_t)CTRL_HEADER_SIZE + payload_len;
+                if (rctx->recv_used < frame_size)
+                {
+                    break;  // Wait for more data
+                }
+
+                Daemon_HandlePeerMessage(Stream, msg_type,
+                    rctx->recv_buf + CTRL_HEADER_SIZE, payload_len, NULL);
+
+                DaemonConsumeBuffer(rctx->recv_buf, &rctx->recv_used, frame_size);
             }
         }
         break;
@@ -1037,6 +1348,11 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaStreamCallback(
     }
 
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
+        if (rctx)
+        {
+            free(rctx->recv_buf);
+            free(rctx);
+        }
         MsQuic->StreamClose(Stream);
         break;
 
@@ -1063,7 +1379,16 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
     }
 
     uint32_t needed = REPLICATION_TARGET - 1 - replicas;
-    LONG peer_count = InterlockedCompareExchange(&g_daemon.discovered_peer_count, 0, 0);
+
+    // Snapshot discovered peers under lock
+    DISCOVERED_PEER local_peers[MAX_FIND_PEERS];
+    LONG peer_count;
+    EnterCriticalSection(&g_daemon.peers_lock);
+    peer_count = InterlockedCompareExchange(&g_daemon.discovered_peer_count, 0, 0);
+    if (peer_count > 0)
+        memcpy(local_peers, g_daemon.discovered_peers, peer_count * sizeof(DISCOVERED_PEER));
+    LeaveCriticalSection(&g_daemon.peers_lock);
+
     if (peer_count == 0)
     {
         return;  // No peers available
@@ -1088,27 +1413,76 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
     uint32_t sent = 0;
     for (LONG i = 0; i < peer_count && sent < needed; i++)
     {
-        DISCOVERED_PEER *peer = &g_daemon.discovered_peers[i];
+        DISCOVERED_PEER *peer = &local_peers[i];
         if (peer->endpoint_count == 0) continue;
 
-        // Use first endpoint with IPv4
+        // Select best endpoint: prefer IPv4, fall back to IPv6
         const ENDPOINT *ep = NULL;
         for (uint16_t j = 0; j < peer->endpoint_count; j++)
         {
-            if (peer->endpoints[j].addr_type == 0x04)
+            if (peer->endpoints[j].addr_type == 0x04) { ep = &peer->endpoints[j]; break; }
+        }
+        if (!ep)
+        {
+            for (uint16_t j = 0; j < peer->endpoint_count; j++)
             {
-                ep = &peer->endpoints[j];
-                break;
+                if (peer->endpoints[j].addr_type == 0x06) { ep = &peer->endpoints[j]; break; }
             }
         }
         if (!ep) continue;
 
-        // Build target address string
-        char addr_str[64];
-        snprintf(addr_str, sizeof(addr_str), "%u.%u.%u.%u",
-                 ep->addr[0], ep->addr[1], ep->addr[2], ep->addr[3]);
+        // Build target address string (supports both IPv4 and IPv6)
+        char addr_str[INET6_ADDRSTRLEN];
+        uint16_t port;
+        if (!Endpoint_ToString(ep, addr_str, sizeof(addr_str), &port)) continue;
 
-        LOG("[replicate] Connecting to %s:%u\n", addr_str, ep->port);
+        QUIC_ADDRESS_FAMILY family = (ep->addr_type == 0x06)
+            ? QUIC_ADDRESS_FAMILY_INET6 : QUIC_ADDRESS_FAMILY_INET;
+
+        LOG("[replicate] Connecting to %s:%u\n", addr_str, port);
+
+        // Hole-punch: signal peer via relay to create NAT mappings
+        if (g_daemon.relay_client && RelayClient_IsConnected(g_daemon.relay_client))
+        {
+            uint8_t punch_req[33];
+            punch_req[0] = 0x10;
+            memcpy(punch_req + 1, g_daemon.keypair.public_key, 32);
+            RelayClient_ResetPunchAck(g_daemon.relay_client);
+            RelayClient_ForwardPacket(g_daemon.relay_client, peer->peer_id,
+                punch_req, sizeof(punch_req));
+
+            // Also open our own connection to peer (creates our NAT mapping)
+            HQUIC our_punch = NULL;
+            if (QUIC_SUCCEEDED(MsQuic->ConnectionOpen(DaemonRegistration,
+                    Daemon_PunchConnectionCallback, NULL, &our_punch)))
+            {
+                if (QUIC_FAILED(MsQuic->ConnectionStart(our_punch, DaemonClientConfig,
+                        family, addr_str, port)))
+                {
+                    MsQuic->ConnectionClose(our_punch);
+                }
+            }
+
+            // Wait for PUNCH_ACK (up to 3 seconds)
+            DWORD punch_start = GetTickCount();
+            while (GetTickCount() - punch_start < 3000)
+            {
+                Sleep(50);  // Don't poll relay socket from IPC thread — main thread handles it
+                if (RelayClient_GetPunchAckReceived(g_daemon.relay_client))
+                    break;
+            }
+
+            // Wait for NAT mappings to stabilize
+            if (RelayClient_GetPunchAckReceived(g_daemon.relay_client))
+            {
+                LOG("[replicate] Hole-punch ACK received, waiting for NAT...\n");
+                Sleep(1000);
+            }
+            else
+            {
+                LOG("[replicate] No hole-punch ACK (peer may be offline)\n");
+            }
+        }
 
         // Open a QUIC connection to the peer
         HQUIC connection = NULL;
@@ -1124,12 +1498,24 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
             continue;
         }
 
+        // Apply saved session ticket for 0-RTT
+        {
+            uint32_t ticket_len;
+            uint8_t *ticket = Daemon_LoadSessionTicket(&ticket_len);
+            if (ticket)
+            {
+                MsQuic->SetParam(connection, QUIC_PARAM_CONN_RESUMPTION_TICKET,
+                                 ticket_len, ticket);
+                free(ticket);
+            }
+        }
+
         status = MsQuic->ConnectionStart(
             connection,
             DaemonClientConfig,
-            QUIC_ADDRESS_FAMILY_INET,
+            family,
             addr_str,
-            ep->port
+            port
         );
         if (QUIC_FAILED(status))
         {
@@ -1140,16 +1526,19 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
 
         // Open a bidirectional stream
         HQUIC stream = NULL;
+        REPLICA_STREAM_CONTEXT *rctx =
+            (REPLICA_STREAM_CONTEXT *)calloc(1, sizeof(REPLICA_STREAM_CONTEXT));
         status = MsQuic->StreamOpen(
             connection,
             QUIC_STREAM_OPEN_FLAG_NONE,
             Daemon_ReplicaStreamCallback,
-            NULL,
+            rctx,
             &stream
         );
         if (QUIC_FAILED(status))
         {
             LOG_ERROR("[replicate] StreamOpen failed: 0x%x\n", status);
+            free(rctx);
             MsQuic->ConnectionShutdown(connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
             continue;
         }
@@ -1450,6 +1839,18 @@ static BOOLEAN Daemon_FetchChunkFromPeer(
         return FALSE;
     }
 
+    // Apply saved session ticket for 0-RTT
+    {
+        uint32_t ticket_len;
+        uint8_t *ticket = Daemon_LoadSessionTicket(&ticket_len);
+        if (ticket)
+        {
+            MsQuic->SetParam(conn, QUIC_PARAM_CONN_RESUMPTION_TICKET,
+                             ticket_len, ticket);
+            free(ticket);
+        }
+    }
+
     status = MsQuic->ConnectionStart(
         conn, DaemonClientConfig, QUIC_ADDRESS_FAMILY_INET, addr_str, port);
     if (QUIC_FAILED(status))
@@ -1523,14 +1924,18 @@ static void Daemon_OnPeersFound(void *context, const DISCOVERED_PEER *peers, uin
     if (peer_count == 0)
     {
         LOG("[daemon] Peer discovery: no active peers found\n");
+        EnterCriticalSection(&g_daemon.peers_lock);
         InterlockedExchange(&g_daemon.discovered_peer_count, 0);
+        LeaveCriticalSection(&g_daemon.peers_lock);
         return;
     }
 
-    // Update local peer table
+    // Update local peer table (protected by peers_lock)
     uint16_t count = peer_count < MAX_FIND_PEERS ? peer_count : MAX_FIND_PEERS;
+    EnterCriticalSection(&g_daemon.peers_lock);
     memcpy(g_daemon.discovered_peers, peers, count * sizeof(DISCOVERED_PEER));
     InterlockedExchange(&g_daemon.discovered_peer_count, (LONG)count);
+    LeaveCriticalSection(&g_daemon.peers_lock);
 
     LOG("[daemon] Peer discovery: found %u active peers\n", count);
     for (uint16_t i = 0; i < count; i++)
@@ -1553,6 +1958,15 @@ static BOOLEAN Daemon_ConnectRelay(void)
     ENDPOINT endpoints[MAX_ENDPOINTS];
     uint16_t endpoint_count = Discovery_FindEndpoints(endpoints, MAX_ENDPOINTS);
 
+    // Discovery returns port=0; fill in our actual QUIC listening port
+    for (uint16_t i = 0; i < endpoint_count; i++) {
+        endpoints[i].port = g_daemon.listen_port;
+    }
+
+    // Save our endpoints for hole-punch use
+    memcpy(g_daemon.our_endpoints, endpoints, endpoint_count * sizeof(ENDPOINT));
+    g_daemon.our_endpoint_count = endpoint_count;
+
     LOG("[daemon] Discovered %u endpoints\n", endpoint_count);
 
     // Create relay client
@@ -1566,6 +1980,7 @@ static BOOLEAN Daemon_ConnectRelay(void)
         .on_ticket_created = NULL,
         .on_peer_info     = NULL,
         .on_peers_found   = Daemon_OnPeersFound,
+        .on_punch_request = Daemon_OnPunchRequest,
         .callback_context = &g_daemon,
     };
 
@@ -1740,10 +2155,25 @@ static uint32_t Daemon_HandleIpcCommand(
                 Proof_PrecomputeAndCache(manifest->chunks[i].hash, chunk_buf, chunk_size);
             }
 
-            // Announce chunk to DHT
+            // Announce chunk to DHT (defer if routing table empty)
             if (g_daemon.dht_enabled)
             {
-                DhtNode_AnnounceChunk(&g_daemon.dht_node, manifest->chunks[i].hash, g_daemon.listen_port);
+                EnterCriticalSection(&g_daemon.dht_lock);
+                ROUTING_NODE closest_check[1];
+                uint32_t rt_count = RoutingTable_FindClosest(
+                    &g_daemon.dht_node.routing_table, manifest->chunks[i].hash, closest_check, 1);
+                if (rt_count > 0)
+                {
+                    DhtNode_AnnounceChunk(&g_daemon.dht_node, manifest->chunks[i].hash, g_daemon.listen_port);
+                }
+                else if (g_daemon.pending_announce_count < 16)
+                {
+                    memcpy(g_daemon.pending_announce_hashes[g_daemon.pending_announce_count],
+                           manifest->chunks[i].hash, WH_HASH_SIZE);
+                    g_daemon.pending_announce_count++;
+                    LOG("[daemon] Deferred DHT announcement for chunk %u (no routing nodes yet)\n", i);
+                }
+                LeaveCriticalSection(&g_daemon.dht_lock);
             }
         }
 
@@ -1754,8 +2184,10 @@ static uint32_t Daemon_HandleIpcCommand(
             {
                 for (uint8_t p = 0; p < ec_group->m; p++)
                 {
+                    EnterCriticalSection(&g_daemon.dht_lock);
                     DhtNode_AnnounceChunk(&g_daemon.dht_node,
                                            ec_group->stripes[s].parity_hashes[p], g_daemon.listen_port);
+                    LeaveCriticalSection(&g_daemon.dht_lock);
                     uint32_t parity_size = 0;
                     if (ChunkStore_Get(ec_group->stripes[s].parity_hashes[p],
                                         chunk_buf, &parity_size))
@@ -1879,10 +2311,17 @@ static uint32_t Daemon_HandleIpcCommand(
         }
 
         //--- Phase 2: Discovered peers (relay-known endpoints) ---
-        LONG peer_count = InterlockedCompareExchange(&g_daemon.discovered_peer_count, 0, 0);
+        DISCOVERED_PEER local_peers_get[MAX_FIND_PEERS];
+        LONG peer_count;
+        EnterCriticalSection(&g_daemon.peers_lock);
+        peer_count = InterlockedCompareExchange(&g_daemon.discovered_peer_count, 0, 0);
+        if (peer_count > 0)
+            memcpy(local_peers_get, g_daemon.discovered_peers, peer_count * sizeof(DISCOVERED_PEER));
+        LeaveCriticalSection(&g_daemon.peers_lock);
+
         for (LONG i = 0; i < peer_count; i++)
         {
-            DISCOVERED_PEER *peer = &g_daemon.discovered_peers[i];
+            DISCOVERED_PEER *peer = &local_peers_get[i];
 
             // Find first IPv4 endpoint
             const ENDPOINT *ep = NULL;
@@ -1925,8 +2364,10 @@ static uint32_t Daemon_HandleIpcCommand(
 
             // Check cached DHT locations first, and kick off async FIND_VALUE if none
             DHT_LOCATION locations[DHT_STORE_MAX_LOCATIONS];
+            EnterCriticalSection(&g_daemon.dht_lock);
             uint32_t loc_count = DhtNode_FindChunkLocations(
                 &g_daemon.dht_node, hash, locations, DHT_STORE_MAX_LOCATIONS);
+            LeaveCriticalSection(&g_daemon.dht_lock);
 
             // If no cached results, poll for async FIND_VALUE responses
             if (loc_count == 0)
@@ -1934,8 +2375,10 @@ static uint32_t Daemon_HandleIpcCommand(
                 for (int poll = 0; poll < 20; poll++)
                 {
                     Sleep(150);
+                    EnterCriticalSection(&g_daemon.dht_lock);
                     loc_count = DhtStore_Get(&g_daemon.dht_node.value_store,
                                               hash, locations, DHT_STORE_MAX_LOCATIONS);
+                    LeaveCriticalSection(&g_daemon.dht_lock);
                     if (loc_count > 0) break;
                 }
             }
@@ -2018,10 +2461,12 @@ static uint32_t Daemon_HandleIpcCommand(
 
         if (g_daemon.dht_enabled)
         {
+            EnterCriticalSection(&g_daemon.dht_lock);
             WriteUint32LE(response_out + 1, DhtNode_GetNodeCount(&g_daemon.dht_node));
             WriteUint32LE(response_out + 5, DhtStore_GetCount(&g_daemon.dht_node.value_store));
             WriteUint64LE(response_out + 9, g_daemon.dht_node.msgs_sent);
             WriteUint64LE(response_out + 17, g_daemon.dht_node.msgs_received);
+            LeaveCriticalSection(&g_daemon.dht_lock);
         }
         else
         {
@@ -2167,6 +2612,11 @@ int main(int argc, char *argv[])
         LOG("[daemon] Using default config (quota: %u GB)\n", CONFIG_DEFAULT_MAX_STORAGE_GB);
     }
 
+    // Initialize synchronization primitives
+    InitializeCriticalSection(&g_daemon.ledger_lock);
+    InitializeCriticalSection(&g_daemon.dht_lock);
+    InitializeCriticalSection(&g_daemon.peers_lock);
+
     // Step 0b: Initialize libsodium + load/generate identity keypair
     if (sodium_init() < 0)
     {
@@ -2304,7 +2754,8 @@ int main(int argc, char *argv[])
         {
             bootstrap_host = Config_GetString(g_daemon.config, "relay_host",
                                                 CONFIG_DEFAULT_RELAY_HOST);
-            bootstrap_port = g_daemon.dht_port;
+            bootstrap_port = (uint16_t)Config_GetUint64(g_daemon.config, "relay_port",
+                                                         CONFIG_DEFAULT_RELAY_PORT);
         }
 
         if (DhtNode_Init(&g_daemon.dht_node, &g_daemon.keypair,
@@ -2350,60 +2801,116 @@ int main(int argc, char *argv[])
 
     // Main loop: poll relay + DHT + check shutdown flag
     time_t last_keepalive = time(NULL);
-    time_t last_discovery = 0;  // Trigger immediately on first loop
+    time_t last_discovery = time(NULL) - DAEMON_DISCOVERY_SEC + 5;  // First FIND_PEERS after ~5s
     time_t last_dht_refresh = time(NULL);
     time_t last_health_check = time(NULL);
     time_t last_dht_expire = time(NULL);
+    time_t last_dht_bootstrap_retry = time(NULL);
+    uint32_t dht_bootstrap_retries = 0;
+#define DHT_MAX_BOOTSTRAP_RETRIES 6
+#define DHT_BOOTSTRAP_RETRY_SEC   10
 
     while (InterlockedCompareExchange(&g_daemon.shutdown_requested, 0, 0) == 0)
     {
         // Poll relay for incoming messages (non-blocking)
-        if (g_daemon.relay_client && RelayClient_IsConnected(g_daemon.relay_client))
+        // Poll must run even before connected — it receives the REGISTERED response
+        if (g_daemon.relay_client)
         {
             RelayClient_Poll(g_daemon.relay_client, 100);  // 100ms timeout
 
-            time_t now = time(NULL);
-
-            // Send keepalive periodically
-            if (now - last_keepalive >= DAEMON_KEEPALIVE_SEC)
+            if (RelayClient_IsConnected(g_daemon.relay_client))
             {
-                RelayClient_SendKeepalive(g_daemon.relay_client);
-                last_keepalive = now;
-            }
+                time_t now = time(NULL);
 
-            // Discover peers periodically
-            if (now - last_discovery >= DAEMON_DISCOVERY_SEC)
-            {
-                RelayClient_FindPeers(g_daemon.relay_client, 20);
-                last_discovery = now;
+                // Send keepalive periodically
+                if (now - last_keepalive >= DAEMON_KEEPALIVE_SEC)
+                {
+                    RelayClient_SendKeepalive(g_daemon.relay_client);
+                    last_keepalive = now;
+                }
+
+                // Discover peers periodically
+                if (now - last_discovery >= DAEMON_DISCOVERY_SEC)
+                {
+                    RelayClient_FindPeers(g_daemon.relay_client, 20);
+                    last_discovery = now;
+                }
             }
         }
         else
         {
-            // No relay — just sleep to avoid busy-loop
+            // No relay client at all — just sleep to avoid busy-loop
             Sleep(100);
         }
 
         // Poll DHT for incoming messages (non-blocking)
         if (g_daemon.dht_enabled)
         {
+            EnterCriticalSection(&g_daemon.dht_lock);
             DhtNode_Poll(&g_daemon.dht_node, 0);
+            LeaveCriticalSection(&g_daemon.dht_lock);
 
             time_t now = time(NULL);
 
             // Refresh DHT buckets periodically
             if (now - last_dht_refresh >= DHT_BUCKET_REFRESH_SEC)
             {
+                EnterCriticalSection(&g_daemon.dht_lock);
                 DhtNode_RefreshBuckets(&g_daemon.dht_node);
+                LeaveCriticalSection(&g_daemon.dht_lock);
                 last_dht_refresh = now;
+            }
+
+            // Retry deferred chunk announcements once routing table has nodes
+            if (g_daemon.pending_announce_count > 0)
+            {
+                EnterCriticalSection(&g_daemon.dht_lock);
+                ROUTING_NODE rt_check[1];
+                uint32_t rt_has = RoutingTable_FindClosest(
+                    &g_daemon.dht_node.routing_table,
+                    g_daemon.pending_announce_hashes[0], rt_check, 1);
+                if (rt_has > 0)
+                {
+                    uint32_t count = g_daemon.pending_announce_count;
+                    for (uint32_t pa = 0; pa < count; pa++)
+                    {
+                        DhtNode_AnnounceChunk(&g_daemon.dht_node,
+                            g_daemon.pending_announce_hashes[pa], g_daemon.listen_port);
+                    }
+                    LOG("[daemon] Retried %u deferred DHT announcements\n", count);
+                    g_daemon.pending_announce_count = 0;
+                }
+                LeaveCriticalSection(&g_daemon.dht_lock);
             }
 
             // Expire pending RPCs and stale value store entries
             if (now - last_dht_expire >= 5)
             {
+                EnterCriticalSection(&g_daemon.dht_lock);
                 DhtNode_ExpirePendingRPCs(&g_daemon.dht_node);
                 DhtStore_ExpireOld(&g_daemon.dht_node.value_store);
+                LeaveCriticalSection(&g_daemon.dht_lock);
                 last_dht_expire = now;
+            }
+
+            // Retry DHT bootstrap if routing table is still empty
+            if (dht_bootstrap_retries < DHT_MAX_BOOTSTRAP_RETRIES &&
+                now - last_dht_bootstrap_retry >= DHT_BOOTSTRAP_RETRY_SEC)
+            {
+                EnterCriticalSection(&g_daemon.dht_lock);
+                ROUTING_NODE rt_check[1];
+                uint32_t rt_has = RoutingTable_FindClosest(
+                    &g_daemon.dht_node.routing_table,
+                    g_daemon.dht_node.keypair->public_key, rt_check, 1);
+                if (rt_has == 0)
+                {
+                    LOG("[daemon] DHT routing table empty, retrying bootstrap (%u/%u)\n",
+                        dht_bootstrap_retries + 1, DHT_MAX_BOOTSTRAP_RETRIES);
+                    DhtNode_Bootstrap(&g_daemon.dht_node);
+                    dht_bootstrap_retries++;
+                }
+                LeaveCriticalSection(&g_daemon.dht_lock);
+                last_dht_bootstrap_retry = now;
             }
         }
 
@@ -2504,8 +3011,12 @@ int main(int argc, char *argv[])
 
                                             // Announce recovered chunk to DHT
                                             if (g_daemon.dht_enabled)
+                                            {
+                                                EnterCriticalSection(&g_daemon.dht_lock);
                                                 DhtNode_AnnounceChunk(&g_daemon.dht_node,
                                                     ec_manifest->chunks[ci].hash, g_daemon.listen_port);
+                                                LeaveCriticalSection(&g_daemon.dht_lock);
+                                            }
                                         }
                                     }
                                 }
@@ -2548,8 +3059,12 @@ int main(int argc, char *argv[])
                                             LOG("[daemon] EC recovered chunk %u from %s\n", ci, ec_ent->d_name);
 
                                             if (g_daemon.dht_enabled)
+                                            {
+                                                EnterCriticalSection(&g_daemon.dht_lock);
                                                 DhtNode_AnnounceChunk(&g_daemon.dht_node,
                                                     ec_manifest->chunks[ci].hash, g_daemon.listen_port);
+                                                LeaveCriticalSection(&g_daemon.dht_lock);
+                                            }
                                         }
                                     }
                                 }
@@ -2625,6 +3140,11 @@ cleanup:
         Config_Destroy(g_daemon.config);
         g_daemon.config = NULL;
     }
+
+    // Cleanup synchronization primitives
+    DeleteCriticalSection(&g_daemon.ledger_lock);
+    DeleteCriticalSection(&g_daemon.dht_lock);
+    DeleteCriticalSection(&g_daemon.peers_lock);
 
     LOG("[daemon] Shutdown complete\n");
     return 0;

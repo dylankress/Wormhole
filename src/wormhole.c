@@ -121,6 +121,43 @@ static int cmd_status(void);
 static int cmd_config(int argc, char *argv[]);
 static void PrintUsage(void);
 
+//=============================================================================
+// 0-RTT Session Ticket Helpers
+//=============================================================================
+
+static BOOLEAN SaveSessionTicket(const uint8_t *ticket, uint32_t len)
+{
+    const char *home = getenv("USERPROFILE");
+    if (!home) home = getenv("HOME");
+    if (!home) return FALSE;
+    char path[260];
+    snprintf(path, sizeof(path), "%s\\.wormhole\\session_ticket", home);
+    FILE *f = fopen(path, "wb");
+    if (!f) return FALSE;
+    fwrite(&len, sizeof(len), 1, f);
+    fwrite(ticket, 1, len, f);
+    fclose(f);
+    return TRUE;
+}
+
+static uint8_t *LoadSessionTicket(uint32_t *out_len)
+{
+    const char *home = getenv("USERPROFILE");
+    if (!home) home = getenv("HOME");
+    if (!home) return NULL;
+    char path[260];
+    snprintf(path, sizeof(path), "%s\\.wormhole\\session_ticket", home);
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint32_t len;
+    if (fread(&len, sizeof(len), 1, f) != 1 || len > 65536) { fclose(f); return NULL; }
+    uint8_t *ticket = (uint8_t *)malloc(len);
+    if (!ticket || fread(ticket, 1, len, f) != len) { free(ticket); fclose(f); return NULL; }
+    fclose(f);
+    *out_len = len;
+    return ticket;
+}
+
 // Helper: check if path is a directory
 #ifndef _WIN32
 #include <sys/stat.h>
@@ -165,7 +202,7 @@ static BOOLEAN InitializeMsQuic(void)
 	// Step 2: Create registration (required for all QUIC operations)
 	const QUIC_REGISTRATION_CONFIG reg_config = {
 		"wormhole",  // AppName
-		QUIC_EXECUTION_PROFILE_LOW_LATENCY  // Optimize for low latency
+		QUIC_EXECUTION_PROFILE_TYPE_MAX_THROUGHPUT  // Optimize for bulk file transfer
 	};
 
 	status = MsQuic->RegistrationOpen(&reg_config, &Registration);
@@ -265,7 +302,7 @@ static BOOLEAN ServerLoadConfiguration(void)
 	settings.IsSet.DisconnectTimeoutMs = TRUE;
 	settings.KeepAliveIntervalMs = 10000;  // Send keep-alive every 10 seconds
 	settings.IsSet.KeepAliveIntervalMs = TRUE;
-	settings.ServerResumptionLevel = QUIC_SERVER_RESUME_ONLY;
+	settings.ServerResumptionLevel = QUIC_SERVER_RESUME_AND_ZERORTT;
 	settings.IsSet.ServerResumptionLevel = TRUE;
 	settings.PeerBidiStreamCount = 1;  // Allow 1 bidirectional stream
 	settings.IsSet.PeerBidiStreamCount = TRUE;
@@ -276,16 +313,17 @@ static BOOLEAN ServerLoadConfiguration(void)
 	settings.StreamRecvWindowDefault = 16777216;  // 16 MB (2^24, MUST be power of 2)
 	settings.IsSet.StreamRecvWindowDefault = TRUE;
 	
-	// Send buffer: Enable buffering for better pipelining
-	settings.SendBufferingEnabled = TRUE;  // Enable send buffering (allows multiple chunks in flight)
+	// Disable send buffering — zero-copy mode. MsQuic uses our buffers directly
+	// instead of copying each 256KB chunk. Safe because we free in SEND_COMPLETE.
+	settings.SendBufferingEnabled = FALSE;
 	settings.IsSet.SendBufferingEnabled = TRUE;
 	
 	// Connection-wide flow control
 	settings.ConnFlowControlWindow = 67108864;  // 64 MB (2^26, 4x stream window)
 	settings.IsSet.ConnFlowControlWindow = TRUE;
 	
-	// Initial window size (how much can be sent before first ACK)
-	settings.InitialWindowPackets = 10;  // 10 packets initially (default: 10, but explicit)
+	// Initial window size — larger window for faster ramp-up on file transfers
+	settings.InitialWindowPackets = 20;  // 2x default for faster start
 	settings.IsSet.InitialWindowPackets = TRUE;
 
 	// MTU settings: allow PMTUD up to standard Ethernet MTU
@@ -300,7 +338,7 @@ static BOOLEAN ServerLoadConfiguration(void)
 	settings.EcnEnabled = TRUE;
 	settings.IsSet.EcnEnabled = TRUE;
 
-	LOG("[server] Flow control: StreamRecv=16MB, ConnFlow=64MB, InitWindow=10pkts, CongestionControl=BBR, MTU=1200-1500, ECN=on\n");
+	LOG("[server] Flow control: StreamRecv=16MB, ConnFlow=64MB, InitWindow=20pkts, SendBuffer=off, BBR, MTU=1200-1500, ECN=on\n");
 
 	// Step 4: Create configuration
 	QUIC_BUFFER alpn_buffer;
@@ -364,13 +402,13 @@ static BOOLEAN ClientLoadConfiguration(void)
 	settings.StreamRecvWindowDefault = 16777216;  // 16 MB (2^24, MUST be power of 2)
 	settings.IsSet.StreamRecvWindowDefault = TRUE;
 
-	settings.SendBufferingEnabled = TRUE;  // Enable send buffering (allows multiple chunks in flight)
+	settings.SendBufferingEnabled = FALSE;  // Zero-copy: MsQuic uses our buffers directly
 	settings.IsSet.SendBufferingEnabled = TRUE;
 
 	settings.ConnFlowControlWindow = 67108864;  // 64 MB (2^26, 4x stream window)
 	settings.IsSet.ConnFlowControlWindow = TRUE;
 
-	settings.InitialWindowPackets = 10;
+	settings.InitialWindowPackets = 20;  // 2x default for faster start
 	settings.IsSet.InitialWindowPackets = TRUE;
 
 	// MTU settings: allow PMTUD up to standard Ethernet MTU
@@ -391,7 +429,7 @@ static BOOLEAN ClientLoadConfiguration(void)
 	settings.PeerUnidiStreamCount = 10;  // Allow up to 10 unidirectional streams from peer
 	settings.IsSet.PeerUnidiStreamCount = TRUE;
 
-	LOG("[client] Flow control: StreamRecv=16MB, ConnFlow=64MB, InitWindow=10pkts, CongestionControl=BBR, MTU=1200-1500, ECN=on, PeerStreams=10\n");
+	LOG("[client] Flow control: StreamRecv=16MB, ConnFlow=64MB, InitWindow=20pkts, SendBuffer=off, BBR, MTU=1200-1500, ECN=on, PeerStreams=10\n");
 
 	// Step 3: Create configuration
 	QUIC_BUFFER alpn_buffer;
@@ -523,6 +561,7 @@ typedef struct {
 	BOOLEAN transfer_started;
 	BOOLEAN transfer_failed;        // Receiver disconnected without completing
 	BOOLEAN peer_disconnected;      // Set by SHUTDOWN_INITIATED_BY_PEER/TRANSPORT
+	BOOLEAN transfer_complete_received; // Set by stream.c when TRANSFER_COMPLETE msg arrives
 	uint64_t peer_error_code;       // Error code from SHUTDOWN_INITIATED_BY_PEER (0 = graceful)
 	HANDLE receiver_connect_event;
 	HANDLE transfer_done_event;
@@ -601,7 +640,8 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 			LOG("[Send] Receiver connected! Starting chunk-based file transfer...\n");
 
 			// Start sending file using chunk protocol
-			ChunkSendFile(Connection, ctx->filepath, ctx->manifest, ctx->transfer_done_event);
+			ChunkSendFile(Connection, ctx->filepath, ctx->manifest, ctx->transfer_done_event,
+				&ctx->transfer_complete_received);
 
 			return QUIC_STATUS_SUCCESS;
 		}
@@ -628,18 +668,18 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 		MsQuic->ConnectionClose(Connection);
 		g_active_connection = NULL;
 
-		// If receiver disconnected (not sender-initiated cleanup), check error code
+		// If receiver disconnected (not sender-initiated cleanup), check if transfer actually completed
 		if (ctx->peer_disconnected && ctx->transfer_started && !ctx->transfer_failed)
 		{
-			if (ctx->peer_error_code == 0)
+			if (ctx->transfer_complete_received)
 			{
-				// Graceful close (error 0) = receiver completed successfully
+				// Genuine success — TRANSFER_COMPLETE was received before connection closed
 				SetEvent(ctx->transfer_done_event);
 			}
 			else
 			{
-				// Non-zero error = actual failure, allow reconnection
-				LOG("[Send] Receiver disconnected before transfer complete. Waiting for reconnection...\n");
+				// Receiver disconnected without completing (Ctrl+C or crash)
+				printf("\n[sender] Receiver disconnected. Waiting for reconnection...\n");
 				ctx->receiver_connected = FALSE;
 				ctx->transfer_started = FALSE;
 				ctx->connection = NULL;
@@ -697,6 +737,15 @@ static QUIC_STATUS QUIC_API ClientConnectionCallback_Receive(
 		case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
 		{
 			LOG("[Receive] Connection shutdown complete\n");
+			return QUIC_STATUS_SUCCESS;
+		}
+
+		case QUIC_CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED:
+		{
+			const uint8_t *ticket = Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicket;
+			uint32_t ticket_len = Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
+			SaveSessionTicket(ticket, ticket_len);
+			LOG("[client] Session ticket saved (%u bytes) for 0-RTT\n", ticket_len);
 			return QUIC_STATUS_SUCCESS;
 		}
 
@@ -1027,11 +1076,12 @@ static int cmd_send(const char* filepath)
 	if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0)
 	{
 		LOG_ERROR("Error: Failed to initialize Winsock\n");
+		Manifest_Destroy(manifest);
 		free(filename);
 		return 1;
 	}
 #endif
-	
+
 	// Initialize PeerID (Ed25519 keypair)
 	if (!PeerID_Init())
 	{
@@ -1039,10 +1089,11 @@ static int cmd_send(const char* filepath)
 #ifdef _WIN32
 		WSACleanup();
 #endif
+		Manifest_Destroy(manifest);
 		free(filename);
 		return 1;
 	}
-	
+
 	// Load or generate identity
 	KEYPAIR keypair;
 	char* identity_path = PeerID_GetDefaultPath();
@@ -1050,6 +1101,8 @@ static int cmd_send(const char* filepath)
 	{
 		LOG_ERROR("Error: Failed to load identity\n");
 		free(identity_path);
+		Manifest_Destroy(manifest);
+		free(filename);
 		return 1;
 	}
 	free(identity_path);
@@ -1926,6 +1979,18 @@ static int cmd_receive(const char* ticket)
 				}
 			}
 
+			// Apply saved session ticket for 0-RTT resumption
+			{
+				uint32_t ticket_len;
+				uint8_t *ticket = LoadSessionTicket(&ticket_len);
+				if (ticket)
+				{
+					MsQuic->SetParam(par_ctx.connections[i],
+						QUIC_PARAM_CONN_RESUMPTION_TICKET, ticket_len, ticket);
+					free(ticket);
+				}
+			}
+
 			// Start connection (non-blocking - result delivered via RaceConnectionCallback)
 			status = MsQuic->ConnectionStart(
 				par_ctx.connections[i],
@@ -2035,6 +2100,18 @@ static int cmd_receive(const char* ticket)
 
 			if (QUIC_SUCCEEDED(status))
 			{
+				// Apply saved session ticket for 0-RTT
+				{
+					uint32_t ticket_len;
+					uint8_t *ticket = LoadSessionTicket(&ticket_len);
+					if (ticket)
+					{
+						MsQuic->SetParam(relay_conn,
+							QUIC_PARAM_CONN_RESUMPTION_TICKET, ticket_len, ticket);
+						free(ticket);
+					}
+				}
+
 				status = MsQuic->ConnectionStart(
 					relay_conn,
 					ClientConfiguration,

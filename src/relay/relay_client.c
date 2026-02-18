@@ -38,7 +38,11 @@ struct RELAY_CLIENT {
     RelayPeerInfoCallback on_peer_info;
     RelayDisconnectedCallback on_disconnected;
     RelayPeersFoundCallback on_peers_found;
+    RelayPunchRequestCallback on_punch_request;
     void* callback_context;
+
+    // Hole-punch state
+    volatile bool punch_ack_received;
 };
 
 RELAY_CLIENT* RelayClient_Create(const RELAY_CLIENT_CONFIG* config) {
@@ -60,7 +64,9 @@ RELAY_CLIENT* RelayClient_Create(const RELAY_CLIENT_CONFIG* config) {
     client->on_peer_info = config->on_peer_info;
     client->on_disconnected = config->on_disconnected;
     client->on_peers_found = config->on_peers_found;
+    client->on_punch_request = config->on_punch_request;
     client->callback_context = config->callback_context;
+    client->punch_ack_received = false;
     
     // Resolve relay server address first
     struct addrinfo hints, *result;
@@ -442,7 +448,20 @@ bool RelayClient_Poll(RELAY_CLIENT* client, int timeout_ms) {
     }
     
     uint8_t msg_type = buffer[0];
-    
+
+    // Detect hole-punch signaling messages (delivered via FORWARD)
+    if (msg_type == 0x10 && recv_len >= 33) {
+        // PUNCH_REQUEST: remote peer wants to connect
+        if (client->on_punch_request)
+            client->on_punch_request(client->callback_context, buffer + 1);
+        return true;
+    }
+    if (msg_type == 0x11 && recv_len >= 33) {
+        // PUNCH_ACK: remote peer is punching back
+        client->punch_ack_received = true;
+        return true;
+    }
+
     // Handle message
     switch (msg_type) {
         case RELAY_MSG_REGISTERED: {
@@ -577,19 +596,21 @@ bool RelayClient_Poll(RELAY_CLIENT* client, int timeout_ms) {
                     memcpy(&ep_count, read_ptr, 2);
                     read_ptr += 2;
 
+                    uint16_t original_ep_count = ep_count;
                     if (ep_count > MAX_ENDPOINTS) {
                         ep_count = MAX_ENDPOINTS;
                     }
 
                     size_t ep_bytes = ep_count * sizeof(ENDPOINT);
-                    if (read_ptr + ep_bytes > end_ptr) {
+                    size_t total_ep_bytes = original_ep_count * sizeof(ENDPOINT);
+                    if (read_ptr + total_ep_bytes > end_ptr) {
                         fprintf(stderr, "[RelayClient] PEERS_FOUND truncated at peer %u endpoints\n", i);
                         break;
                     }
 
                     memcpy(peers[i].endpoints, read_ptr, ep_bytes);
                     peers[i].endpoint_count = ep_count;
-                    read_ptr += ep_bytes;
+                    read_ptr += total_ep_bytes;  // skip ALL endpoints including excess
                     parsed++;
                 }
 
@@ -633,4 +654,12 @@ bool RelayClient_GetRelayAddr(RELAY_CLIENT* client, struct sockaddr_storage* add
     memcpy(addr, &client->relay_addr, client->relay_addr_len);
     *addr_len = client->relay_addr_len;
     return true;
+}
+
+bool RelayClient_GetPunchAckReceived(RELAY_CLIENT* client) {
+    return client ? client->punch_ack_received : false;
+}
+
+void RelayClient_ResetPunchAck(RELAY_CLIENT* client) {
+    if (client) client->punch_ack_received = false;
 }

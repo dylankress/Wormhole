@@ -190,7 +190,7 @@ static BOOLEAN EnsureDirPath(const char *path)
 // Returns NULL if not found (v1 manifest or invalid index).
 static const FILE_ENTRY *FindFileEntryForChunk(const FILE_MANIFEST *m, uint32_t chunk_index)
 {
-    if (!m || m->version != WH_MANIFEST_VERSION_2 || !m->files) return NULL;
+    if (!m || m->version < WH_MANIFEST_VERSION_2 || !m->files) return NULL;
 
     for (uint32_t i = 0; i < m->file_count; i++)
     {
@@ -207,7 +207,7 @@ static const FILE_ENTRY *FindFileEntryForChunk(const FILE_MANIFEST *m, uint32_t 
 // Returns TRUE if file_handle is ready for writing the given chunk.
 static BOOLEAN OpenChunkOutputFile(CHUNK_RECEIVE_CONTEXT *ctx, uint32_t chunk_index)
 {
-    if (ctx->manifest->version != WH_MANIFEST_VERSION_2)
+    if (ctx->manifest->version < WH_MANIFEST_VERSION_2)
         return (ctx->file_handle != NULL);  // v1: single file already open
 
     // Find which file this chunk belongs to
@@ -298,7 +298,7 @@ static BOOLEAN OpenChunkOutputFile(CHUNK_RECEIVE_CONTEXT *ctx, uint32_t chunk_in
 // Returns TRUE if file_handle is ready for reading the given chunk.
 static BOOLEAN OpenChunkInputFile(CHUNK_SEND_CONTEXT *ctx, uint32_t chunk_index)
 {
-    if (ctx->manifest->version != WH_MANIFEST_VERSION_2)
+    if (ctx->manifest->version < WH_MANIFEST_VERSION_2)
         return (ctx->file_handle != NULL);  // v1: single file already open
 
     // Find which file this chunk belongs to
@@ -397,7 +397,12 @@ static void ConsumeBuffer(uint8_t *buf, size_t *used, size_t consumed)
 static BOOLEAN SendControlMessage(HQUIC Stream, uint8_t msg_type,
                                   const uint8_t *payload, uint32_t payload_len)
 {
-    uint32_t frame_size = CTRL_HEADER_SIZE + payload_len;
+    if (payload_len > MAX_CTRL_PAYLOAD)
+    {
+        LOG_ERROR("[stream] ERROR: Control message payload too large: %u\n", payload_len);
+        return FALSE;
+    }
+    size_t frame_size = (size_t)CTRL_HEADER_SIZE + payload_len;
     uint8_t *buffer = (uint8_t *)malloc(frame_size);
     if (!buffer) return FALSE;
 
@@ -432,6 +437,22 @@ static BOOLEAN SendControlMessage(HQUIC Stream, uint8_t msg_type,
 }
 
 //=============================================================================
+// Adaptive pipelining helper
+//=============================================================================
+
+// Decide whether we should queue another chunk. Uses MsQuic's BDP-based
+// IDEAL_SEND_BUFFER_SIZE when available, falls back to MAX_CHUNKS_IN_FLIGHT.
+static inline BOOLEAN ShouldSendMore(CHUNK_SEND_CONTEXT *ctx)
+{
+    if (ctx->all_chunks_sent || ctx->transfer_complete_received) return FALSE;
+    // Safety cap: never exceed 4x the static limit regardless
+    if (ctx->chunks_in_flight >= MAX_CHUNKS_IN_FLIGHT * 4) return FALSE;
+    if (ctx->ideal_send_bytes > 0)
+        return ctx->bytes_in_flight < ctx->ideal_send_bytes;
+    return ctx->chunks_in_flight < MAX_CHUNKS_IN_FLIGHT;  // fallback
+}
+
+//=============================================================================
 // Data chunk send
 //=============================================================================
 
@@ -441,8 +462,8 @@ static BOOLEAN SendNextDataChunk(CHUNK_SEND_CONTEXT *ctx)
 {
     if (!ctx || !ctx->manifest || !ctx->data_stream)
         return FALSE;
-    // v1 requires file_handle pre-opened; v2 opens files on demand
-    if (ctx->manifest->version != WH_MANIFEST_VERSION_2 && !ctx->file_handle)
+    // v1 requires file_handle pre-opened; v2+ opens files on demand
+    if (ctx->manifest->version < WH_MANIFEST_VERSION_2 && !ctx->file_handle)
         return FALSE;
 
     // Skip chunks the receiver already has (resumable transfer)
@@ -459,6 +480,12 @@ static BOOLEAN SendNextDataChunk(CHUNK_SEND_CONTEXT *ctx)
     {
         // All chunks queued
         ctx->all_chunks_sent = TRUE;
+        // Send zero-length FIN so receiver knows no more data is coming
+        if (ctx->data_stream)
+        {
+            MsQuic->StreamSend(ctx->data_stream, NULL, 0, QUIC_SEND_FLAG_FIN, NULL);
+            LOG("[stream] All chunks skipped/sent, FIN sent on data stream\n");
+        }
         return TRUE;
     }
 
@@ -475,7 +502,7 @@ static BOOLEAN SendNextDataChunk(CHUNK_SEND_CONTEXT *ctx)
 
     // Seek to chunk position (per-file offset for v2, absolute for v1)
     uint64_t offset;
-    if (ctx->manifest->version == WH_MANIFEST_VERSION_2)
+    if (ctx->manifest->version >= WH_MANIFEST_VERSION_2)
     {
         const FILE_ENTRY *fe = FindFileEntryForChunk(ctx->manifest, idx);
         offset = (uint64_t)(idx - fe->chunk_start) * WH_CHUNK_SIZE;
@@ -485,18 +512,35 @@ static BOOLEAN SendNextDataChunk(CHUNK_SEND_CONTEXT *ctx)
         offset = (uint64_t)idx * WH_CHUNK_SIZE;
     }
 #ifdef _WIN32
-    _fseeki64(ctx->file_handle, (__int64)offset, SEEK_SET);
+    if (_fseeki64(ctx->file_handle, (__int64)offset, SEEK_SET) != 0)
+    {
+        LOG_ERROR("[stream] ERROR: Failed to seek to offset %llu for chunk %u\n",
+                  (unsigned long long)offset, idx);
+        return FALSE;
+    }
 #else
-    fseeko(ctx->file_handle, (off_t)offset, SEEK_SET);
+    if (fseeko(ctx->file_handle, (off_t)offset, SEEK_SET) != 0)
+    {
+        LOG_ERROR("[stream] ERROR: Failed to seek to offset %llu for chunk %u\n",
+                  (unsigned long long)offset, idx);
+        return FALSE;
+    }
 #endif
 
-    // Allocate frame buffer: header + data
+    // Find free slot in pre-allocated pool
     uint32_t frame_size = DATA_FRAME_HEADER_SIZE + data_size;
-    uint8_t *buffer = (uint8_t *)malloc(frame_size);
-    if (!buffer) return FALSE;
+    SEND_BUFFER_SLOT *slot = NULL;
+    if (ctx->send_pool)
+    {
+        for (int i = 0; i < SEND_POOL_SIZE; i++)
+        {
+            if (!ctx->send_pool[i].in_use) { slot = &ctx->send_pool[i]; break; }
+        }
+    }
+    if (!slot) return FALSE;  // all slots in use
 
-    // Write frame header
-    uint8_t *p = buffer;
+    // Write frame header + data directly into pool slot
+    uint8_t *p = slot->data;
     WriteUint32LE(p, idx);              p += 4;
     memcpy(p, ci->hash, WH_HASH_SIZE); p += WH_HASH_SIZE;
     WriteUint32LE(p, data_size);        p += 4;
@@ -507,43 +551,44 @@ static BOOLEAN SendNextDataChunk(CHUNK_SEND_CONTEXT *ctx)
         bytes_read != data_size)
     {
         LOG_ERROR("[stream] ERROR: Failed to read chunk %u from file\n", idx);
-        free(buffer);
         return FALSE;
     }
 
-    QUIC_BUFFER *quic_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
-    if (!quic_buf)
-    {
-        free(buffer);
-        return FALSE;
-    }
-
-    quic_buf->Buffer = buffer;
-    quic_buf->Length = frame_size;
+    slot->quic_buf.Buffer = slot->data;
+    slot->quic_buf.Length = frame_size;
+    slot->in_use = TRUE;
 
     // Check if this is the last chunk
     BOOLEAN is_last = (idx == ctx->manifest->chunk_count - 1);
     QUIC_SEND_FLAGS flags = is_last ? QUIC_SEND_FLAG_FIN : QUIC_SEND_FLAG_NONE;
 
-    QUIC_STATUS status = MsQuic->StreamSend(ctx->data_stream, quic_buf, 1,
-                                            flags, quic_buf);
+    QUIC_STATUS status = MsQuic->StreamSend(ctx->data_stream, &slot->quic_buf, 1,
+                                            flags, slot);  // ClientContext = slot
     if (QUIC_FAILED(status))
     {
         LOG_ERROR("[stream] ERROR: StreamSend data chunk %u failed: 0x%x\n", idx, status);
-        free(buffer);
-        free(quic_buf);
+        slot->in_use = FALSE;
         return FALSE;
     }
 
     ctx->next_chunk_to_send++;
     ctx->chunks_in_flight++;
+    ctx->bytes_in_flight += frame_size;
     ctx->bytes_sent += data_size;
+    ctx->chunks_sent_count++;
 
-    // Live progress bar
-    PrintProgressBar(ctx->next_chunk_to_send, ctx->manifest->chunk_count,
-                     ctx->bytes_sent, ctx->manifest->file_size,
-                     &ctx->start_time, &ctx->last_progress_time,
-                     &ctx->last_progress_bytes, "Sending");
+    // Live progress bar — use only needed chunks/bytes for accurate resume progress
+    {
+        uint32_t progress_total_chunks = ctx->total_needed_chunks > 0
+            ? ctx->total_needed_chunks : ctx->manifest->chunk_count;
+        uint64_t progress_total_bytes = ctx->total_needed_bytes > 0
+            ? ctx->total_needed_bytes : ctx->manifest->file_size;
+
+        PrintProgressBar(ctx->chunks_sent_count, progress_total_chunks,
+                         ctx->bytes_sent, progress_total_bytes,
+                         &ctx->start_time, &ctx->last_progress_time,
+                         &ctx->last_progress_bytes, "Sending");
+    }
 
     if (is_last)
     {
@@ -590,7 +635,15 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
         {
             uint8_t msg_type = ctx->ctrl_recv_buffer[0];
             uint32_t payload_len = ReadUint32LE(ctx->ctrl_recv_buffer + 1);
-            size_t frame_size = CTRL_HEADER_SIZE + payload_len;
+
+            if (payload_len > MAX_CTRL_PAYLOAD)
+            {
+                LOG_ERROR("[SenderCtrl] ERROR: Payload too large: %u\n", payload_len);
+                ctx->ctrl_recv_used = 0;
+                break;
+            }
+
+            size_t frame_size = (size_t)CTRL_HEADER_SIZE + payload_len;
 
             if (ctx->ctrl_recv_used < frame_size) break;  // need more data
 
@@ -659,6 +712,16 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
                 }
 
                 ctx->chunk_request_received = TRUE;
+                ctx->total_needed_chunks = needed_count;
+
+                // Compute total bytes needed (for accurate resume progress bar)
+                ctx->total_needed_bytes = 0;
+                for (uint32_t i = 0; i < req_total; i++)
+                {
+                    if (ctx->chunks_needed[i])
+                        ctx->total_needed_bytes += ctx->manifest->chunks[i].chunk_size;
+                }
+
                 LOG("[SenderCtrl] Received CHUNK_REQUEST: %u/%u chunks needed\n",
                     needed_count, req_total);
 
@@ -692,12 +755,13 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
                 LOG("[SenderCtrl] Data stream opened, starting chunk send...\n");
                 QueryPerformanceCounter(&ctx->start_time);
 
-                // Pipeline initial chunks
-                for (int k = 0; k < MAX_CHUNKS_IN_FLIGHT && !ctx->all_chunks_sent; k++)
+                // Pipeline initial chunks (adaptive: fill to ideal or fallback limit)
+                while (ShouldSendMore(ctx))
                 {
                     if (!SendNextDataChunk(ctx))
                     {
-                        LOG_ERROR("[SenderCtrl] ERROR: Failed to send initial chunk\n");
+                        if (!ctx->all_chunks_sent)
+                            LOG_ERROR("[SenderCtrl] ERROR: Failed to send initial chunk\n");
                         break;
                     }
                 }
@@ -709,6 +773,9 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
             {
                 LOG("[SenderCtrl] Received TRANSFER_COMPLETE\n");
                 ctx->transfer_complete_received = TRUE;
+                if (ctx->transfer_complete_flag) {
+                    *ctx->transfer_complete_flag = TRUE;
+                }
 
                 // Abort data stream — receiver is done, no point sending more chunks
                 if (ctx->data_stream)
@@ -766,6 +833,7 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
         LOG("[SenderCtrl] SHUTDOWN_COMPLETE\n");
         // Control stream cleanup — don't free ctx here since data stream may still be active.
         // ctx is freed when the last stream shuts down.
+        ctx->control_stream = NULL;
         if (ctx && !ctx->data_stream)
         {
             CleanupSendContext(ctx);
@@ -794,12 +862,12 @@ QUIC_STATUS QUIC_API SenderDataStreamCallback(
 
     case QUIC_STREAM_EVENT_SEND_COMPLETE:
     {
-        // Free sent buffer
+        // Release pool slot (no free needed — pre-allocated)
         if (Event->SEND_COMPLETE.ClientContext)
         {
-            QUIC_BUFFER *sent = (QUIC_BUFFER *)Event->SEND_COMPLETE.ClientContext;
-            free(sent->Buffer);
-            free(sent);
+            SEND_BUFFER_SLOT *slot = (SEND_BUFFER_SLOT *)Event->SEND_COMPLETE.ClientContext;
+            if (ctx) ctx->bytes_in_flight -= slot->quic_buf.Length;
+            slot->in_use = FALSE;
         }
 
         if (ctx && ctx->chunks_in_flight > 0)
@@ -811,14 +879,17 @@ QUIC_STATUS QUIC_API SenderDataStreamCallback(
             break;
         }
 
-        // Pipeline next chunk if room (stop if receiver already done or disconnected)
-        if (ctx && !ctx->all_chunks_sent && !ctx->transfer_complete_received
-            && ctx->chunks_in_flight < MAX_CHUNKS_IN_FLIGHT)
+        // Pipeline next chunk using adaptive check
+        while (ctx && ShouldSendMore(ctx))
         {
             if (!SendNextDataChunk(ctx))
             {
-                LOG_ERROR("[SenderData] ERROR: SendNextDataChunk failed\n");
-                MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+                if (!ctx->all_chunks_sent)
+                {
+                    LOG_ERROR("[SenderData] ERROR: SendNextDataChunk failed\n");
+                    MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+                }
+                break;
             }
         }
         break;
@@ -827,6 +898,20 @@ QUIC_STATUS QUIC_API SenderDataStreamCallback(
     case QUIC_STREAM_EVENT_PEER_RECEIVE_ABORTED:
         LOG("[SenderData] Peer aborted receive, shutting down data stream\n");
         MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_ABORT, 0);
+        break;
+
+    case QUIC_STREAM_EVENT_IDEAL_SEND_BUFFER_SIZE:
+        if (ctx)
+        {
+            ctx->ideal_send_bytes = Event->IDEAL_SEND_BUFFER_SIZE.ByteCount;
+            LOG("[SenderData] Ideal send buffer: %llu bytes\n",
+                (unsigned long long)ctx->ideal_send_bytes);
+            // Fill up to the new ideal if we have room
+            while (ctx && ShouldSendMore(ctx))
+            {
+                if (!SendNextDataChunk(ctx)) break;
+            }
+        }
         break;
 
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
@@ -967,9 +1052,9 @@ QUIC_STATUS QUIC_API ReceiverDataStreamCallback(
                 ctx->file_handle = NULL;
             }
 
-            if (ctx->manifest->version == WH_MANIFEST_VERSION_2)
+            if (ctx->manifest->version >= WH_MANIFEST_VERSION_2)
             {
-                // V2: files were written directly to output_path directory
+                // V2+: files were written directly to output_path directory
                 LOG("[RecvData] Directory saved: %s\n", ctx->output_path);
             }
             else if (ctx->partial_path && ctx->output_path)
@@ -1052,7 +1137,15 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
     {
         uint8_t msg_type = ctx->ctrl_recv_buffer[0];
         uint32_t payload_len = ReadUint32LE(ctx->ctrl_recv_buffer + 1);
-        size_t frame_size = CTRL_HEADER_SIZE + payload_len;
+
+        if (payload_len > MAX_CTRL_PAYLOAD)
+        {
+            LOG_ERROR("[RecvCtrl] ERROR: Payload too large: %u\n", payload_len);
+            ctx->ctrl_recv_used = 0;
+            break;
+        }
+
+        size_t frame_size = (size_t)CTRL_HEADER_SIZE + payload_len;
 
         if (ctx->ctrl_recv_used < frame_size) break;
 
@@ -1096,7 +1189,7 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
             ctx->partial_path = NULL;
             ctx->current_file_index = UINT32_MAX;
 
-            BOOLEAN is_multifile = (ctx->manifest->version == WH_MANIFEST_VERSION_2);
+            BOOLEAN is_multifile = (ctx->manifest->version >= WH_MANIFEST_VERSION_2);
 
             if (is_multifile)
             {
@@ -1119,8 +1212,13 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
                 }
 
                 // Create the output directory
-                if (ctx->output_path)
-                    EnsureDirPath(ctx->output_path);
+                if (!ctx->output_path)
+                {
+                    LOG_ERROR("[RecvCtrl] ERROR: Failed to allocate output path\n");
+                    ConsumeBuffer(ctx->ctrl_recv_buffer, &ctx->ctrl_recv_used, frame_size);
+                    return;
+                }
+                EnsureDirPath(ctx->output_path);
 
                 LOG("[RecvCtrl] Multi-file transfer: directory=%s, files=%u\n",
                     ctx->output_path, ctx->manifest->file_count);
@@ -1144,6 +1242,13 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
                 else
                 {
                     ctx->output_path = _strdup(ctx->manifest->filename);
+                }
+
+                if (!ctx->output_path)
+                {
+                    LOG_ERROR("[RecvCtrl] ERROR: Failed to allocate output path\n");
+                    ConsumeBuffer(ctx->ctrl_recv_buffer, &ctx->ctrl_recv_used, frame_size);
+                    return;
                 }
 
                 // Create .partial path (v1 only)
@@ -1234,9 +1339,19 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
                                 if (!fe) continue;
                                 uint64_t off_in_file = (uint64_t)(i - fe->chunk_start) * WH_CHUNK_SIZE;
 #ifdef _WIN32
-                                _fseeki64(ctx->file_handle, (__int64)off_in_file, SEEK_SET);
+                                if (_fseeki64(ctx->file_handle, (__int64)off_in_file, SEEK_SET) != 0)
+                                {
+                                    LOG_ERROR("[RecvCtrl] ERROR: Failed to seek to offset %llu for store chunk %u\n",
+                                              (unsigned long long)off_in_file, i);
+                                    continue;
+                                }
 #else
-                                fseeko(ctx->file_handle, (off_t)off_in_file, SEEK_SET);
+                                if (fseeko(ctx->file_handle, (off_t)off_in_file, SEEK_SET) != 0)
+                                {
+                                    LOG_ERROR("[RecvCtrl] ERROR: Failed to seek to offset %llu for store chunk %u\n",
+                                              (unsigned long long)off_in_file, i);
+                                    continue;
+                                }
 #endif
                             }
                             else
@@ -1244,9 +1359,19 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
                                 // V1: single file, absolute offset
                                 uint64_t file_offset = (uint64_t)i * WH_CHUNK_SIZE;
 #ifdef _WIN32
-                                _fseeki64(ctx->file_handle, (__int64)file_offset, SEEK_SET);
+                                if (_fseeki64(ctx->file_handle, (__int64)file_offset, SEEK_SET) != 0)
+                                {
+                                    LOG_ERROR("[RecvCtrl] ERROR: Failed to seek to offset %llu for store chunk %u\n",
+                                              (unsigned long long)file_offset, i);
+                                    continue;
+                                }
 #else
-                                fseeko(ctx->file_handle, (off_t)file_offset, SEEK_SET);
+                                if (fseeko(ctx->file_handle, (off_t)file_offset, SEEK_SET) != 0)
+                                {
+                                    LOG_ERROR("[RecvCtrl] ERROR: Failed to seek to offset %llu for store chunk %u\n",
+                                              (unsigned long long)file_offset, i);
+                                    continue;
+                                }
 #endif
                             }
 
@@ -1352,8 +1477,8 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
 static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
 {
     if (!ctx->manifest) return;
-    // V1 requires file_handle to be pre-opened; V2 opens files on demand
-    if (ctx->manifest->version != WH_MANIFEST_VERSION_2 && !ctx->file_handle) return;
+    // V1 requires file_handle to be pre-opened; V2+ opens files on demand
+    if (ctx->manifest->version < WH_MANIFEST_VERSION_2 && !ctx->file_handle) return;
 
     while (ctx->data_recv_used >= DATA_FRAME_HEADER_SIZE)
     {
@@ -1362,7 +1487,14 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
         // hash is at offset 4
         uint32_t data_size = ReadUint32LE(ctx->data_recv_buffer + 4 + WH_HASH_SIZE);
 
-        size_t frame_size = DATA_FRAME_HEADER_SIZE + data_size;
+        if (data_size > WH_CHUNK_SIZE)
+        {
+            LOG_ERROR("[RecvData] Invalid data_size %u (max %u)\n", data_size, WH_CHUNK_SIZE);
+            ctx->data_recv_used = 0;
+            break;
+        }
+
+        size_t frame_size = (size_t)DATA_FRAME_HEADER_SIZE + data_size;
         if (ctx->data_recv_used < frame_size) break;  // need more data
 
         const uint8_t *chunk_hash = ctx->data_recv_buffer + 4;
@@ -1400,9 +1532,9 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
         }
 
         // Write chunk to file at correct offset
-        if (ctx->manifest->version == WH_MANIFEST_VERSION_2)
+        if (ctx->manifest->version >= WH_MANIFEST_VERSION_2)
         {
-            // V2: open the correct file for this chunk
+            // V2+: open the correct file for this chunk
             if (!OpenChunkOutputFile(ctx, chunk_index))
             {
                 LOG_ERROR("[RecvData] ERROR: Cannot open output file for chunk %u\n", chunk_index);
@@ -1418,9 +1550,21 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
             }
             uint64_t file_offset = (uint64_t)(chunk_index - fe->chunk_start) * WH_CHUNK_SIZE;
 #ifdef _WIN32
-            _fseeki64(ctx->file_handle, (__int64)file_offset, SEEK_SET);
+            if (_fseeki64(ctx->file_handle, (__int64)file_offset, SEEK_SET) != 0)
+            {
+                LOG_ERROR("[RecvData] ERROR: Failed to seek to offset %llu for chunk %u\n",
+                          (unsigned long long)file_offset, chunk_index);
+                ConsumeBuffer(ctx->data_recv_buffer, &ctx->data_recv_used, frame_size);
+                continue;
+            }
 #else
-            fseeko(ctx->file_handle, (off_t)file_offset, SEEK_SET);
+            if (fseeko(ctx->file_handle, (off_t)file_offset, SEEK_SET) != 0)
+            {
+                LOG_ERROR("[RecvData] ERROR: Failed to seek to offset %llu for chunk %u\n",
+                          (unsigned long long)file_offset, chunk_index);
+                ConsumeBuffer(ctx->data_recv_buffer, &ctx->data_recv_used, frame_size);
+                continue;
+            }
 #endif
         }
         else
@@ -1428,9 +1572,21 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
             // V1: single file, absolute offset
             uint64_t file_offset = (uint64_t)chunk_index * WH_CHUNK_SIZE;
 #ifdef _WIN32
-            _fseeki64(ctx->file_handle, (__int64)file_offset, SEEK_SET);
+            if (_fseeki64(ctx->file_handle, (__int64)file_offset, SEEK_SET) != 0)
+            {
+                LOG_ERROR("[RecvData] ERROR: Failed to seek to offset %llu for chunk %u\n",
+                          (unsigned long long)file_offset, chunk_index);
+                ConsumeBuffer(ctx->data_recv_buffer, &ctx->data_recv_used, frame_size);
+                continue;
+            }
 #else
-            fseeko(ctx->file_handle, (off_t)file_offset, SEEK_SET);
+            if (fseeko(ctx->file_handle, (off_t)file_offset, SEEK_SET) != 0)
+            {
+                LOG_ERROR("[RecvData] ERROR: Failed to seek to offset %llu for chunk %u\n",
+                          (unsigned long long)file_offset, chunk_index);
+                ConsumeBuffer(ctx->data_recv_buffer, &ctx->data_recv_used, frame_size);
+                continue;
+            }
 #endif
         }
 
@@ -1489,7 +1645,8 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
 //=============================================================================
 
 void ChunkSendFile(HQUIC Connection, const char *file_path,
-                   FILE_MANIFEST *manifest, HANDLE transfer_complete_event)
+                   FILE_MANIFEST *manifest, HANDLE transfer_complete_event,
+                   BOOLEAN *transfer_complete_flag)
 {
     QUIC_STATUS status;
 
@@ -1507,15 +1664,26 @@ void ChunkSendFile(HQUIC Connection, const char *file_path,
     ctx->manifest = manifest;
     ctx->connection = Connection;
     ctx->transfer_complete_event = transfer_complete_event;
+    ctx->transfer_complete_flag = transfer_complete_flag;
     ctx->current_file_index = UINT32_MAX;
 
-    if (manifest->version == WH_MANIFEST_VERSION_2)
+    // Pre-allocate send buffer pool
+    ctx->send_pool = (SEND_BUFFER_SLOT *)calloc(SEND_POOL_SIZE, sizeof(SEND_BUFFER_SLOT));
+    if (!ctx->send_pool)
     {
-        // V2 (directory): defer file opening to SendNextDataChunk via OpenChunkInputFile
+        LOG_ERROR("[ChunkSendFile] ERROR: Failed to allocate send buffer pool\n");
+        free(ctx);
+        return;
+    }
+
+    if (manifest->version >= WH_MANIFEST_VERSION_2)
+    {
+        // V2+ (directory): defer file opening to SendNextDataChunk via OpenChunkInputFile
         ctx->base_dir_path = _strdup(file_path);
         if (!ctx->base_dir_path)
         {
             LOG_ERROR("[ChunkSendFile] ERROR: Failed to duplicate directory path\n");
+            free(ctx->send_pool);
             free(ctx);
             return;
         }
@@ -1528,6 +1696,7 @@ void ChunkSendFile(HQUIC Connection, const char *file_path,
         if (!OpenFileForRead(file_path, &ctx->file_handle))
         {
             LOG_ERROR("[ChunkSendFile] ERROR: Cannot open file: %s\n", file_path);
+            free(ctx->send_pool);
             free(ctx);
             return;
         }
@@ -1546,6 +1715,7 @@ void ChunkSendFile(HQUIC Connection, const char *file_path,
         LOG_ERROR("[ChunkSendFile] ERROR: Failed to open control stream: 0x%x\n", status);
         CloseFile(ctx->file_handle);
         free(ctx->base_dir_path);
+        free(ctx->send_pool);
         free(ctx);
         return;
     }
@@ -1557,6 +1727,7 @@ void ChunkSendFile(HQUIC Connection, const char *file_path,
         MsQuic->StreamClose(ctx->control_stream);
         CloseFile(ctx->file_handle);
         free(ctx->base_dir_path);
+        free(ctx->send_pool);
         free(ctx);
         return;
     }
@@ -1577,6 +1748,7 @@ static void CleanupSendContext(CHUNK_SEND_CONTEXT *ctx)
     if (ctx->base_dir_path) free(ctx->base_dir_path);
     if (ctx->ctrl_recv_buffer) free(ctx->ctrl_recv_buffer);
     if (ctx->chunks_needed) free(ctx->chunks_needed);
+    if (ctx->send_pool) free(ctx->send_pool);
     // Note: manifest is owned by caller (wormhole.c), not freed here
     free(ctx);
 }

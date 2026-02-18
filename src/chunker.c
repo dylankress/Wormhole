@@ -44,10 +44,13 @@ static BOOLEAN FileList_Add(FILE_LIST *fl, const char *path, uint64_t size)
     {
         uint32_t new_cap = fl->capacity * 2;
         char **new_paths = (char **)realloc(fl->paths, new_cap * sizeof(char *));
-        uint64_t *new_sizes = (uint64_t *)realloc(fl->sizes, new_cap * sizeof(uint64_t));
-        if (!new_paths || !new_sizes) return FALSE;
+        if (!new_paths) return FALSE;
         fl->paths = new_paths;
+
+        uint64_t *new_sizes = (uint64_t *)realloc(fl->sizes, new_cap * sizeof(uint64_t));
+        if (!new_sizes) return FALSE;
         fl->sizes = new_sizes;
+
         fl->capacity = new_cap;
     }
 

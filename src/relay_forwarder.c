@@ -38,6 +38,9 @@ struct RELAY_FORWARDER {
 	int proxy_sock;
 	uint16_t proxy_port;
 
+	// Keepalive tracking (per-instance, not static)
+	DWORD last_keepalive;
+
 	// MsQuic's address (learned from first packet in receiver mode)
 	struct sockaddr_storage msquic_addr;
 	socklen_t msquic_addr_len;
@@ -84,6 +87,13 @@ static DWORD WINAPI ForwarderThread(LPVOID param)
 		fwd->msquic_addr_known = TRUE;
 	}
 
+	// Increase relay socket buffers to handle QUIC burst traffic
+	{
+		int buf_size = 1048576;  // 1MB
+		setsockopt(relay_sock, SOL_SOCKET, SO_RCVBUF, (char*)&buf_size, sizeof(buf_size));
+		setsockopt(relay_sock, SOL_SOCKET, SO_SNDBUF, (char*)&buf_size, sizeof(buf_size));
+	}
+
 	LOG("[RelayFwd] Forwarder thread started (relay_sock=%d, proxy_sock=%d)\n",
 		relay_sock, fwd->proxy_sock);
 
@@ -119,8 +129,18 @@ static DWORD WINAPI ForwarderThread(LPVOID param)
 					// Forwarded QUIC packet from relay — send to MsQuic via proxy socket
 					if (fwd->msquic_addr_known)
 					{
-						sendto(fwd->proxy_sock, (const char*)buf, recv_len, 0,
+						int ret = sendto(fwd->proxy_sock, (const char*)buf, recv_len, 0,
 						       (struct sockaddr*)&fwd->msquic_addr, fwd->msquic_addr_len);
+						if (ret == SOCKET_ERROR)
+						{
+							static DWORD last_error_log_proxy = 0;
+							DWORD err_now = GetTickCount();
+							if (err_now - last_error_log_proxy > 5000)
+							{
+								printf("[relay_forwarder] sendto proxy failed: %d\n", WSAGetLastError());
+								last_error_log_proxy = err_now;
+							}
+						}
 					}
 				}
 				else
@@ -144,8 +164,8 @@ static DWORD WINAPI ForwarderThread(LPVOID param)
 
 			if (recv_len > 0)
 			{
-				// Remember MsQuic's source address (for receiver mode)
-				if (!fwd->msquic_addr_known || fwd->local_quic_port == 0)
+				// Remember MsQuic's source address (for receiver mode — learn once only)
+				if (!fwd->msquic_addr_known)
 				{
 					memcpy(&fwd->msquic_addr, &from_addr, from_len);
 					fwd->msquic_addr_len = from_len;
@@ -153,19 +173,27 @@ static DWORD WINAPI ForwarderThread(LPVOID param)
 				}
 
 				// Wrap in FORWARD and send to relay
-				RelayClient_ForwardPacket(fwd->relay_client, fwd->remote_peer_id,
-				                          buf, (uint16_t)recv_len);
+				if (!RelayClient_ForwardPacket(fwd->relay_client, fwd->remote_peer_id,
+				                               buf, (uint16_t)recv_len))
+				{
+					static DWORD last_error_log_fwd = 0;
+					DWORD err_now = GetTickCount();
+					if (err_now - last_error_log_fwd > 5000)
+					{
+						printf("[relay_forwarder] ForwardPacket failed\n");
+						last_error_log_fwd = err_now;
+					}
+				}
 			}
 		}
 
 		// Send keepalive periodically (relay_client handles timing internally
 		// through Poll, but we do an explicit one every ~10s as backup)
-		static DWORD last_keepalive = 0;
 		DWORD now = GetTickCount();
-		if (now - last_keepalive > 10000)
+		if (now - fwd->last_keepalive > 10000)
 		{
 			RelayClient_SendKeepalive(fwd->relay_client);
-			last_keepalive = now;
+			fwd->last_keepalive = now;
 		}
 	}
 
@@ -245,6 +273,13 @@ RELAY_FORWARDER* RelayForwarder_Start(const RELAY_FORWARDER_CONFIG* config)
 		return NULL;
 	}
 
+	// Increase socket buffers to handle QUIC burst traffic
+	{
+		int buf_size = 1048576;  // 1MB
+		setsockopt(fwd->proxy_sock, SOL_SOCKET, SO_RCVBUF, (char*)&buf_size, sizeof(buf_size));
+		setsockopt(fwd->proxy_sock, SOL_SOCKET, SO_SNDBUF, (char*)&buf_size, sizeof(buf_size));
+	}
+
 	struct sockaddr_in bind_addr;
 	memset(&bind_addr, 0, sizeof(bind_addr));
 	bind_addr.sin_family = AF_INET;
@@ -311,10 +346,25 @@ void RelayForwarder_Stop(RELAY_FORWARDER* fwd)
 	// Signal thread to stop
 	InterlockedExchange(&fwd->running, 0);
 
-	// Wait for thread to finish (up to 2 seconds)
+	// Close proxy socket to unblock any pending select()/recvfrom() in the thread
+	if (fwd->proxy_sock >= 0)
+	{
+#ifdef _WIN32
+		closesocket(fwd->proxy_sock);
+#else
+		close(fwd->proxy_sock);
+#endif
+		fwd->proxy_sock = -1;
+	}
+
+	// Wait for thread to finish (up to 5 seconds)
 	if (fwd->thread)
 	{
-		WaitForSingleObject(fwd->thread, 2000);
+		DWORD wait_result = WaitForSingleObject(fwd->thread, 5000);
+		if (wait_result == WAIT_TIMEOUT)
+		{
+			LOG_ERROR("[RelayFwd] Thread did not exit within timeout\n");
+		}
 		CloseHandle(fwd->thread);
 	}
 
@@ -323,16 +373,6 @@ void RelayForwarder_Stop(RELAY_FORWARDER* fwd)
 	{
 		RelayClient_SendGoodbye(fwd->relay_client, 0x02);
 		RelayClient_Destroy(fwd->relay_client);
-	}
-
-	// Close proxy socket
-	if (fwd->proxy_sock >= 0)
-	{
-#ifdef _WIN32
-		closesocket(fwd->proxy_sock);
-#else
-		close(fwd->proxy_sock);
-#endif
 	}
 
 	free(fwd);

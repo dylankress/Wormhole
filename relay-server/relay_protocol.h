@@ -127,7 +127,7 @@ typedef struct {
 #define MAX_ENDPOINTS 16              // Maximum endpoints per peer (headroom for relay-added endpoints)
 #define MAX_TICKET_LENGTH 32          // Maximum ticket string length
 #define MAX_FILENAME_LENGTH 256       // Maximum filename length
-#define MAX_PAYLOAD_LENGTH 65536      // Maximum forwarded packet size (64KB)
+#define MAX_PAYLOAD_LENGTH 65535      // Maximum forwarded packet size (fits uint16_t)
 #define TICKET_EXPIRY_SECONDS 3600    // Tickets expire after 1 hour
 #define MAX_FIND_PEERS 50             // Maximum peers returned by FIND_PEERS
 

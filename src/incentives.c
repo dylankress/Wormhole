@@ -98,8 +98,9 @@ BOOLEAN Ledger_ShouldAcceptStorage(const STORAGE_LEDGER *ledger, const uint8_t p
     }
 
     // Reject if we'd store more than 2x what they store for us
-    // Integer check: reject if they_store_for_us * 2 < we_would_store
-    if (they_store_for_us * 2 < we_would_store)
+    // Subtraction-based check avoids both uint64 overflow and division truncation
+    if (we_would_store > they_store_for_us &&
+        (we_would_store - they_store_for_us) > they_store_for_us)
     {
         return FALSE;
     }
@@ -124,7 +125,11 @@ BOOLEAN Ledger_Save(const STORAGE_LEDGER *ledger, const char *path)
 {
     if (!ledger || !path) return FALSE;
 
-    FILE *fh = fopen(path, "wb");
+    // Write to a temporary file first, then atomically rename
+    char tmp_path[260];  // MAX_PATH
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+
+    FILE *fh = fopen(tmp_path, "wb");
     if (!fh) return FALSE;
 
     // Header: [4B magic][4B version][4B peer_count]
@@ -136,6 +141,7 @@ BOOLEAN Ledger_Save(const STORAGE_LEDGER *ledger, const char *path)
     if (fwrite(header, 1, 12, fh) != 12)
     {
         fclose(fh);
+        remove(tmp_path);
         return FALSE;
     }
 
@@ -147,6 +153,7 @@ BOOLEAN Ledger_Save(const STORAGE_LEDGER *ledger, const char *path)
         if (fwrite(peer->peer_id, 1, 32, fh) != 32)
         {
             fclose(fh);
+            remove(tmp_path);
             return FALSE;
         }
 
@@ -158,11 +165,21 @@ BOOLEAN Ledger_Save(const STORAGE_LEDGER *ledger, const char *path)
         if (fwrite(fields, 1, 24, fh) != 24)
         {
             fclose(fh);
+            remove(tmp_path);
             return FALSE;
         }
     }
 
     fclose(fh);
+
+    // Atomic replace: remove old file, rename temp to final path
+    remove(path);
+    if (rename(tmp_path, path) != 0)
+    {
+        remove(tmp_path);
+        return FALSE;
+    }
+
     return TRUE;
 }
 

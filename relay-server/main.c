@@ -19,13 +19,16 @@
 // Global server instance (for signal handler)
 static RELAY_SERVER* g_server = NULL;
 
-// Signal handler for graceful shutdown
+// Async-signal-safe shutdown flag
+static volatile sig_atomic_t g_shutdown_requested = 0;
+
+// Signal handler for graceful shutdown — only sets a flag (async-signal-safe)
 #ifdef _WIN32
 BOOL WINAPI console_ctrl_handler(DWORD ctrl_type) {
     if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT) {
-        printf("\n[Main] Caught interrupt signal, shutting down...\n");
+        g_shutdown_requested = 1;
         if (g_server) {
-            RelayServer_Stop(g_server);
+            g_server->running = false;
         }
         return TRUE;
     }
@@ -33,9 +36,10 @@ BOOL WINAPI console_ctrl_handler(DWORD ctrl_type) {
 }
 #else
 void signal_handler(int signum) {
-    printf("\n[Main] Caught signal %d, shutting down...\n", signum);
+    (void)signum;
+    g_shutdown_requested = 1;
     if (g_server) {
-        RelayServer_Stop(g_server);
+        g_server->running = false;
     }
 }
 #endif
@@ -145,7 +149,12 @@ int main(int argc, char* argv[]) {
     
     // Run server (blocks until stopped)
     int result = RelayServer_Run(&server);
-    
+
+    // Print shutdown message (outside signal handler, safe to call printf)
+    if (g_shutdown_requested) {
+        printf("\n[Main] Caught shutdown signal, cleaning up...\n");
+    }
+
     // Print final statistics
     RelayServer_PrintStats(&server);
     

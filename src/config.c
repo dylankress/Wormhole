@@ -116,6 +116,17 @@ WORMHOLE_CONFIG *Config_Load(const char *path)
     char line[CONFIG_MAX_KEY_LEN + CONFIG_MAX_VALUE_LEN + 16];
     while (fgets(line, sizeof(line), fh))
     {
+        // If line was too long and got truncated, consume the remainder
+        size_t len = strlen(line);
+        if (len > 0 && line[len - 1] != '\n' && !feof(fh))
+        {
+            // Line was truncated — skip the rest of this line
+            int ch;
+            while ((ch = fgetc(fh)) != '\n' && ch != EOF)
+                ;
+            continue;  // Skip this truncated line entirely
+        }
+
         // Skip comments and empty lines
         char *trimmed = TrimWhitespace(line);
         if (trimmed[0] == '#' || trimmed[0] == ';' || trimmed[0] == '\0')

@@ -9,22 +9,27 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 // ============================================================================
 // Internal helpers
 // ============================================================================
 
-// File-static target pointer for qsort comparator
-static const uint8_t *s_find_target;
-
-// Compare two nodes by their XOR distance to s_find_target (ascending)
-static int CompareXorDistance(const void *a, const void *b)
+// Compare two nodes by their XOR distance to target (ascending)
+// Uses qsort_s context parameter for thread safety
+static int CompareXorDistance(void *context, const void *a, const void *b)
 {
+    const uint8_t *target = (const uint8_t *)context;
     const ROUTING_NODE *na = (const ROUTING_NODE *)a;
     const ROUTING_NODE *nb = (const ROUTING_NODE *)b;
     for (int i = 0; i < 32; i++) {
-        uint8_t da = na->node_id[i] ^ s_find_target[i];
-        uint8_t db = nb->node_id[i] ^ s_find_target[i];
+        uint8_t da = na->node_id[i] ^ target[i];
+        uint8_t db = nb->node_id[i] ^ target[i];
         if (da < db) return -1;
         if (da > db) return 1;
     }
@@ -140,9 +145,8 @@ uint32_t RoutingTable_FindClosest(const ROUTING_TABLE *rt, const uint8_t target[
         }
     }
 
-    // Sort by XOR distance to target
-    s_find_target = target;
-    qsort(all, idx, sizeof(ROUTING_NODE), CompareXorDistance);
+    // Sort by XOR distance to target (qsort_s for thread safety)
+    qsort_s(all, idx, sizeof(ROUTING_NODE), CompareXorDistance, (void *)target);
 
     // Copy result
     uint32_t result = (idx < max) ? idx : max;
@@ -226,42 +230,53 @@ static const uint8_t RT_FILE_MAGIC[4] = { 'D', 'H', 'R', 'T' };
 
 BOOLEAN RoutingTable_Save(const ROUTING_TABLE *rt, const char *path)
 {
-    FILE *f = fopen(path, "wb");
+    // Write to temp file first, then atomic rename
+    char tmp_path[512];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+
+    FILE *f = fopen(tmp_path, "wb");
     if (!f) return FALSE;
 
     uint8_t buf[8];
 
     // Magic
-    fwrite(RT_FILE_MAGIC, 1, 4, f);
+    if (fwrite(RT_FILE_MAGIC, 1, 4, f) != 4) { fclose(f); remove(tmp_path); return FALSE; }
 
     // Version
     WriteUint32LE(buf, RT_FILE_VERSION);
-    fwrite(buf, 1, 4, f);
+    if (fwrite(buf, 1, 4, f) != 4) { fclose(f); remove(tmp_path); return FALSE; }
 
     // Self ID
-    fwrite(rt->self_id, 1, 32, f);
+    if (fwrite(rt->self_id, 1, 32, f) != 32) { fclose(f); remove(tmp_path); return FALSE; }
 
     // Total node count
     uint32_t total = RoutingTable_GetTotalNodes(rt);
     WriteUint32LE(buf, total);
-    fwrite(buf, 1, 4, f);
+    if (fwrite(buf, 1, 4, f) != 4) { fclose(f); remove(tmp_path); return FALSE; }
 
     // Write each node
     for (int b = 0; b < DHT_BUCKET_COUNT; b++) {
         const K_BUCKET *bucket = &rt->buckets[b];
         for (uint32_t n = 0; n < bucket->count; n++) {
             const ROUTING_NODE *node = &bucket->nodes[n];
-            fwrite(node->node_id, 1, 32, f);
-            fwrite(&node->addr_type, 1, 1, f);
-            fwrite(node->addr, 1, 16, f);
+            if (fwrite(node->node_id, 1, 32, f) != 32) { fclose(f); remove(tmp_path); return FALSE; }
+            if (fwrite(&node->addr_type, 1, 1, f) != 1) { fclose(f); remove(tmp_path); return FALSE; }
+            if (fwrite(node->addr, 1, 16, f) != 16) { fclose(f); remove(tmp_path); return FALSE; }
             WriteUint16LE(buf, node->port);
-            fwrite(buf, 1, 2, f);
+            if (fwrite(buf, 1, 2, f) != 2) { fclose(f); remove(tmp_path); return FALSE; }
             WriteUint64LE(buf, (uint64_t)node->last_seen);
-            fwrite(buf, 1, 8, f);
+            if (fwrite(buf, 1, 8, f) != 8) { fclose(f); remove(tmp_path); return FALSE; }
         }
     }
 
     fclose(f);
+
+    // Atomic rename: replace original with temp file
+#ifdef _WIN32
+    MoveFileExA(tmp_path, path, MOVEFILE_REPLACE_EXISTING);
+#else
+    rename(tmp_path, path);
+#endif
     return TRUE;
 }
 

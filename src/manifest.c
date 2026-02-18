@@ -179,8 +179,12 @@ FILE_MANIFEST *Manifest_Create(const char *filename, uint64_t file_size)
         m->chunk_count = (uint32_t)((file_size + WH_CHUNK_SIZE - 1) / WH_CHUNK_SIZE);
     }
 
-    // Copy filename
-    m->filename_length = (uint16_t)strlen(filename);
+    // Copy filename (truncate to UINT16_MAX if needed)
+    {
+        size_t name_len = strlen(filename);
+        if (name_len > UINT16_MAX) name_len = UINT16_MAX;
+        m->filename_length = (uint16_t)name_len;
+    }
     m->filename = (char *)malloc(m->filename_length + 1);
     if (!m->filename)
     {
@@ -219,8 +223,12 @@ FILE_MANIFEST *Manifest_CreateMultiFile(const char *dirname,
     m->version = WH_MANIFEST_VERSION_2;
     m->chunk_size = WH_CHUNK_SIZE;
 
-    // Copy directory name
-    m->filename_length = (uint16_t)strlen(dirname);
+    // Copy directory name (truncate to UINT16_MAX if needed)
+    {
+        size_t name_len = strlen(dirname);
+        if (name_len > UINT16_MAX) name_len = UINT16_MAX;
+        m->filename_length = (uint16_t)name_len;
+    }
     m->filename = (char *)malloc(m->filename_length + 1);
     if (!m->filename) { free(m); return NULL; }
     memcpy(m->filename, dirname, m->filename_length);
@@ -244,8 +252,12 @@ FILE_MANIFEST *Manifest_CreateMultiFile(const char *dirname,
     {
         FILE_ENTRY *fe = &m->files[i];
 
-        // Copy relative path
-        fe->path_length = (uint16_t)strlen(relative_paths[i]);
+        // Copy relative path (truncate to UINT16_MAX if needed)
+        {
+            size_t path_len = strlen(relative_paths[i]);
+            if (path_len > UINT16_MAX) path_len = UINT16_MAX;
+            fe->path_length = (uint16_t)path_len;
+        }
         fe->relative_path = (char *)malloc(fe->path_length + 1);
         if (!fe->relative_path)
         {
@@ -301,6 +313,11 @@ void Manifest_Destroy(FILE_MANIFEST *manifest)
                 free(manifest->files[i].relative_path);
         }
         free(manifest->files);
+    }
+    if (manifest->ec_stripes)
+    {
+        free(manifest->ec_stripes);
+        manifest->ec_stripes = NULL;
     }
     free(manifest);
 }
@@ -386,6 +403,16 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
     uint64_t file_size = ReadUint64LE(p);   p += 8;
     uint32_t chunk_size = ReadUint32LE(p);  p += 4;
     uint32_t chunk_count = ReadUint32LE(p); p += 4;
+
+    // Validate chunk_size and chunk_count to prevent div-by-zero and DoS
+    if (chunk_size == 0 || chunk_size > WH_CHUNK_SIZE) return NULL;
+    if (version == WH_MANIFEST_VERSION)
+    {
+        // Single-file: chunk count must be consistent with file size
+        uint32_t max_chunks = (uint32_t)((file_size + chunk_size - 1) / chunk_size);
+        if (chunk_count > max_chunks) return NULL;
+    }
+
     uint16_t filename_length = ReadUint16LE(p); p += 2;
 
     if (filename_length == 0) return NULL;
@@ -550,6 +577,11 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
             p += WH_HASH_SIZE;
             m->chunks[i].chunk_size = ReadUint32LE(p);
             p += 4;
+            if (m->chunks[i].chunk_size == 0 || m->chunks[i].chunk_size > WH_CHUNK_SIZE)
+            {
+                Manifest_Destroy(m);
+                return NULL;
+            }
         }
     }
 

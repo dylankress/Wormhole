@@ -257,7 +257,8 @@ int RelayServer_Run(RELAY_SERVER* server) {
     socklen_t addr_len;
     
     time_t last_cleanup = time(NULL);
-    
+    time_t last_ratelimit_cleanup = time(NULL);
+
     printf("[Server] Running (listening for packets)...\n");
     
     while (server->running) {
@@ -341,13 +342,18 @@ int RelayServer_Run(RELAY_SERVER* server) {
                 break;
         }
         
-        // Periodic cleanup (every 30 seconds)
+        // Periodic cleanup (every 30 seconds for peers/tickets)
         time_t now = time(NULL);
         if (now - last_cleanup > 30) {
             PeerRegistry_RemoveStalePeers(&server->peer_registry, now);
             TicketManager_RemoveExpiredTickets(&server->ticket_manager, now);
-            RateLimiter_RemoveStaleEntries(&server->rate_limiter, now);
             last_cleanup = now;
+        }
+
+        // Rate limiter cleanup more frequently (every 10 seconds) to bound table size
+        if (now - last_ratelimit_cleanup > 10) {
+            RateLimiter_RemoveStaleEntries(&server->rate_limiter, now);
+            last_ratelimit_cleanup = now;
         }
     }
     
@@ -402,7 +408,14 @@ static void handle_register(RELAY_SERVER* server, const uint8_t* packet, size_t 
     }
     
     const RegisterMsg* msg = (const RegisterMsg*)packet;
-    
+
+    // Validate endpoint count to prevent overflow
+    if (msg->endpoint_count > MAX_ENDPOINTS) {
+        fprintf(stderr, "[Server] REGISTER: endpoint count %u exceeds MAX_ENDPOINTS (%u)\n",
+                msg->endpoint_count, MAX_ENDPOINTS);
+        return;
+    }
+
     // Parse endpoints
     size_t header_size = sizeof(RegisterMsg);
     size_t endpoints_size = msg->endpoint_count * sizeof(ENDPOINT);
@@ -497,8 +510,11 @@ static void handle_register(RELAY_SERVER* server, const uint8_t* packet, size_t 
 
 static void handle_create_ticket(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                                 const struct sockaddr* client_addr, socklen_t addr_len) {
+    /* TODO: No sender authentication - relies on IP:port matching.
+       Add Ed25519 signature verification in future. */
+
     printf("[Server] CREATE_TICKET from client\n");
-    
+
     // Parse message
     if (len < sizeof(CreateTicketMsg)) {
         fprintf(stderr, "[Server] CREATE_TICKET message too short\n");
@@ -612,6 +628,9 @@ static bool endpoint_from_sockaddr(const struct sockaddr* addr, ENDPOINT* ep, ui
 
 static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                          const struct sockaddr* client_addr, socklen_t addr_len) {
+    /* TODO: No sender authentication - relies on IP:port matching.
+       Add Ed25519 signature verification in future. */
+
     printf("[Server] LOOKUP from client\n");
 
     // Parse message
@@ -664,6 +683,7 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
                    total_ep_count, MAX_ENDPOINTS);
             total_ep_count = MAX_ENDPOINTS;
         }
+        uint16_t sender_eps_to_copy = total_ep_count - extra_endpoints;
         size_t response_size = sizeof(PeerInfoMsg) + total_ep_count * sizeof(ENDPOINT);
         uint8_t* response_buffer = (uint8_t*)malloc(response_size);
 
@@ -677,13 +697,13 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
         memcpy(response->peer_id, sender->peer_id, 32);
         response->endpoint_count = total_ep_count;
 
-        // Copy sender's self-reported endpoints
+        // Copy sender's self-reported endpoints (capped to fit within total)
         ENDPOINT* ep_ptr = (ENDPOINT*)(response_buffer + sizeof(PeerInfoMsg));
-        memcpy(ep_ptr, sender->endpoints, sender->endpoint_count * sizeof(ENDPOINT));
+        memcpy(ep_ptr, sender->endpoints, sender_eps_to_copy * sizeof(ENDPOINT));
 
         // Append relay server as fallback endpoint (priority 200)
         if (extra_endpoints > 0) {
-            ENDPOINT* relay_ep = &ep_ptr[sender->endpoint_count];
+            ENDPOINT* relay_ep = &ep_ptr[sender_eps_to_copy];
             memset(relay_ep, 0, sizeof(ENDPOINT));
             relay_ep->addr_type = server->relay_addr_type;
             memcpy(relay_ep->addr, server->relay_addr, sizeof(relay_ep->addr));
@@ -733,6 +753,8 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
                    total_ep_count, MAX_ENDPOINTS);
             total_ep_count = MAX_ENDPOINTS;
         }
+        // Cap receiver endpoints copied so extra endpoints fit within total
+        uint16_t recv_eps_to_copy = total_ep_count - extra;
         size_t response_size = sizeof(PeerInfoMsg) + total_ep_count * sizeof(ENDPOINT);
         uint8_t* response_buffer = (uint8_t*)malloc(response_size);
 
@@ -746,20 +768,20 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
         memcpy(response->peer_id, receiver->peer_id, 32);
         response->endpoint_count = total_ep_count;
 
-        // Copy receiver's self-reported endpoints
+        // Copy receiver's self-reported endpoints (capped to fit within total)
         ENDPOINT* ep_ptr = (ENDPOINT*)(response_buffer + sizeof(PeerInfoMsg));
-        memcpy(ep_ptr, receiver->endpoints, recv_ep_count * sizeof(ENDPOINT));
+        memcpy(ep_ptr, receiver->endpoints, recv_eps_to_copy * sizeof(ENDPOINT));
 
         // Append receiver's observed public IP (NAT-mapped address) as priority 100
         uint16_t appended = 0;
-        if (has_observed) {
-            ep_ptr[recv_ep_count + appended] = observed_ep;
+        if (has_observed && (recv_eps_to_copy + appended) < total_ep_count) {
+            ep_ptr[recv_eps_to_copy + appended] = observed_ep;
             appended++;
         }
 
         // Append relay server as fallback endpoint (priority 200)
-        if (server->listen_port > 0) {
-            ENDPOINT* relay_ep = &ep_ptr[recv_ep_count + appended];
+        if (server->listen_port > 0 && (recv_eps_to_copy + appended) < total_ep_count) {
+            ENDPOINT* relay_ep = &ep_ptr[recv_eps_to_copy + appended];
             memset(relay_ep, 0, sizeof(ENDPOINT));
             relay_ep->addr_type = server->relay_addr_type;
             memcpy(relay_ep->addr, server->relay_addr, sizeof(relay_ep->addr));
@@ -801,6 +823,9 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
 
 static void handle_forward(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                           const struct sockaddr* client_addr, socklen_t addr_len) {
+    /* TODO: FORWARD messages are unauthenticated - any peer can forge sender.
+       Add HMAC or signature verification in future. */
+
     // Parse message
     if (len < sizeof(ForwardMsg)) {
         fprintf(stderr, "[Server] FORWARD message too short\n");
@@ -874,19 +899,32 @@ static void handle_goodbye(RELAY_SERVER* server, const uint8_t* packet, size_t l
     if (len < sizeof(GoodbyeMsg)) {
         return;
     }
-    
+
     const GoodbyeMsg* msg = (const GoodbyeMsg*)packet;
-    
+
     const char* reason_str = "unknown";
     if (msg->reason == 0x00) reason_str = "upgraded to direct";
     else if (msg->reason == 0x01) reason_str = "error";
     else if (msg->reason == 0x02) reason_str = "transfer complete";
-    
+
     printf("[Server] GOODBYE from client (reason: %s)\n", reason_str);
+
+    // Find and remove the peer from the registry immediately
+    PEER_ENTRY* peer = PeerRegistry_FindByAddress(&server->peer_registry, client_addr, addr_len);
+    if (peer) {
+        uint64_t session_id = peer->session_id;
+        if (PeerRegistry_RemovePeer(&server->peer_registry, session_id)) {
+            printf("[Server] Removed peer (session %llu) on GOODBYE\n",
+                   (unsigned long long)session_id);
+        }
+    }
 }
 
 static void handle_find_peers(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                               const struct sockaddr* client_addr, socklen_t addr_len) {
+    /* TODO: No sender authentication - relies on IP:port matching.
+       Add Ed25519 signature verification in future. */
+
     printf("[Server] FIND_PEERS from client\n");
 
     if (len < sizeof(FindPeersMsg)) {
@@ -904,7 +942,7 @@ static void handle_find_peers(RELAY_SERVER* server, const uint8_t* packet, size_
         return;
     }
 
-    // Cap max_peers
+    // Cap max_peers at protocol limit
     uint16_t max_peers = msg->max_peers;
     if (max_peers > MAX_FIND_PEERS) {
         max_peers = MAX_FIND_PEERS;
@@ -917,17 +955,47 @@ static void handle_find_peers(RELAY_SERVER* server, const uint8_t* packet, size_
         &server->peer_registry,
         requester->peer_id,
         now,
-        60,  // min_age_sec: registered for at least 60 seconds
+        5,   // min_age_sec: registered for at least 5 seconds
         found_peers,
         max_peers
     );
 
     // Build response: PeersFoundMsg header + per-peer { peer_id[32], endpoint_count(2), endpoints[] }
-    // Calculate total size
+    // For each peer, inject the relay-observed public endpoint (like handle_lookup does)
+    // Cap response to fit within UDP MTU (1400 bytes)
+    #define MAX_UDP_PAYLOAD 1400
     size_t response_size = sizeof(PeersFoundMsg);
+    uint32_t capped_peer_count = 0;
     for (uint32_t i = 0; i < peer_count; i++) {
-        response_size += 32 + 2 + (found_peers[i]->endpoint_count * sizeof(ENDPOINT));
+        // Check if we need to inject an observed public endpoint for this peer
+        ENDPOINT observed_ep;
+        bool has_observed = endpoint_from_sockaddr(
+            (const struct sockaddr*)&found_peers[i]->socket_addr, &observed_ep, 100);
+
+        // Override port: use peer's QUIC listen port, not relay client's ephemeral port
+        if (has_observed && found_peers[i]->endpoint_count > 0)
+            observed_ep.port = found_peers[i]->endpoints[0].port;
+
+        // Check for duplicate: skip if observed IP matches any self-reported endpoint
+        if (has_observed) {
+            for (uint16_t j = 0; j < found_peers[i]->endpoint_count; j++) {
+                if (found_peers[i]->endpoints[j].addr_type == observed_ep.addr_type &&
+                    memcmp(found_peers[i]->endpoints[j].addr, observed_ep.addr, 16) == 0) {
+                    has_observed = false;
+                    break;
+                }
+            }
+        }
+
+        uint16_t extra = has_observed ? 1 : 0;
+        size_t entry_size = 32 + 2 + ((found_peers[i]->endpoint_count + extra) * sizeof(ENDPOINT));
+        if (response_size + entry_size > MAX_UDP_PAYLOAD) {
+            break;
+        }
+        response_size += entry_size;
+        capped_peer_count++;
     }
+    peer_count = capped_peer_count;
 
     uint8_t* response_buffer = (uint8_t*)malloc(response_size);
     if (!response_buffer) {
@@ -944,18 +1012,44 @@ static void handle_find_peers(RELAY_SERVER* server, const uint8_t* packet, size_
     for (uint32_t i = 0; i < peer_count; i++) {
         PEER_ENTRY* peer = found_peers[i];
 
+        // Build observed endpoint for this peer
+        ENDPOINT observed_ep;
+        bool has_observed = endpoint_from_sockaddr(
+            (const struct sockaddr*)&peer->socket_addr, &observed_ep, 100);
+        if (has_observed && peer->endpoint_count > 0)
+            observed_ep.port = peer->endpoints[0].port;
+
+        // Check for duplicate
+        if (has_observed) {
+            for (uint16_t j = 0; j < peer->endpoint_count; j++) {
+                if (peer->endpoints[j].addr_type == observed_ep.addr_type &&
+                    memcmp(peer->endpoints[j].addr, observed_ep.addr, 16) == 0) {
+                    has_observed = false;
+                    break;
+                }
+            }
+        }
+
+        uint16_t extra = has_observed ? 1 : 0;
+        uint16_t ep_count = peer->endpoint_count + extra;
+
         // peer_id[32]
         memcpy(write_ptr, peer->peer_id, 32);
         write_ptr += 32;
 
         // endpoint_count (uint16, little-endian — packed struct on LE arch)
-        uint16_t ep_count = peer->endpoint_count;
         memcpy(write_ptr, &ep_count, 2);
         write_ptr += 2;
 
-        // endpoints[]
-        memcpy(write_ptr, peer->endpoints, ep_count * sizeof(ENDPOINT));
-        write_ptr += ep_count * sizeof(ENDPOINT);
+        // Self-reported endpoints
+        memcpy(write_ptr, peer->endpoints, peer->endpoint_count * sizeof(ENDPOINT));
+        write_ptr += peer->endpoint_count * sizeof(ENDPOINT);
+
+        // Observed public endpoint (if not duplicate)
+        if (has_observed) {
+            memcpy(write_ptr, &observed_ep, sizeof(ENDPOINT));
+            write_ptr += sizeof(ENDPOINT);
+        }
     }
 
     if (send_packet(server->socket_fd, response_buffer, response_size, client_addr, addr_len)) {
@@ -1192,6 +1286,8 @@ static void handle_dht_message(RELAY_SERVER* server, const uint8_t* packet, size
                 memcpy(write_ptr, a_addr, 16);
                 write_ptr += 16;
                 // port[2] (little-endian, use DHT default port 4568)
+                // TODO: Let peers register their actual DHT port. 4568 is correct for peer-to-peer DHT
+                // since all daemons listen on this port, but the relay uses its own port for bootstrap.
                 uint16_t dht_port = 4568;
                 write_ptr[0] = (uint8_t)(dht_port);
                 write_ptr[1] = (uint8_t)(dht_port >> 8);

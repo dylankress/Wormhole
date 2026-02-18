@@ -16,6 +16,17 @@
 extern const QUIC_API_TABLE *MsQuic;
 
 #define MAX_CHUNKS_IN_FLIGHT 16
+#define SEND_POOL_SIZE 32  // Pre-allocated send buffer slots
+
+//=============================================================================
+// Pre-allocated send buffer pool (eliminates per-chunk malloc/free)
+//=============================================================================
+
+typedef struct {
+    uint8_t     data[WH_CHUNK_SIZE + DATA_FRAME_HEADER_SIZE];
+    QUIC_BUFFER quic_buf;
+    BOOLEAN     in_use;
+} SEND_BUFFER_SLOT;
 
 //=============================================================================
 // Send-side context (sender opens control stream, waits for MANIFEST_REQUEST,
@@ -26,7 +37,7 @@ typedef struct {
     FILE           *file_handle;
     FILE_MANIFEST  *manifest;
     uint32_t        next_chunk_to_send;
-    uint32_t        chunks_in_flight;       // max MAX_CHUNKS_IN_FLIGHT pipelined
+    uint32_t        chunks_in_flight;       // current pipelined chunk count
     BOOLEAN         manifest_sent;
     BOOLEAN         all_chunks_sent;
     BOOLEAN         transfer_complete_received;
@@ -37,9 +48,19 @@ typedef struct {
     LARGE_INTEGER   start_time;
 
     // Progress tracking
-    uint64_t        bytes_sent;
+    uint64_t        bytes_sent;             // bytes of actually sent chunks (excludes skipped)
+    uint32_t        chunks_sent_count;      // count of actually sent chunks (excludes skipped)
+    uint32_t        total_needed_chunks;    // total chunks the receiver needs (for resume progress)
+    uint64_t        total_needed_bytes;     // total bytes the receiver needs (for resume progress)
     LARGE_INTEGER   last_progress_time;
     uint64_t        last_progress_bytes;
+
+    // Adaptive pipelining (Phase B)
+    uint64_t        ideal_send_bytes;       // from IDEAL_SEND_BUFFER_SIZE event (0 = use default)
+    uint64_t        bytes_in_flight;        // actual bytes currently queued in MsQuic
+
+    // Pre-allocated send buffer pool (Phase C)
+    SEND_BUFFER_SLOT *send_pool;            // SEND_POOL_SIZE slots
 
     // Multi-file (v2 manifest) support
     char           *base_dir_path;          // directory path for v2 (NULL for v1)
@@ -53,6 +74,9 @@ typedef struct {
     uint8_t        *ctrl_recv_buffer;
     size_t          ctrl_recv_used;
     size_t          ctrl_recv_capacity;
+
+    // Points to server context's transfer_complete flag (wormhole.c)
+    BOOLEAN        *transfer_complete_flag;
 } CHUNK_SEND_CONTEXT;
 
 //=============================================================================
@@ -110,7 +134,8 @@ typedef struct {
 // Opens control stream (bidirectional) on Connection, waits for MANIFEST_REQUEST,
 // then sends manifest + chunks. Signals transfer_complete_event when done.
 void ChunkSendFile(HQUIC Connection, const char *file_path,
-                   FILE_MANIFEST *manifest, HANDLE transfer_complete_event);
+                   FILE_MANIFEST *manifest, HANDLE transfer_complete_event,
+                   BOOLEAN *transfer_complete_flag);
 
 //=============================================================================
 // Stream Callbacks (attached by wormhole.c / connection callbacks)

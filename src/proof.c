@@ -190,6 +190,13 @@ BOOLEAN Proof_LookupCached(const uint8_t hash[WH_HASH_SIZE],
                      ((uint32_t)count_buf[2] << 16) |
                      ((uint32_t)count_buf[3] << 24);
 
+    // Cap to prevent unbounded reads from corrupted files
+    if (count > 256)
+    {
+        fclose(fh);
+        return FALSE;
+    }
+
     // Linear scan for matching seed
     for (uint32_t i = 0; i < count; i++)
     {
