@@ -72,5 +72,14 @@ uint64_t ChunkStore_GetTotalSize(void);
 // Returns the number of bytes actually freed.
 uint64_t ChunkStore_Evict(uint64_t bytes_to_free);
 
+// Delete a single chunk from the store, including its replica metadata,
+// access time entry, and proof cache.
+// Returns TRUE if the chunk was deleted (or didn't exist).
+BOOLEAN ChunkStore_Delete(const uint8_t hash[WH_HASH_SIZE]);
+
+// Clear replica metadata for a chunk without deleting the chunk itself.
+// Used to reset stale replica info on re-store.
+void ChunkStore_ClearReplicas(const uint8_t hash[WH_HASH_SIZE]);
+
 // Update the last-access time for a chunk (called on Get).
 void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE]);

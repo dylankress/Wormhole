@@ -164,26 +164,19 @@ if !ERRORLEVEL! neq 0 (
     goto :test_status
 )
 
-REM Extract first chunk hash from output (line containing "Chunk   0:")
-set FIRST_CHUNK_HASH=
-for /f "tokens=4" %%a in ('findstr /C:"Chunk   0:" "%STORE_OUTPUT%"') do (
-    set FIRST_CHUNK_HASH=%%a
-)
-
-if "!FIRST_CHUNK_HASH!"=="" (
-    REM Try alternate format "Chunk  0:" or "Chunk 0:"
-    for /f "tokens=3" %%a in ('findstr /C:"Chunk" "%STORE_OUTPUT%" ^| findstr /N "^" ^| findstr "^1:"') do (
-        for /f "tokens=2 delims=:" %%b in ("%%a") do set FIRST_CHUNK_HASH=%%b
-    )
+REM Extract File ID from output (line containing "File ID:")
+set FILE_ID=
+for /f "tokens=3" %%a in ('findstr /C:"File ID:" "%STORE_OUTPUT%"') do (
+    set FILE_ID=%%a
 )
 
 echo   Store output:
 type "%STORE_OUTPUT%"
 
-if "!FIRST_CHUNK_HASH!"=="" (
-    echo   WARN: Could not extract chunk hash from output, skipping get test
+if "!FILE_ID!"=="" (
+    echo   WARN: Could not extract File ID from output, skipping get test
 ) else (
-    echo   Extracted chunk hash: !FIRST_CHUNK_HASH!
+    echo   Extracted File ID: !FILE_ID!
 )
 
 echo   PASS: Store command succeeded
@@ -230,15 +223,15 @@ REM Step 5: Test get command
 REM ===================================================================
 echo --- Step 5: Test get ---
 
-if "!FIRST_CHUNK_HASH!"=="" (
-    echo   SKIP: No chunk hash available
+if "!FILE_ID!"=="" (
+    echo   SKIP: No File ID available
     set /a TOTAL+=1
     set /a FAIL_COUNT+=1
     goto :test_ec_metadata
 )
 
-set GET_OUTPUT_FILE=%TEST_DIR%\retrieved_chunk.bin
-"%WORMHOLE%" --daemon %DAEMON_PORT% get !FIRST_CHUNK_HASH! -o "%GET_OUTPUT_FILE%" >nul 2>&1
+set GET_OUTPUT_FILE=%TEST_DIR%\retrieved_file.bin
+"%WORMHOLE%" --daemon %DAEMON_PORT% get !FILE_ID! -o "%GET_OUTPUT_FILE%" >nul 2>&1
 if !ERRORLEVEL! neq 0 (
     echo   FAIL: Get command returned error
     set /a FAIL_COUNT+=1
@@ -247,13 +240,13 @@ if !ERRORLEVEL! neq 0 (
 )
 
 if not exist "%GET_OUTPUT_FILE%" (
-    echo   FAIL: Retrieved chunk file not created
+    echo   FAIL: Retrieved file not created
     set /a FAIL_COUNT+=1
     set /a TOTAL+=1
     goto :test_ec_metadata
 )
 
-echo   PASS: Get command retrieved chunk to %GET_OUTPUT_FILE%
+echo   PASS: Get command retrieved file to %GET_OUTPUT_FILE%
 set /a PASS_COUNT+=1
 set /a TOTAL+=1
 echo.
@@ -265,8 +258,19 @@ REM ===================================================================
 echo --- Step 6: Test EC metadata ---
 
 set EC_DIR=%TEST_DIR%\.wormhole\ec
+
+REM EC encoding is async (background worker) — wait up to 10 seconds for it
+set EC_WAIT=0
+:wait_ec
+if %EC_WAIT% geq 10 goto :check_ec
+if exist "%EC_DIR%" goto :check_ec
+set /a EC_WAIT+=1
+ping -n 2 127.0.0.1 >nul
+goto :wait_ec
+:check_ec
+
 if not exist "%EC_DIR%" (
-    echo   FAIL: EC metadata directory does not exist: %EC_DIR%
+    echo   FAIL: EC metadata directory does not exist after 10s wait: %EC_DIR%
     set /a FAIL_COUNT+=1
     set /a TOTAL+=1
     goto :test_ledger
@@ -367,17 +371,10 @@ echo --- Step 8: Test EC recovery ---
 set STORE_DIR=%TEST_DIR%\.wormhole\store
 set DELETED_CHUNK=
 
-if "!FIRST_CHUNK_HASH!"=="" (
-    echo   FAIL: No chunk hash available from Step 3
-    set /a FAIL_COUNT+=1
-    set /a TOTAL+=1
-    goto :cleanup
+REM Find any chunk file in the store directory to delete
+for /r "%STORE_DIR%" %%f in (*) do (
+    if "!DELETED_CHUNK!"=="" set "DELETED_CHUNK=%%f"
 )
-
-REM Compute store path from the known data chunk hash: store\<first2>\<remaining62>
-set "HASH_PREFIX=!FIRST_CHUNK_HASH:~0,2!"
-set "HASH_SUFFIX=!FIRST_CHUNK_HASH:~2!"
-set "DELETED_CHUNK=%STORE_DIR%\!HASH_PREFIX!\!HASH_SUFFIX!"
 
 if "!DELETED_CHUNK!"=="" (
     echo   FAIL: No chunk files found in store to delete

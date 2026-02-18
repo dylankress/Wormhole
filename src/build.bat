@@ -52,6 +52,7 @@ cl /Zi /Od /W4 /MD ^
 	..\proof.c ^
 	..\incentives.c ^
 	..\health.c ^
+	..\file_registry.c ^
 	..\relay_forwarder.c ^
 	"%BLAKE3_ROOT%\blake3.c" ^
 	"%BLAKE3_ROOT%\blake3_dispatch.c" ^
@@ -91,6 +92,7 @@ cl /Zi /Od /W4 /MD ^
 	..\proof.c ^
 	..\incentives.c ^
 	..\health.c ^
+	..\file_registry.c ^
 	..\relay_forwarder.c ^
 	"%BLAKE3_ROOT%\blake3.c" ^
 	"%BLAKE3_ROOT%\blake3_dispatch.c" ^

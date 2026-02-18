@@ -17,3 +17,10 @@ FILE_MANIFEST *Chunker_BuildManifest(const char *file_path);
 // version 2 (multi-file) FILE_MANIFEST with computed hashes.
 // Returns NULL on failure.
 FILE_MANIFEST *Chunker_BuildManifestFromDirectory(const char *dir_path);
+
+// Single-pass: read file, hash each chunk, store in ChunkStore, build manifest.
+// Eliminates the double-read of BuildManifest + separate store loop.
+// *stored_count is set to the number of chunks actually stored (new, not deduped).
+// Returns NULL on failure.
+FILE_MANIFEST *Chunker_BuildManifestAndStore(const char *file_path,
+                                              uint32_t *stored_count);

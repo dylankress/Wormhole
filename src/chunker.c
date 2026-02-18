@@ -5,6 +5,7 @@
 //
 
 #include "chunker.h"
+#include "chunk_store.h"
 #include "file_io.h"
 #include <blake3.h>
 #include <stdio.h>
@@ -425,6 +426,117 @@ FILE_MANIFEST *Chunker_BuildManifestFromDirectory(const char *dir_path)
     LOG("[Chunker] Directory manifest: %u files, %u chunks, %llu bytes total\n",
         manifest->file_count, manifest->chunk_count,
         (unsigned long long)manifest->file_size);
+
+    return manifest;
+}
+
+//=============================================================================
+// Single-pass: chunk + hash + store
+//=============================================================================
+
+FILE_MANIFEST *Chunker_BuildManifestAndStore(const char *file_path,
+                                              uint32_t *stored_count)
+{
+    if (!file_path) return NULL;
+    if (stored_count) *stored_count = 0;
+
+    // Get file size
+    uint64_t file_size = 0;
+    if (!GetWormholeFileSize(file_path, &file_size))
+    {
+        LOG_ERROR("[Chunker] ERROR: Cannot get file size: %s\n", file_path);
+        return NULL;
+    }
+
+    // Extract filename
+    char *filename = NULL;
+    uint32_t filename_length = 0;
+    ExtractFilename(file_path, &filename, &filename_length);
+    if (!filename)
+    {
+        LOG_ERROR("[Chunker] ERROR: Cannot extract filename: %s\n", file_path);
+        return NULL;
+    }
+
+    // Create manifest
+    FILE_MANIFEST *manifest = Manifest_Create(filename, file_size);
+    free(filename);
+    if (!manifest)
+    {
+        LOG_ERROR("[Chunker] ERROR: Failed to create manifest\n");
+        return NULL;
+    }
+
+    // Handle empty file (no chunks to process)
+    if (file_size == 0)
+    {
+        Manifest_ComputeHash(manifest);
+        return manifest;
+    }
+
+    // Open file
+    FILE *fh = NULL;
+    if (!OpenFileForRead(file_path, &fh))
+    {
+        LOG_ERROR("[Chunker] ERROR: Cannot open file: %s\n", file_path);
+        Manifest_Destroy(manifest);
+        return NULL;
+    }
+
+    // Allocate chunk buffer
+    uint8_t *chunk_buf = (uint8_t *)malloc(WH_CHUNK_SIZE);
+    if (!chunk_buf)
+    {
+        LOG_ERROR("[Chunker] ERROR: Failed to allocate chunk buffer\n");
+        CloseFile(fh);
+        Manifest_Destroy(manifest);
+        return NULL;
+    }
+
+    uint32_t stored = 0;
+    for (uint32_t i = 0; i < manifest->chunk_count; i++)
+    {
+        // Calculate how much to read for this chunk
+        uint64_t offset = (uint64_t)i * WH_CHUNK_SIZE;
+        uint64_t remaining = file_size - offset;
+        size_t to_read = (remaining > WH_CHUNK_SIZE) ? WH_CHUNK_SIZE : (size_t)remaining;
+
+        size_t bytes_read = 0;
+        if (!ReadFileChunk(fh, chunk_buf, to_read, &bytes_read) || bytes_read != to_read)
+        {
+            LOG_ERROR("[Chunker] ERROR: Failed to read chunk %u\n", i);
+            free(chunk_buf);
+            CloseFile(fh);
+            Manifest_Destroy(manifest);
+            return NULL;
+        }
+
+        // Blake3 hash the chunk
+        blake3_hasher hasher;
+        blake3_hasher_init(&hasher);
+        blake3_hasher_update(&hasher, chunk_buf, bytes_read);
+        uint8_t hash[WH_HASH_SIZE];
+        blake3_hasher_finalize(&hasher, hash, WH_HASH_SIZE);
+
+        Manifest_AddChunk(manifest, i, hash, (uint32_t)bytes_read);
+
+        // Store immediately — single pass, no double-read
+        if (ChunkStore_Put(hash, chunk_buf, (uint32_t)bytes_read))
+        {
+            stored++;
+        }
+    }
+
+    free(chunk_buf);
+    CloseFile(fh);
+
+    // Compute overall manifest hash
+    Manifest_ComputeHash(manifest);
+
+    if (stored_count) *stored_count = stored;
+
+    LOG("[Chunker] Built manifest and stored %u/%u chunks for %s\n",
+        stored, manifest->chunk_count, file_path);
 
     return manifest;
 }

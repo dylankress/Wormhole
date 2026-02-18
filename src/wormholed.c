@@ -30,6 +30,7 @@
 #include "incentives.h"
 #include "health.h"
 #include "erasure.h"
+#include "file_registry.h"
 #include "../deps/blake3/blake3.h"
 
 // POSIX includes for Linux EC recovery directory scan
@@ -112,6 +113,195 @@ typedef struct {
 
 static DAEMON_STATE g_daemon = { 0 };
 
+//=============================================================================
+// Background Work Queue
+//=============================================================================
+
+typedef enum {
+    WORK_ERASURE_ENCODE,
+    WORK_REPLICATE_CHUNK,
+    WORK_REPLICATE_BATCH,
+    WORK_PRECOMPUTE_PROOFS,
+    WORK_DHT_ANNOUNCE,
+    WORK_PERSIST_EC_META,
+    WORK_CHECK_REPLICATION,
+} WORK_TYPE;
+
+#define MAX_BATCH_CHUNKS 64  // ~16MB max per batch (64 * 256KB)
+
+typedef struct WORK_ITEM {
+    WORK_TYPE type;
+    struct WORK_ITEM *next;
+    union {
+        // WORK_ERASURE_ENCODE
+        struct {
+            uint8_t  *manifest_data;     // Serialized manifest (owned)
+            size_t    manifest_size;
+            uint8_t   manifest_hash[WH_HASH_SIZE];
+        } erasure;
+        // WORK_REPLICATE_CHUNK
+        struct {
+            uint8_t   hash[WH_HASH_SIZE];
+            uint8_t  *data;              // Chunk data (owned)
+            uint32_t  size;
+        } replicate;
+        // WORK_REPLICATE_BATCH
+        struct {
+            uint32_t  chunk_count;
+            uint8_t   hashes[MAX_BATCH_CHUNKS][WH_HASH_SIZE];
+            uint8_t  *data[MAX_BATCH_CHUNKS];    // Chunk data pointers (owned)
+            uint32_t  sizes[MAX_BATCH_CHUNKS];
+        } batch;
+        // WORK_PRECOMPUTE_PROOFS
+        struct {
+            uint8_t   hash[WH_HASH_SIZE];
+            uint8_t  *data;              // Chunk data (owned)
+            uint32_t  size;
+        } proofs;
+        // WORK_DHT_ANNOUNCE
+        struct {
+            uint8_t   hashes[64][WH_HASH_SIZE];
+            uint32_t  hash_count;
+        } dht_announce;
+        // WORK_PERSIST_EC_META
+        struct {
+            EC_GROUP *ec_group;           // Owned
+            uint8_t  *manifest_data;     // Serialized manifest (owned)
+            size_t    manifest_size;
+            uint8_t   manifest_hash[WH_HASH_SIZE];
+        } ec_meta;
+        // WORK_CHECK_REPLICATION
+        struct {
+            uint8_t   manifest_hash[WH_HASH_SIZE];
+        } check_repl;
+    };
+} WORK_ITEM;
+
+typedef struct {
+    WORK_ITEM       *head;
+    WORK_ITEM       *tail;
+    CRITICAL_SECTION lock;
+    HANDLE           semaphore;
+    HANDLE           thread;
+    volatile LONG    shutdown;
+} WORK_QUEUE;
+
+static WORK_QUEUE g_work_queue = { 0 };
+
+// Forward declarations for work queue
+static DWORD WINAPI WorkQueue_ThreadProc(LPVOID param);
+static void WorkQueue_FreeItem(WORK_ITEM *item);
+
+static BOOLEAN WorkQueue_Init(void)
+{
+    InitializeCriticalSection(&g_work_queue.lock);
+    g_work_queue.semaphore = CreateSemaphore(NULL, 0, 0x7FFFFFFF, NULL);
+    if (!g_work_queue.semaphore) return FALSE;
+    g_work_queue.shutdown = 0;
+    g_work_queue.head = NULL;
+    g_work_queue.tail = NULL;
+    g_work_queue.thread = CreateThread(NULL, 0, WorkQueue_ThreadProc, NULL, 0, NULL);
+    if (!g_work_queue.thread) return FALSE;
+    return TRUE;
+}
+
+static void WorkQueue_Push(WORK_ITEM *item)
+{
+    item->next = NULL;
+    EnterCriticalSection(&g_work_queue.lock);
+    if (g_work_queue.tail)
+    {
+        g_work_queue.tail->next = item;
+        g_work_queue.tail = item;
+    }
+    else
+    {
+        g_work_queue.head = item;
+        g_work_queue.tail = item;
+    }
+    LeaveCriticalSection(&g_work_queue.lock);
+    ReleaseSemaphore(g_work_queue.semaphore, 1, NULL);
+}
+
+static WORK_ITEM *WorkQueue_Pop(void)
+{
+    DWORD result = WaitForSingleObject(g_work_queue.semaphore, 1000);
+    if (result != WAIT_OBJECT_0) return NULL;
+
+    EnterCriticalSection(&g_work_queue.lock);
+    WORK_ITEM *item = g_work_queue.head;
+    if (item)
+    {
+        g_work_queue.head = item->next;
+        if (!g_work_queue.head) g_work_queue.tail = NULL;
+        item->next = NULL;
+    }
+    LeaveCriticalSection(&g_work_queue.lock);
+    return item;
+}
+
+static void WorkQueue_Shutdown(void)
+{
+    InterlockedExchange(&g_work_queue.shutdown, 1);
+    if (g_work_queue.semaphore)
+        ReleaseSemaphore(g_work_queue.semaphore, 1, NULL);  // Wake thread
+    if (g_work_queue.thread)
+    {
+        WaitForSingleObject(g_work_queue.thread, 5000);
+        CloseHandle(g_work_queue.thread);
+        g_work_queue.thread = NULL;
+    }
+    // Free remaining items
+    EnterCriticalSection(&g_work_queue.lock);
+    WORK_ITEM *item = g_work_queue.head;
+    while (item)
+    {
+        WORK_ITEM *next = item->next;
+        WorkQueue_FreeItem(item);
+        item = next;
+    }
+    g_work_queue.head = NULL;
+    g_work_queue.tail = NULL;
+    LeaveCriticalSection(&g_work_queue.lock);
+    if (g_work_queue.semaphore)
+    {
+        CloseHandle(g_work_queue.semaphore);
+        g_work_queue.semaphore = NULL;
+    }
+    DeleteCriticalSection(&g_work_queue.lock);
+}
+
+static void WorkQueue_FreeItem(WORK_ITEM *item)
+{
+    if (!item) return;
+    switch (item->type)
+    {
+    case WORK_ERASURE_ENCODE:
+        free(item->erasure.manifest_data);
+        break;
+    case WORK_REPLICATE_CHUNK:
+        free(item->replicate.data);
+        break;
+    case WORK_REPLICATE_BATCH:
+        for (uint32_t i = 0; i < item->batch.chunk_count; i++)
+            free(item->batch.data[i]);
+        break;
+    case WORK_PRECOMPUTE_PROOFS:
+        free(item->proofs.data);
+        break;
+    case WORK_DHT_ANNOUNCE:
+        break;  // No heap data
+    case WORK_PERSIST_EC_META:
+        if (item->ec_meta.ec_group)
+            ErasureCoding_DestroyGroup(item->ec_meta.ec_group);
+        free(item->ec_meta.manifest_data);
+        break;
+    case WORK_CHECK_REPLICATION:
+        break;  // No heap data
+    }
+    free(item);
+}
+
 // Per-connection context for inbound peers (enables per-peer ledger tracking)
 typedef struct {
     DAEMON_STATE *daemon;
@@ -139,15 +329,22 @@ typedef struct {
 typedef struct {
     PEER_CONNECTION_CONTEXT *peer_ctx;    // borrowed pointer (owned by connection)
     uint8_t  *recv_buf;
-    uint32_t  recv_size;
-    uint32_t  recv_capacity;
+    size_t    recv_used;
+    size_t    recv_capacity;
 } DAEMON_STREAM_CONTEXT;
+
+// Per-connection context for outbound replication: carries target peer identity
+typedef struct {
+    uint8_t peer_id[32];
+} REPLICA_CONNECTION_CONTEXT;
 
 // Per-stream context for outbound replication streams: accumulates fragmented data
 typedef struct {
     uint8_t  *recv_buf;
     size_t    recv_used;
     size_t    recv_capacity;
+    uint8_t   peer_id[32];   // Target peer (for replica tracking on ACK)
+    HQUIC     connection;    // Owning connection (for active shutdown)
 } REPLICA_STREAM_CONTEXT;
 
 //=============================================================================
@@ -329,6 +526,8 @@ static void Daemon_CleanupMsQuic(void)
     }
     if (DaemonRegistration)
     {
+        MsQuic->RegistrationShutdown(DaemonRegistration,
+            QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
         MsQuic->RegistrationClose(DaemonRegistration);
         DaemonRegistration = NULL;
     }
@@ -585,23 +784,14 @@ static QUIC_STATUS QUIC_API Daemon_ConnectionCallback(
         LOG("[daemon] Peer opened stream\n");
         DAEMON_STREAM_CONTEXT *stream_ctx =
             (DAEMON_STREAM_CONTEXT *)calloc(1, sizeof(DAEMON_STREAM_CONTEXT));
-        if (stream_ctx)
-        {
-            stream_ctx->peer_ctx = peer_ctx;
-            stream_ctx->recv_capacity = CTRL_HEADER_SIZE + WH_CHUNK_SIZE + 64;
-            stream_ctx->recv_buf = (uint8_t *)malloc(stream_ctx->recv_capacity);
-            if (!stream_ctx->recv_buf)
-            {
-                free(stream_ctx);
-                stream_ctx = NULL;
-            }
-        }
         if (!stream_ctx)
         {
             LOG_ERROR("[daemon] Failed to allocate stream context, closing stream\n");
             MsQuic->StreamClose(Event->PEER_STREAM_STARTED.Stream);
             break;
         }
+        stream_ctx->peer_ctx = peer_ctx;
+        // recv_buf starts NULL; DaemonAccumulateBuffer allocates on first use
         MsQuic->SetCallbackHandler(
             Event->PEER_STREAM_STARTED.Stream,
             (void *)Daemon_StreamCallback,
@@ -739,6 +929,8 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
         }
 
         // Send ACK: [1B type][4B payload_len][32B hash][1B status]
+        // Note: use QUIC_SEND_FLAG_NONE (not FIN) so multiple ACKs can be sent
+        // on the same stream when receiving batch replication messages.
         uint32_t ack_size = CTRL_HEADER_SIZE + WH_HASH_SIZE + 1;
         uint8_t *ack = (uint8_t *)malloc(ack_size);
         if (ack)
@@ -853,7 +1045,11 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
             LOG("[daemon] Chunk stored by peer (ACK)\n");
             if (peer_id)
             {
-                ChunkStore_SetReplicaLocation(hash, peer_id);
+                BOOLEAN ok = ChunkStore_SetReplicaLocation(hash, peer_id);
+                char h8[17], p8[17];
+                for (int x = 0; x < 8; x++) { sprintf(h8 + x*2, "%02x", hash[x]); sprintf(p8 + x*2, "%02x", peer_id[x]); }
+                h8[16] = p8[16] = '\0';
+                LOG("[daemon] SetReplicaLocation(%s..., peer=%s...): %s\n", h8, p8, ok ? "OK" : "FAILED");
                 EnterCriticalSection(&g_daemon.ledger_lock);
                 Ledger_RecordStoredForUs(&g_daemon.ledger, peer_id, (uint64_t)WH_CHUNK_SIZE);
                 LeaveCriticalSection(&g_daemon.ledger_lock);
@@ -914,7 +1110,7 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
             if (!send_buf) { free(resp); break; }
             send_buf->Buffer = resp;
             send_buf->Length = resp_size;
-            QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, QUIC_SEND_FLAG_NONE, send_buf);
+            QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, QUIC_SEND_FLAG_FIN, send_buf);
             if (QUIC_FAILED(send_status)) { free(resp); free(send_buf); }
         }
         break;
@@ -952,85 +1148,54 @@ static QUIC_STATUS QUIC_API Daemon_StreamCallback(
     {
     case QUIC_STREAM_EVENT_RECEIVE:
     {
-        // Accumulate data into our own buffer (don't parse from MsQuic buffers directly)
+        if (!stream_ctx) break;
+
+        PEER_CONNECTION_CONTEXT *peer_ctx = stream_ctx->peer_ctx;
+        const uint8_t *peer_id = (peer_ctx && peer_ctx->peer_id_known)
+            ? peer_ctx->peer_id : NULL;
+
+        // Accumulate data using growable buffer
         for (uint32_t i = 0; i < Event->RECEIVE.BufferCount; i++)
         {
             const QUIC_BUFFER *buf = &Event->RECEIVE.Buffers[i];
+            if (!DaemonAccumulateBuffer(&stream_ctx->recv_buf, &stream_ctx->recv_used,
+                                         &stream_ctx->recv_capacity, buf->Buffer, buf->Length))
+            {
+                LOG_ERROR("[daemon] Stream RECEIVE: failed to accumulate %u bytes\n", buf->Length);
+                break;
+            }
+        }
 
-            // Diagnostic: log raw bytes
-            if (buf->Length > 0 && buf->Buffer)
+        // Parse complete messages incrementally (supports batch replication)
+        while (stream_ctx->recv_used >= CTRL_HEADER_SIZE)
+        {
+            uint8_t msg_type = stream_ctx->recv_buf[0];
+            uint32_t payload_len = ReadUint32LE(stream_ctx->recv_buf + 1);
+
+            if (payload_len > MAX_CTRL_PAYLOAD)
             {
-                char raw[25] = {0};
-                uint32_t dump_len = buf->Length < 8 ? buf->Length : 8;
-                for (uint32_t d = 0; d < dump_len; d++)
-                    sprintf(raw + d * 3, "%02x ", buf->Buffer[d]);
-                LOG("[daemon] Stream RECEIVE: buf %u/%u, len=%u, raw=[%s]\n",
-                    i, Event->RECEIVE.BufferCount, buf->Length, raw);
+                LOG_ERROR("[daemon] Payload too large: %u\n", payload_len);
+                stream_ctx->recv_used = 0;
+                break;
             }
 
-            if (stream_ctx && stream_ctx->recv_buf &&
-                stream_ctx->recv_size + buf->Length <= stream_ctx->recv_capacity)
-            {
-                memcpy(stream_ctx->recv_buf + stream_ctx->recv_size,
-                       buf->Buffer, buf->Length);
-                stream_ctx->recv_size += buf->Length;
-            }
-            else if (stream_ctx)
-            {
-                LOG_ERROR("[daemon] Stream RECEIVE: buffer overflow (size=%u + %u > cap=%u)\n",
-                    stream_ctx->recv_size, buf->Length, stream_ctx->recv_capacity);
-            }
+            size_t frame_size = (size_t)CTRL_HEADER_SIZE + payload_len;
+            if (stream_ctx->recv_used < frame_size)
+                break;  // Wait for more data
+
+            Daemon_HandlePeerMessage(Stream, msg_type,
+                stream_ctx->recv_buf + CTRL_HEADER_SIZE, payload_len, peer_id);
+
+            DaemonConsumeBuffer(stream_ctx->recv_buf, &stream_ctx->recv_used, frame_size);
         }
         break;
     }
 
     case QUIC_STREAM_EVENT_PEER_SEND_SHUTDOWN:
     {
-        // Peer sent FIN — parse the complete accumulated message
-        if (!stream_ctx || !stream_ctx->recv_buf)
-        {
-            LOG_ERROR("[daemon] PEER_SEND_SHUTDOWN: no stream context\n");
-            break;
-        }
-
-        PEER_CONNECTION_CONTEXT *peer_ctx = stream_ctx->peer_ctx;
-        const uint8_t *peer_id = (peer_ctx && peer_ctx->peer_id_known)
-            ? peer_ctx->peer_id : NULL;
-
-        LOG("[daemon] PEER_SEND_SHUTDOWN: accumulated %u bytes, parsing...\n",
-            stream_ctx->recv_size);
-
-        uint8_t *data = stream_ctx->recv_buf;
-        uint32_t remaining = stream_ctx->recv_size;
-
-        while (remaining >= CTRL_HEADER_SIZE)
-        {
-            uint8_t msg_type = data[0];
-            uint32_t payload_len = ReadUint32LE(data + 1);
-
-            LOG("[daemon]   msg_type=0x%02x payload_len=%u remaining=%u\n",
-                msg_type, payload_len, remaining);
-
-            if (payload_len > MAX_CTRL_PAYLOAD)
-            {
-                LOG_ERROR("[daemon]   Payload too large: %u\n", payload_len);
-                break;
-            }
-
-            size_t frame_size = (size_t)CTRL_HEADER_SIZE + payload_len;
-            if (remaining < frame_size)
-            {
-                LOG_ERROR("[daemon]   Incomplete message, %u < %zu\n",
-                    remaining, frame_size);
-                break;
-            }
-
-            Daemon_HandlePeerMessage(Stream, msg_type,
-                data + CTRL_HEADER_SIZE, payload_len, peer_id);
-
-            data += frame_size;
-            remaining -= (uint32_t)frame_size;
-        }
+        // Peer sent FIN — gracefully shut down our send direction
+        LOG("[daemon] PEER_SEND_SHUTDOWN: closing send direction\n");
+        MsQuic->StreamShutdown(Stream, QUIC_STREAM_SHUTDOWN_FLAG_GRACEFUL, 0);
         break;
     }
 
@@ -1241,7 +1406,7 @@ static void Daemon_OnPunchRequest(void *context, const uint8_t requester_id[32])
 static QUIC_STATUS QUIC_API Daemon_ReplicaConnectionCallback(
     HQUIC Connection, void *Context, QUIC_CONNECTION_EVENT *Event)
 {
-    UNREFERENCED_PARAMETER(Context);
+    REPLICA_CONNECTION_CONTEXT *conn_ctx = (REPLICA_CONNECTION_CONTEXT *)Context;
 
     switch (Event->Type)
     {
@@ -1262,6 +1427,12 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaConnectionCallback(
     {
         REPLICA_STREAM_CONTEXT *rctx =
             (REPLICA_STREAM_CONTEXT *)calloc(1, sizeof(REPLICA_STREAM_CONTEXT));
+        if (rctx)
+        {
+            rctx->connection = Connection;
+            if (conn_ctx)
+                memcpy(rctx->peer_id, conn_ctx->peer_id, 32);
+        }
         MsQuic->SetCallbackHandler(
             Event->PEER_STREAM_STARTED.Stream,
             (void *)Daemon_ReplicaStreamCallback,
@@ -1271,7 +1442,7 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaConnectionCallback(
     }
 
     case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
-        // Context is NULL for outbound replica connections (no allocation to free)
+        free(conn_ctx);
         MsQuic->ConnectionClose(Connection);
         break;
 
@@ -1328,7 +1499,7 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaStreamCallback(
                 }
 
                 Daemon_HandlePeerMessage(Stream, msg_type,
-                    rctx->recv_buf + CTRL_HEADER_SIZE, payload_len, NULL);
+                    rctx->recv_buf + CTRL_HEADER_SIZE, payload_len, rctx->peer_id);
 
                 DaemonConsumeBuffer(rctx->recv_buf, &rctx->recv_used, frame_size);
             }
@@ -1350,6 +1521,11 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaStreamCallback(
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
         if (rctx)
         {
+            // Actively shutdown the connection so the receiver doesn't wait for idle timeout
+            if (rctx->connection)
+            {
+                MsQuic->ConnectionShutdown(rctx->connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+            }
             free(rctx->recv_buf);
             free(rctx);
         }
@@ -1484,17 +1660,24 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
             }
         }
 
+        // Allocate connection context with peer_id for replica tracking
+        REPLICA_CONNECTION_CONTEXT *conn_ctx =
+            (REPLICA_CONNECTION_CONTEXT *)calloc(1, sizeof(REPLICA_CONNECTION_CONTEXT));
+        if (!conn_ctx) continue;
+        memcpy(conn_ctx->peer_id, peer->peer_id, 32);
+
         // Open a QUIC connection to the peer
         HQUIC connection = NULL;
         QUIC_STATUS status = MsQuic->ConnectionOpen(
             DaemonRegistration,
             Daemon_ReplicaConnectionCallback,
-            NULL,
+            conn_ctx,
             &connection
         );
         if (QUIC_FAILED(status))
         {
             LOG_ERROR("[replicate] ConnectionOpen failed: 0x%x\n", status);
+            free(conn_ctx);
             continue;
         }
 
@@ -1528,6 +1711,11 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
         HQUIC stream = NULL;
         REPLICA_STREAM_CONTEXT *rctx =
             (REPLICA_STREAM_CONTEXT *)calloc(1, sizeof(REPLICA_STREAM_CONTEXT));
+        if (rctx)
+        {
+            memcpy(rctx->peer_id, peer->peer_id, 32);
+            rctx->connection = connection;
+        }
         status = MsQuic->StreamOpen(
             connection,
             QUIC_STREAM_OPEN_FLAG_NONE,
@@ -1578,6 +1766,236 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
     if (sent > 0)
     {
         LOG("[replicate] Sent chunk to %u peers\n", sent);
+    }
+}
+
+//=============================================================================
+// Batch Chunk Replication — send all chunks over one connection per peer
+//=============================================================================
+
+static void Daemon_ReplicateBatch(const uint8_t hashes[][WH_HASH_SIZE],
+                                   uint8_t *const *data_ptrs,
+                                   const uint32_t *sizes,
+                                   uint32_t chunk_count)
+{
+    if (!DaemonClientConfig || !MsQuic || chunk_count == 0)
+        return;
+
+    // Filter to chunks that still need replicas
+    uint8_t  need_hashes[MAX_BATCH_CHUNKS][WH_HASH_SIZE];
+    uint8_t *need_data[MAX_BATCH_CHUNKS];
+    uint32_t need_sizes[MAX_BATCH_CHUNKS];
+    uint32_t need_count = 0;
+
+    for (uint32_t i = 0; i < chunk_count && need_count < MAX_BATCH_CHUNKS; i++)
+    {
+        uint32_t replicas = ChunkStore_GetReplicaCount(hashes[i]);
+        if (replicas + 1 < REPLICATION_TARGET)  // +1 for local copy
+        {
+            memcpy(need_hashes[need_count], hashes[i], WH_HASH_SIZE);
+            need_data[need_count] = data_ptrs[i];
+            need_sizes[need_count] = sizes[i];
+            need_count++;
+        }
+    }
+
+    if (need_count == 0)
+    {
+        LOG("[replicate-batch] All %u chunks already at replication target\n", chunk_count);
+        return;
+    }
+
+    // Snapshot discovered peers under lock
+    DISCOVERED_PEER local_peers[MAX_FIND_PEERS];
+    LONG peer_count;
+    EnterCriticalSection(&g_daemon.peers_lock);
+    peer_count = InterlockedCompareExchange(&g_daemon.discovered_peer_count, 0, 0);
+    if (peer_count > 0)
+        memcpy(local_peers, g_daemon.discovered_peers, peer_count * sizeof(DISCOVERED_PEER));
+    LeaveCriticalSection(&g_daemon.peers_lock);
+
+    if (peer_count == 0)
+        return;
+
+    uint32_t peers_needed = REPLICATION_TARGET - 1;  // peers to send to (we have 1 local copy)
+
+    for (LONG pi = 0; pi < peer_count && pi < (LONG)peers_needed; pi++)
+    {
+        DISCOVERED_PEER *peer = &local_peers[pi];
+        if (peer->endpoint_count == 0) continue;
+
+        // Select best endpoint: prefer IPv4, fall back to IPv6
+        const ENDPOINT *ep = NULL;
+        for (uint16_t j = 0; j < peer->endpoint_count; j++)
+        {
+            if (peer->endpoints[j].addr_type == 0x04) { ep = &peer->endpoints[j]; break; }
+        }
+        if (!ep)
+        {
+            for (uint16_t j = 0; j < peer->endpoint_count; j++)
+            {
+                if (peer->endpoints[j].addr_type == 0x06) { ep = &peer->endpoints[j]; break; }
+            }
+        }
+        if (!ep) continue;
+
+        char addr_str[INET6_ADDRSTRLEN];
+        uint16_t port;
+        if (!Endpoint_ToString(ep, addr_str, sizeof(addr_str), &port)) continue;
+
+        QUIC_ADDRESS_FAMILY family = (ep->addr_type == 0x06)
+            ? QUIC_ADDRESS_FAMILY_INET6 : QUIC_ADDRESS_FAMILY_INET;
+
+        LOG("[replicate-batch] Sending %u chunks to %s:%u\n", need_count, addr_str, port);
+
+        // Hole-punch ONCE per peer (not per chunk)
+        if (g_daemon.relay_client && RelayClient_IsConnected(g_daemon.relay_client))
+        {
+            uint8_t punch_req[33];
+            punch_req[0] = 0x10;
+            memcpy(punch_req + 1, g_daemon.keypair.public_key, 32);
+            RelayClient_ResetPunchAck(g_daemon.relay_client);
+            RelayClient_ForwardPacket(g_daemon.relay_client, peer->peer_id,
+                punch_req, sizeof(punch_req));
+
+            HQUIC our_punch = NULL;
+            if (QUIC_SUCCEEDED(MsQuic->ConnectionOpen(DaemonRegistration,
+                    Daemon_PunchConnectionCallback, NULL, &our_punch)))
+            {
+                if (QUIC_FAILED(MsQuic->ConnectionStart(our_punch, DaemonClientConfig,
+                        family, addr_str, port)))
+                {
+                    MsQuic->ConnectionClose(our_punch);
+                }
+            }
+
+            DWORD punch_start = GetTickCount();
+            while (GetTickCount() - punch_start < 3000)
+            {
+                Sleep(50);
+                if (RelayClient_GetPunchAckReceived(g_daemon.relay_client))
+                    break;
+            }
+
+            if (RelayClient_GetPunchAckReceived(g_daemon.relay_client))
+            {
+                LOG("[replicate-batch] Hole-punch ACK received, waiting for NAT...\n");
+                Sleep(1000);
+            }
+            else
+            {
+                LOG("[replicate-batch] No hole-punch ACK (peer may be offline)\n");
+            }
+        }
+
+        // Allocate connection context with peer_id for replica tracking
+        REPLICA_CONNECTION_CONTEXT *conn_ctx =
+            (REPLICA_CONNECTION_CONTEXT *)calloc(1, sizeof(REPLICA_CONNECTION_CONTEXT));
+        if (!conn_ctx) continue;
+        memcpy(conn_ctx->peer_id, peer->peer_id, 32);
+
+        // Open ONE QUIC connection for all chunks to this peer
+        HQUIC connection = NULL;
+        QUIC_STATUS status = MsQuic->ConnectionOpen(
+            DaemonRegistration,
+            Daemon_ReplicaConnectionCallback,
+            conn_ctx,
+            &connection
+        );
+        if (QUIC_FAILED(status))
+        {
+            LOG_ERROR("[replicate-batch] ConnectionOpen failed: 0x%x\n", status);
+            free(conn_ctx);
+            continue;
+        }
+
+        // Apply saved session ticket for 0-RTT
+        {
+            uint32_t ticket_len;
+            uint8_t *ticket = Daemon_LoadSessionTicket(&ticket_len);
+            if (ticket)
+            {
+                MsQuic->SetParam(connection, QUIC_PARAM_CONN_RESUMPTION_TICKET,
+                                 ticket_len, ticket);
+                free(ticket);
+            }
+        }
+
+        status = MsQuic->ConnectionStart(connection, DaemonClientConfig,
+            family, addr_str, port);
+        if (QUIC_FAILED(status))
+        {
+            LOG_ERROR("[replicate-batch] ConnectionStart failed: 0x%x\n", status);
+            MsQuic->ConnectionClose(connection);
+            continue;
+        }
+
+        // Open ONE bidirectional stream for all chunks
+        HQUIC stream = NULL;
+        REPLICA_STREAM_CONTEXT *rctx =
+            (REPLICA_STREAM_CONTEXT *)calloc(1, sizeof(REPLICA_STREAM_CONTEXT));
+        if (rctx)
+        {
+            memcpy(rctx->peer_id, peer->peer_id, 32);
+            rctx->connection = connection;
+        }
+        status = MsQuic->StreamOpen(connection, QUIC_STREAM_OPEN_FLAG_NONE,
+            Daemon_ReplicaStreamCallback, rctx, &stream);
+        if (QUIC_FAILED(status))
+        {
+            LOG_ERROR("[replicate-batch] StreamOpen failed: 0x%x\n", status);
+            free(rctx);
+            MsQuic->ConnectionShutdown(connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+            continue;
+        }
+
+        status = MsQuic->StreamStart(stream, QUIC_STREAM_START_FLAG_NONE);
+        if (QUIC_FAILED(status))
+        {
+            LOG_ERROR("[replicate-batch] StreamStart failed: 0x%x\n", status);
+            MsQuic->StreamClose(stream);
+            MsQuic->ConnectionShutdown(connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+            continue;
+        }
+
+        // Send all CHUNK_STORE_REQUEST messages on this stream
+        for (uint32_t ci = 0; ci < need_count; ci++)
+        {
+            uint32_t payload_len = WH_HASH_SIZE + 4 + need_sizes[ci];
+            uint32_t msg_size = CTRL_HEADER_SIZE + payload_len;
+            uint8_t *msg = (uint8_t *)malloc(msg_size);
+            QUIC_BUFFER *send_buf = msg ? (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER)) : NULL;
+
+            if (!msg || !send_buf)
+            {
+                free(msg);
+                free(send_buf);
+                continue;
+            }
+
+            msg[0] = CTRL_MSG_CHUNK_STORE_REQUEST;
+            WriteUint32LE(msg + 1, payload_len);
+            memcpy(msg + CTRL_HEADER_SIZE, need_hashes[ci], WH_HASH_SIZE);
+            WriteUint32LE(msg + CTRL_HEADER_SIZE + WH_HASH_SIZE, need_sizes[ci]);
+            memcpy(msg + CTRL_HEADER_SIZE + WH_HASH_SIZE + 4, need_data[ci], need_sizes[ci]);
+
+            send_buf->Buffer = msg;
+            send_buf->Length = msg_size;
+
+            // FIN only on the last chunk to signal end of batch
+            QUIC_SEND_FLAGS flags = (ci == need_count - 1)
+                ? QUIC_SEND_FLAG_FIN : QUIC_SEND_FLAG_NONE;
+
+            QUIC_STATUS send_status = MsQuic->StreamSend(stream, send_buf, 1, flags, send_buf);
+            if (QUIC_FAILED(send_status))
+            {
+                LOG_ERROR("[replicate-batch] StreamSend failed for chunk %u: 0x%x\n", ci, send_status);
+                free(msg);
+                free(send_buf);
+            }
+        }
+
+        LOG("[replicate-batch] Queued %u chunks to %s:%u\n", need_count, addr_str, port);
     }
 }
 
@@ -1948,6 +2366,41 @@ static void Daemon_OnPeersFound(void *context, const DISCOVERED_PEER *peers, uin
         LOG("[daemon]   Peer %u: %s... (%u endpoints)\n",
             i, hex, peers[i].endpoint_count);
     }
+
+    // Seed DHT routing table with discovered peers
+    if (g_daemon.dht_enabled)
+    {
+        EnterCriticalSection(&g_daemon.dht_lock);
+        uint16_t seeded = 0;
+        for (uint16_t i = 0; i < count; i++)
+        {
+            if (memcmp(peers[i].peer_id, g_daemon.keypair.public_key, 32) == 0)
+                continue;  // Skip self
+
+            for (uint16_t e = 0; e < peers[i].endpoint_count; e++)
+            {
+                if (peers[i].endpoints[e].priority >= 200)
+                    continue;  // Skip relay-forwarded endpoints
+
+                RoutingTable_AddNode(&g_daemon.dht_node.routing_table,
+                                      peers[i].peer_id,
+                                      peers[i].endpoints[e].addr_type,
+                                      peers[i].endpoints[e].addr,
+                                      g_daemon.dht_port);
+
+                DhtNode_SendFindNode(&g_daemon.dht_node,
+                                      peers[i].endpoints[e].addr,
+                                      peers[i].endpoints[e].addr_type,
+                                      g_daemon.dht_port,
+                                      g_daemon.dht_node.keypair->public_key);
+                seeded++;
+                break;  // One endpoint per peer
+            }
+        }
+        LeaveCriticalSection(&g_daemon.dht_lock);
+        if (seeded > 0)
+            LOG("[daemon] Seeded DHT routing table with %u peers from relay discovery\n", seeded);
+    }
 }
 
 static BOOLEAN Daemon_ConnectRelay(void)
@@ -2006,6 +2459,361 @@ static BOOLEAN Daemon_ConnectRelay(void)
 }
 
 //=============================================================================
+// Background Work Queue — Worker Thread
+//=============================================================================
+
+static DWORD WINAPI WorkQueue_ThreadProc(LPVOID param)
+{
+    UNREFERENCED_PARAMETER(param);
+    LOG("[worker] Background worker thread started\n");
+
+    while (!InterlockedCompareExchange(&g_work_queue.shutdown, 0, 0))
+    {
+        WORK_ITEM *item = WorkQueue_Pop();
+        if (!item) continue;
+
+        switch (item->type)
+        {
+        case WORK_ERASURE_ENCODE:
+        {
+            // Deserialize manifest
+            FILE_MANIFEST *manifest = Manifest_Deserialize(
+                item->erasure.manifest_data, item->erasure.manifest_size);
+            if (!manifest)
+            {
+                LOG("[worker] EC: failed to deserialize manifest\n");
+                break;
+            }
+
+            uint8_t ec_k = (uint8_t)Config_GetUint64(g_daemon.config, "ec_data_shards",
+                                                        CONFIG_DEFAULT_EC_DATA_SHARDS);
+            uint8_t ec_m = (uint8_t)Config_GetUint64(g_daemon.config, "ec_parity_shards",
+                                                        CONFIG_DEFAULT_EC_PARITY_SHARDS);
+            EC_GROUP *ec_group = ErasureCoding_Encode(manifest, ec_k, ec_m);
+            if (ec_group)
+            {
+                LOG("[worker] EC: %u stripes with RS(%u,%u)\n",
+                    ec_group->stripe_count, ec_k, ec_m);
+
+                // Account for parity chunks in daemon stats
+                {
+                    uint32_t parity_count = ec_group->stripe_count * ec_group->m;
+                    InterlockedExchangeAdd(&g_daemon.chunk_count, (LONG)parity_count);
+                    InterlockedExchangeAdd64(&g_daemon.storage_used,
+                        (LONGLONG)parity_count * WH_CHUNK_SIZE);
+                }
+
+                // Clear stale parity replica metadata so replication starts fresh
+                for (uint32_t s = 0; s < ec_group->stripe_count; s++)
+                    for (uint8_t p = 0; p < ec_group->m; p++)
+                        ChunkStore_ClearReplicas(ec_group->stripes[s].parity_hashes[p]);
+
+                // Batch replication for parity chunks (same pattern as data chunk batching)
+                {
+                    uint32_t parity_idx = 0;
+                    uint32_t total_parity = ec_group->stripe_count * ec_group->m;
+
+                    // Collect parity chunks into batches
+                    while (parity_idx < total_parity)
+                    {
+                        WORK_ITEM *batch_item = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+                        if (!batch_item) break;
+                        batch_item->type = WORK_REPLICATE_BATCH;
+                        uint32_t count = 0;
+
+                        while (parity_idx < total_parity && count < MAX_BATCH_CHUNKS)
+                        {
+                            uint32_t s = parity_idx / ec_group->m;
+                            uint8_t  p = (uint8_t)(parity_idx % ec_group->m);
+
+                            uint8_t *parity_data = (uint8_t *)malloc(WH_CHUNK_SIZE);
+                            if (!parity_data) { parity_idx++; continue; }
+                            uint32_t parity_size = 0;
+                            if (!ChunkStore_Get(ec_group->stripes[s].parity_hashes[p],
+                                                parity_data, &parity_size))
+                            {
+                                free(parity_data);
+                                parity_idx++;
+                                continue;
+                            }
+
+                            memcpy(batch_item->batch.hashes[count],
+                                   ec_group->stripes[s].parity_hashes[p], WH_HASH_SIZE);
+                            batch_item->batch.data[count] = parity_data;
+                            batch_item->batch.sizes[count] = parity_size;
+                            count++;
+                            parity_idx++;
+                        }
+
+                        if (count > 0)
+                        {
+                            batch_item->batch.chunk_count = count;
+                            WorkQueue_Push(batch_item);
+                        }
+                        else
+                        {
+                            free(batch_item);
+                        }
+                    }
+
+                    // Proof precomputation for parity chunks (enqueued after batch items)
+                    for (uint32_t s = 0; s < ec_group->stripe_count; s++)
+                    {
+                        for (uint8_t p = 0; p < ec_group->m; p++)
+                        {
+                            uint8_t *parity_data = (uint8_t *)malloc(WH_CHUNK_SIZE);
+                            if (!parity_data) continue;
+                            uint32_t parity_size = 0;
+                            if (ChunkStore_Get(ec_group->stripes[s].parity_hashes[p],
+                                                parity_data, &parity_size))
+                            {
+                                WORK_ITEM *proof = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+                                if (proof)
+                                {
+                                    proof->type = WORK_PRECOMPUTE_PROOFS;
+                                    memcpy(proof->proofs.hash, ec_group->stripes[s].parity_hashes[p], WH_HASH_SIZE);
+                                    proof->proofs.data = parity_data;
+                                    proof->proofs.size = parity_size;
+                                    WorkQueue_Push(proof);
+                                    parity_data = NULL;  // Ownership transferred
+                                }
+                            }
+                            free(parity_data);
+                        }
+                    }
+                }
+
+                // Enqueue parity DHT announcements
+                if (g_daemon.dht_enabled)
+                {
+                    WORK_ITEM *dht_item = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+                    if (dht_item)
+                    {
+                        dht_item->type = WORK_DHT_ANNOUNCE;
+                        uint32_t count = 0;
+                        for (uint32_t s = 0; s < ec_group->stripe_count && count < 64; s++)
+                        {
+                            for (uint8_t p = 0; p < ec_group->m && count < 64; p++)
+                            {
+                                memcpy(dht_item->dht_announce.hashes[count],
+                                       ec_group->stripes[s].parity_hashes[p], WH_HASH_SIZE);
+                                count++;
+                            }
+                        }
+                        dht_item->dht_announce.hash_count = count;
+                        WorkQueue_Push(dht_item);
+                    }
+                }
+
+                // Enqueue EC metadata persistence
+                WORK_ITEM *meta = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+                if (meta)
+                {
+                    meta->type = WORK_PERSIST_EC_META;
+                    meta->ec_meta.ec_group = ec_group;
+                    ec_group = NULL;  // Ownership transferred
+                    meta->ec_meta.manifest_data = (uint8_t *)malloc(item->erasure.manifest_size);
+                    if (meta->ec_meta.manifest_data)
+                    {
+                        memcpy(meta->ec_meta.manifest_data, item->erasure.manifest_data,
+                               item->erasure.manifest_size);
+                        meta->ec_meta.manifest_size = item->erasure.manifest_size;
+                        memcpy(meta->ec_meta.manifest_hash, item->erasure.manifest_hash, WH_HASH_SIZE);
+                        WorkQueue_Push(meta);
+                    }
+                    else
+                    {
+                        WorkQueue_FreeItem(meta);
+                    }
+                }
+
+                if (ec_group)
+                    ErasureCoding_DestroyGroup(ec_group);
+            }
+            else
+            {
+                LOG("[worker] EC encoding failed (continuing without parity)\n");
+            }
+            Manifest_Destroy(manifest);
+            break;
+        }
+
+        case WORK_REPLICATE_CHUNK:
+        {
+            Daemon_ReplicateChunk(item->replicate.hash, item->replicate.data, item->replicate.size);
+            break;
+        }
+
+        case WORK_REPLICATE_BATCH:
+        {
+            Daemon_ReplicateBatch(
+                (const uint8_t (*)[WH_HASH_SIZE])item->batch.hashes,
+                item->batch.data,
+                item->batch.sizes,
+                item->batch.chunk_count
+            );
+            break;
+        }
+
+        case WORK_PRECOMPUTE_PROOFS:
+        {
+            Proof_PrecomputeAndCache(item->proofs.hash, item->proofs.data, item->proofs.size);
+            break;
+        }
+
+        case WORK_DHT_ANNOUNCE:
+        {
+            if (g_daemon.dht_enabled)
+            {
+                EnterCriticalSection(&g_daemon.dht_lock);
+                for (uint32_t i = 0; i < item->dht_announce.hash_count; i++)
+                {
+                    ROUTING_NODE closest_check[1];
+                    uint32_t rt_count = RoutingTable_FindClosest(
+                        &g_daemon.dht_node.routing_table,
+                        item->dht_announce.hashes[i], closest_check, 1);
+                    if (rt_count > 0)
+                    {
+                        DhtNode_AnnounceChunk(&g_daemon.dht_node,
+                            item->dht_announce.hashes[i], g_daemon.listen_port);
+                    }
+                    else if (g_daemon.pending_announce_count < 16)
+                    {
+                        memcpy(g_daemon.pending_announce_hashes[g_daemon.pending_announce_count],
+                               item->dht_announce.hashes[i], WH_HASH_SIZE);
+                        g_daemon.pending_announce_count++;
+                    }
+                }
+                LeaveCriticalSection(&g_daemon.dht_lock);
+            }
+            break;
+        }
+
+        case WORK_PERSIST_EC_META:
+        {
+            // Deserialize manifest for saving
+            FILE_MANIFEST *manifest = Manifest_Deserialize(
+                item->ec_meta.manifest_data, item->ec_meta.manifest_size);
+            if (!manifest) break;
+
+            char ec_dir[MAX_PATH];
+            char ec_path[MAX_PATH];
+#ifdef _WIN32
+            const char *home_ec = getenv("USERPROFILE");
+            if (home_ec)
+            {
+                snprintf(ec_dir, sizeof(ec_dir), "%s\\.wormhole\\ec", home_ec);
+                CreateDirectoryA(ec_dir, NULL);
+                char hex[65];
+                for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+                    sprintf(hex + hi * 2, "%02x", item->ec_meta.manifest_hash[hi]);
+                hex[64] = '\0';
+                snprintf(ec_path, sizeof(ec_path), "%s\\%s.ec", ec_dir, hex);
+            }
+#else
+            const char *home_ec = getenv("HOME");
+            if (home_ec)
+            {
+                snprintf(ec_dir, sizeof(ec_dir), "%s/.wormhole/ec", home_ec);
+                mkdir(ec_dir, 0755);
+                char hex[65];
+                for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+                    sprintf(hex + hi * 2, "%02x", item->ec_meta.manifest_hash[hi]);
+                hex[64] = '\0';
+                snprintf(ec_path, sizeof(ec_path), "%s/%s.ec", ec_dir, hex);
+            }
+#endif
+            if (home_ec)
+            {
+                if (ErasureCoding_SaveMetadata(ec_path, item->ec_meta.ec_group, manifest))
+                    LOG("[worker] EC metadata saved to %s\n", ec_path);
+                else
+                    LOG("[worker] Failed to save EC metadata\n");
+            }
+            Manifest_Destroy(manifest);
+            break;
+        }
+
+        case WORK_CHECK_REPLICATION:
+        {
+            FILE_REG_ENTRY entry;
+            FILE_MANIFEST *manifest = NULL;
+            if (!FileRegistry_Load(item->check_repl.manifest_hash, &entry, &manifest))
+                break;
+
+            if (entry.status == FILE_STATUS_OFFLOADED || entry.status == FILE_STATUS_SAFE)
+            {
+                Manifest_Destroy(manifest);
+                break;  // Already handled
+            }
+
+            uint32_t repl_target = (uint32_t)Config_GetUint64(g_daemon.config,
+                "replication_target", CONFIG_DEFAULT_REPLICATION_TARGET);
+            uint32_t replicated = 0;
+
+            for (uint32_t i = 0; i < manifest->chunk_count; i++)
+            {
+                uint32_t remote_copies = ChunkStore_GetReplicaCount(manifest->chunks[i].hash);
+                if (i == 0)
+                {
+                    char h8[17];
+                    for (int x = 0; x < 8; x++) sprintf(h8 + x*2, "%02x", manifest->chunks[i].hash[x]);
+                    h8[16] = '\0';
+                    LOG("[worker] Checking replicas: first chunk=%s... count=%u\n", h8, remote_copies);
+                }
+                if (remote_copies >= repl_target - 1)  // -1 for our local copy
+                    replicated++;
+            }
+
+            FileRegistry_UpdateStatus(item->check_repl.manifest_hash,
+                replicated >= manifest->chunk_count ? FILE_STATUS_SAFE : FILE_STATUS_REPLICATING,
+                replicated);
+
+            if (replicated >= manifest->chunk_count)
+            {
+                LOG("[worker] File %s safely replicated to network\n", entry.filename);
+
+                // Auto-evict local chunks
+                uint64_t freed = 0;
+                for (uint32_t i = 0; i < manifest->chunk_count; i++)
+                {
+                    if (ChunkStore_Has(manifest->chunks[i].hash))
+                    {
+                        freed += manifest->chunks[i].chunk_size;
+                        ChunkStore_Delete(manifest->chunks[i].hash);
+                        InterlockedDecrement(&g_daemon.chunk_count);
+                    }
+                }
+
+                FileRegistry_UpdateStatus(item->check_repl.manifest_hash,
+                    FILE_STATUS_OFFLOADED, replicated);
+
+                if (freed > 0)
+                {
+                    InterlockedExchangeAdd64(&g_daemon.storage_used, -(LONGLONG)freed);
+                    LOG("[worker] Local chunks cleaned up for %s (freed %llu bytes)\n",
+                        entry.filename, (unsigned long long)freed);
+                }
+            }
+            else
+            {
+                LOG("[worker] File %s: %u/%u chunks replicated\n",
+                    entry.filename, replicated, manifest->chunk_count);
+            }
+
+            Manifest_Destroy(manifest);
+            break;
+        }
+        }
+
+        WorkQueue_FreeItem(item);
+    }
+
+    LOG("[worker] Background worker thread exiting\n");
+    return 0;
+}
+
+//=============================================================================
 // Quota Enforcement
 //=============================================================================
 
@@ -2041,7 +2849,7 @@ static uint32_t Daemon_HandleIpcCommand(
 
     switch (command)
     {
-    //--- STORE: chunk a file and store all chunks ---
+    //--- STORE: chunk a file, save to registry, enqueue background work ---
     case IPC_CMD_STORE:
     {
         if (payload_size < 2)
@@ -2074,182 +2882,184 @@ static uint32_t Daemon_HandleIpcCommand(
             return 1;
         }
 
-        // Build manifest (chunks + hashes the file)
-        FILE_MANIFEST *manifest = Chunker_BuildManifest(filepath);
+        // Enforce quota before storing
+        {
+            uint64_t fsize = 0;
+            GetWormholeFileSize(filepath, &fsize);
+            Daemon_EnforceQuota(fsize);
+        }
+
+        // Single-pass: read + hash + store chunks
+        uint32_t stored = 0;
+        FILE_MANIFEST *manifest = Chunker_BuildManifestAndStore(filepath, &stored);
         if (!manifest)
         {
-            LOG_ERROR("[daemon] Failed to build manifest for: %s\n", filepath);
+            LOG_ERROR("[daemon] Failed to chunk and store: %s\n", filepath);
             response_out[0] = IPC_STATUS_ERROR;
             return 1;
         }
 
-        // Enforce quota before storing
-        Daemon_EnforceQuota(manifest->file_size);
-
-        // Store each chunk
-        FILE *fh = NULL;
-        if (!OpenFileForRead(filepath, &fh))
-        {
-            LOG_ERROR("[daemon] Failed to open file: %s\n", filepath);
-            Manifest_Destroy(manifest);
-            response_out[0] = IPC_STATUS_ERROR;
-            return 1;
-        }
-
-        uint8_t *chunk_buf = (uint8_t *)malloc(WH_CHUNK_SIZE);
-        if (!chunk_buf)
-        {
-            CloseFile(fh);
-            Manifest_Destroy(manifest);
-            response_out[0] = IPC_STATUS_ERROR;
-            return 1;
-        }
-
-        uint32_t stored = 0;
-        for (uint32_t i = 0; i < manifest->chunk_count; i++)
-        {
-            size_t bytes_read = 0;
-            if (!ReadFileChunk(fh, chunk_buf, manifest->chunks[i].chunk_size, &bytes_read))
-            {
-                LOG_ERROR("[daemon] Failed to read chunk %u\n", i);
-                break;
-            }
-
-            if (ChunkStore_Put(manifest->chunks[i].hash, chunk_buf, (uint32_t)bytes_read))
-            {
-                stored++;
-                InterlockedIncrement(&g_daemon.chunk_count);
-                InterlockedExchangeAdd64(&g_daemon.storage_used, (LONGLONG)bytes_read);
-            }
-        }
-
-        CloseFile(fh);
+        // Update daemon stats
+        InterlockedExchangeAdd(&g_daemon.chunk_count, (LONG)stored);
+        InterlockedExchangeAdd64(&g_daemon.storage_used,
+            (LONGLONG)manifest->file_size);
 
         LOG("[daemon] Stored %u/%u chunks for %s\n",
             stored, manifest->chunk_count, filepath);
 
-        // Erasure coding — generate parity shards for durability
-        EC_GROUP *ec_group = NULL;
-        if (Config_GetUint64(g_daemon.config, "ec_enabled", CONFIG_DEFAULT_EC_ENABLED))
-        {
-            uint8_t ec_k = (uint8_t)Config_GetUint64(g_daemon.config, "ec_data_shards",
-                                                        CONFIG_DEFAULT_EC_DATA_SHARDS);
-            uint8_t ec_m = (uint8_t)Config_GetUint64(g_daemon.config, "ec_parity_shards",
-                                                        CONFIG_DEFAULT_EC_PARITY_SHARDS);
-            ec_group = ErasureCoding_Encode(manifest, ec_k, ec_m);
-            if (ec_group)
-                LOG("[daemon] EC: %u stripes with RS(%u,%u)\n", ec_group->stripe_count, ec_k, ec_m);
-            else
-                LOG("[daemon] EC encoding failed (continuing without parity)\n");
-        }
+        // Extract filename from path for registry
+        char *reg_filename = NULL;
+        uint32_t reg_filename_len = 0;
+        ExtractFilename(filepath, &reg_filename, &reg_filename_len);
+        const char *display_name = reg_filename ? reg_filename : filepath;
 
-        // Trigger replication to discovered peers (async, non-blocking)
+        // Save to file registry
+        FileRegistry_Save(manifest, display_name, FILE_STATUS_REPLICATING);
+
+        // Serialize manifest for background work items
+        size_t manifest_data_size = 0;
+        uint8_t *manifest_data = Manifest_Serialize(manifest, &manifest_data_size);
+
+        // Clear stale replica metadata so replication check starts from count=0
         for (uint32_t i = 0; i < manifest->chunk_count; i++)
+            ChunkStore_ClearReplicas(manifest->chunks[i].hash);
+
+        // --- Enqueue background work ---
+
+        // 1. Erasure coding
+        if (manifest_data &&
+            Config_GetUint64(g_daemon.config, "ec_enabled", CONFIG_DEFAULT_EC_ENABLED))
         {
-            uint32_t chunk_size = 0;
-            if (ChunkStore_Get(manifest->chunks[i].hash, chunk_buf, &chunk_size))
+            WORK_ITEM *ec_item = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+            if (ec_item)
             {
-                Daemon_ReplicateChunk(manifest->chunks[i].hash, chunk_buf, chunk_size);
-
-                // Pre-cache proofs for stored chunks
-                Proof_PrecomputeAndCache(manifest->chunks[i].hash, chunk_buf, chunk_size);
-            }
-
-            // Announce chunk to DHT (defer if routing table empty)
-            if (g_daemon.dht_enabled)
-            {
-                EnterCriticalSection(&g_daemon.dht_lock);
-                ROUTING_NODE closest_check[1];
-                uint32_t rt_count = RoutingTable_FindClosest(
-                    &g_daemon.dht_node.routing_table, manifest->chunks[i].hash, closest_check, 1);
-                if (rt_count > 0)
+                ec_item->type = WORK_ERASURE_ENCODE;
+                ec_item->erasure.manifest_data = (uint8_t *)malloc(manifest_data_size);
+                if (ec_item->erasure.manifest_data)
                 {
-                    DhtNode_AnnounceChunk(&g_daemon.dht_node, manifest->chunks[i].hash, g_daemon.listen_port);
+                    memcpy(ec_item->erasure.manifest_data, manifest_data, manifest_data_size);
+                    ec_item->erasure.manifest_size = manifest_data_size;
+                    memcpy(ec_item->erasure.manifest_hash, manifest->manifest_hash, WH_HASH_SIZE);
+                    WorkQueue_Push(ec_item);
                 }
-                else if (g_daemon.pending_announce_count < 16)
-                {
-                    memcpy(g_daemon.pending_announce_hashes[g_daemon.pending_announce_count],
-                           manifest->chunks[i].hash, WH_HASH_SIZE);
-                    g_daemon.pending_announce_count++;
-                    LOG("[daemon] Deferred DHT announcement for chunk %u (no routing nodes yet)\n", i);
-                }
-                LeaveCriticalSection(&g_daemon.dht_lock);
-            }
-        }
-
-        // Announce and replicate parity chunks
-        if (ec_group && g_daemon.dht_enabled)
-        {
-            for (uint32_t s = 0; s < ec_group->stripe_count; s++)
-            {
-                for (uint8_t p = 0; p < ec_group->m; p++)
-                {
-                    EnterCriticalSection(&g_daemon.dht_lock);
-                    DhtNode_AnnounceChunk(&g_daemon.dht_node,
-                                           ec_group->stripes[s].parity_hashes[p], g_daemon.listen_port);
-                    LeaveCriticalSection(&g_daemon.dht_lock);
-                    uint32_t parity_size = 0;
-                    if (ChunkStore_Get(ec_group->stripes[s].parity_hashes[p],
-                                        chunk_buf, &parity_size))
-                    {
-                        Daemon_ReplicateChunk(ec_group->stripes[s].parity_hashes[p],
-                                               chunk_buf, parity_size);
-                        Proof_PrecomputeAndCache(ec_group->stripes[s].parity_hashes[p],
-                                                  chunk_buf, parity_size);
-                    }
-                }
-            }
-        }
-
-        free(chunk_buf);
-
-        // Persist EC metadata (EC_GROUP + manifest for recovery)
-        if (ec_group)
-        {
-            char ec_dir[MAX_PATH];
-            char ec_path[MAX_PATH];
-            const char *home_ec = NULL;
-#ifdef _WIN32
-            home_ec = getenv("USERPROFILE");
-            if (home_ec)
-            {
-                snprintf(ec_dir, sizeof(ec_dir), "%s\\.wormhole\\ec", home_ec);
-                CreateDirectoryA(ec_dir, NULL);
-
-                char hex[65];
-                for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-                    sprintf(hex + hi * 2, "%02x", manifest->manifest_hash[hi]);
-                hex[64] = '\0';
-                snprintf(ec_path, sizeof(ec_path), "%s\\%s.ec", ec_dir, hex);
-            }
-#else
-            home_ec = getenv("HOME");
-            if (home_ec)
-            {
-                snprintf(ec_dir, sizeof(ec_dir), "%s/.wormhole/ec", home_ec);
-                mkdir(ec_dir, 0755);
-
-                char hex[65];
-                for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-                    sprintf(hex + hi * 2, "%02x", manifest->manifest_hash[hi]);
-                hex[64] = '\0';
-                snprintf(ec_path, sizeof(ec_path), "%s/%s.ec", ec_dir, hex);
-            }
-#endif
-            if (home_ec)
-            {
-                if (ErasureCoding_SaveMetadata(ec_path, ec_group, manifest))
-                    LOG("[daemon] EC metadata saved to %s\n", ec_path);
                 else
-                    LOG("[daemon] Failed to save EC metadata\n");
+                {
+                    free(ec_item);
+                }
             }
-            ErasureCoding_DestroyGroup(ec_group);
         }
 
-        // Response: [status][32B manifest_hash][4B chunk_count][32B hash_0]...[32B hash_N]
-        uint32_t resp_size = 1 + WH_HASH_SIZE + 4 + (WH_HASH_SIZE * manifest->chunk_count);
+        // 2. Batch replication + proof precomputation for data chunks
+        //    Enqueue batches first, then all proof items (not interleaved)
+        {
+            uint32_t idx = 0;
+            while (idx < manifest->chunk_count)
+            {
+                WORK_ITEM *batch_item = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+                if (!batch_item) break;
+                batch_item->type = WORK_REPLICATE_BATCH;
+                uint32_t count = 0;
+
+                while (idx < manifest->chunk_count && count < MAX_BATCH_CHUNKS)
+                {
+                    uint8_t *chunk_data = (uint8_t *)malloc(WH_CHUNK_SIZE);
+                    if (!chunk_data) { idx++; continue; }
+                    uint32_t chunk_size = 0;
+                    if (!ChunkStore_Get(manifest->chunks[idx].hash, chunk_data, &chunk_size))
+                    {
+                        free(chunk_data);
+                        idx++;
+                        continue;
+                    }
+
+                    memcpy(batch_item->batch.hashes[count], manifest->chunks[idx].hash, WH_HASH_SIZE);
+                    batch_item->batch.data[count] = chunk_data;
+                    batch_item->batch.sizes[count] = chunk_size;
+                    count++;
+                    idx++;
+                }
+
+                if (count > 0)
+                {
+                    batch_item->batch.chunk_count = count;
+                    WorkQueue_Push(batch_item);
+                }
+                else
+                {
+                    free(batch_item);
+                }
+            }
+
+            // Proof precomputation (enqueued after batch items)
+            for (uint32_t i = 0; i < manifest->chunk_count; i++)
+            {
+                uint8_t *chunk_data = (uint8_t *)malloc(WH_CHUNK_SIZE);
+                if (!chunk_data) continue;
+                uint32_t chunk_size = 0;
+                if (!ChunkStore_Get(manifest->chunks[i].hash, chunk_data, &chunk_size))
+                {
+                    free(chunk_data);
+                    continue;
+                }
+
+                WORK_ITEM *proof = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+                if (proof)
+                {
+                    proof->type = WORK_PRECOMPUTE_PROOFS;
+                    memcpy(proof->proofs.hash, manifest->chunks[i].hash, WH_HASH_SIZE);
+                    proof->proofs.data = chunk_data;
+                    proof->proofs.size = chunk_size;
+                    WorkQueue_Push(proof);
+                }
+                else
+                {
+                    free(chunk_data);
+                }
+            }
+        }
+
+        // 3. DHT announcements (batch all data chunk hashes)
+        if (g_daemon.dht_enabled && manifest->chunk_count > 0)
+        {
+            uint32_t remaining = manifest->chunk_count;
+            uint32_t idx = 0;
+            while (remaining > 0)
+            {
+                WORK_ITEM *dht_item = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+                if (!dht_item) break;
+                dht_item->type = WORK_DHT_ANNOUNCE;
+                uint32_t batch = remaining > 64 ? 64 : remaining;
+                for (uint32_t j = 0; j < batch; j++)
+                {
+                    memcpy(dht_item->dht_announce.hashes[j],
+                           manifest->chunks[idx + j].hash, WH_HASH_SIZE);
+                }
+                dht_item->dht_announce.hash_count = batch;
+                WorkQueue_Push(dht_item);
+                idx += batch;
+                remaining -= batch;
+            }
+        }
+
+        // 4. Replication check (enqueued last, runs after replication items)
+        {
+            WORK_ITEM *check = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+            if (check)
+            {
+                check->type = WORK_CHECK_REPLICATION;
+                memcpy(check->check_repl.manifest_hash, manifest->manifest_hash, WH_HASH_SIZE);
+                WorkQueue_Push(check);
+            }
+        }
+
+        // --- Build IPC response (fast: no chunk hashes) ---
+        // Response: [1B status][32B manifest_hash][2B filename_len][filename]
+        uint16_t fn_len = (uint16_t)strlen(display_name);
+        uint32_t resp_size = 1 + WH_HASH_SIZE + 2 + fn_len;
         if (response_capacity < resp_size)
         {
+            free(reg_filename);
+            free(manifest_data);
             Manifest_Destroy(manifest);
             response_out[0] = IPC_STATUS_ERROR;
             return 1;
@@ -2257,15 +3067,11 @@ static uint32_t Daemon_HandleIpcCommand(
 
         response_out[0] = IPC_STATUS_OK;
         memcpy(response_out + 1, manifest->manifest_hash, WH_HASH_SIZE);
-        WriteUint32LE(response_out + 1 + WH_HASH_SIZE, manifest->chunk_count);
+        WriteUint16LE(response_out + 1 + WH_HASH_SIZE, fn_len);
+        memcpy(response_out + 1 + WH_HASH_SIZE + 2, display_name, fn_len);
 
-        // Append individual chunk hashes
-        uint32_t offset = 1 + WH_HASH_SIZE + 4;
-        for (uint32_t ci = 0; ci < manifest->chunk_count; ci++)
-        {
-            memcpy(response_out + offset, manifest->chunks[ci].hash, WH_HASH_SIZE);
-            offset += WH_HASH_SIZE;
-        }
+        free(reg_filename);
+        free(manifest_data);
         Manifest_Destroy(manifest);
 
         return resp_size;
@@ -2478,6 +3284,212 @@ static uint32_t Daemon_HandleIpcCommand(
         }
 
         return 25;
+    }
+
+    //--- LIST_FILES: enumerate stored files ---
+    case IPC_CMD_LIST_FILES:
+    {
+        // Response: [1B status][4B file_count][per file: 32B hash + 1B status + 8B size +
+        //           4B chunk_count + 4B repl_count + 8B store_time + 2B name_len + name]
+        FILE_REG_ENTRY entries[256];
+        uint32_t count = FileRegistry_List(entries, 256);
+
+        response_out[0] = IPC_STATUS_OK;
+        WriteUint32LE(response_out + 1, count);
+        uint32_t off = 5;
+
+        for (uint32_t i = 0; i < count; i++)
+        {
+            FILE_REG_ENTRY *e = &entries[i];
+            uint16_t name_len = (uint16_t)strlen(e->filename);
+            uint32_t entry_size = WH_HASH_SIZE + 1 + 8 + 4 + 4 + 8 + 2 + name_len;
+
+            if (off + entry_size > response_capacity) break;
+
+            memcpy(response_out + off, e->manifest_hash, WH_HASH_SIZE); off += WH_HASH_SIZE;
+            response_out[off] = (uint8_t)e->status; off += 1;
+            WriteUint64LE(response_out + off, e->file_size); off += 8;
+            WriteUint32LE(response_out + off, e->chunk_count); off += 4;
+            WriteUint32LE(response_out + off, e->replicated_count); off += 4;
+            WriteUint64LE(response_out + off, e->store_time); off += 8;
+            WriteUint16LE(response_out + off, name_len); off += 2;
+            memcpy(response_out + off, e->filename, name_len); off += name_len;
+        }
+
+        return off;
+    }
+
+    //--- FILE_GET: retrieve a full file by manifest hash ---
+    case IPC_CMD_FILE_GET:
+    {
+        // Payload: [32B manifest_hash][2B path_len][output_path]
+        if (payload_size < WH_HASH_SIZE + 2)
+        {
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        const uint8_t *manifest_hash = payload;
+        uint16_t path_len = ReadUint16LE(payload + WH_HASH_SIZE);
+        if (path_len == 0 || (uint32_t)(WH_HASH_SIZE + 2 + path_len) > payload_size)
+        {
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        char output_path[MAX_PATH];
+        uint16_t cp_len = path_len < MAX_PATH - 1 ? path_len : MAX_PATH - 1;
+        memcpy(output_path, payload + WH_HASH_SIZE + 2, cp_len);
+        output_path[cp_len] = '\0';
+
+        // Load manifest from file registry
+        FILE_REG_ENTRY entry;
+        FILE_MANIFEST *manifest = NULL;
+        if (!FileRegistry_Load(manifest_hash, &entry, &manifest))
+        {
+            response_out[0] = IPC_STATUS_NOT_FOUND;
+            return 1;
+        }
+
+        LOG("[daemon] FILE_GET: retrieving %s (%u chunks) -> %s\n",
+            entry.filename, manifest->chunk_count, output_path);
+
+        // Open output file
+        FILE *out_fh = fopen(output_path, "wb");
+        if (!out_fh)
+        {
+            LOG_ERROR("[daemon] Cannot open output file: %s\n", output_path);
+            Manifest_Destroy(manifest);
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        uint8_t *chunk_buf = (uint8_t *)malloc(WH_CHUNK_SIZE);
+        if (!chunk_buf)
+        {
+            fclose(out_fh);
+            Manifest_Destroy(manifest);
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        uint64_t bytes_written = 0;
+        BOOLEAN success = TRUE;
+
+        for (uint32_t i = 0; i < manifest->chunk_count; i++)
+        {
+            uint32_t chunk_size = 0;
+            BOOLEAN got = FALSE;
+
+            // Try local store first
+            if (ChunkStore_Has(manifest->chunks[i].hash))
+            {
+                got = ChunkStore_Get(manifest->chunks[i].hash, chunk_buf, &chunk_size);
+            }
+
+            // Try discovered peers
+            if (!got)
+            {
+                DISCOVERED_PEER local_peers_fg[MAX_FIND_PEERS];
+                LONG peer_count;
+                EnterCriticalSection(&g_daemon.peers_lock);
+                peer_count = InterlockedCompareExchange(&g_daemon.discovered_peer_count, 0, 0);
+                if (peer_count > 0)
+                    memcpy(local_peers_fg, g_daemon.discovered_peers,
+                           peer_count * sizeof(DISCOVERED_PEER));
+                LeaveCriticalSection(&g_daemon.peers_lock);
+
+                for (LONG pi = 0; pi < peer_count && !got; pi++)
+                {
+                    const ENDPOINT *ep = NULL;
+                    for (uint16_t j = 0; j < local_peers_fg[pi].endpoint_count; j++)
+                    {
+                        if (local_peers_fg[pi].endpoints[j].addr_type == 0x04)
+                        {
+                            ep = &local_peers_fg[pi].endpoints[j];
+                            break;
+                        }
+                    }
+                    if (!ep) continue;
+
+                    char addr_str[64];
+                    snprintf(addr_str, sizeof(addr_str), "%u.%u.%u.%u",
+                             ep->addr[0], ep->addr[1], ep->addr[2], ep->addr[3]);
+
+                    got = Daemon_FetchChunkFromPeer(addr_str, ep->port,
+                        manifest->chunks[i].hash, chunk_buf, &chunk_size);
+                }
+            }
+
+            // Try DHT lookup
+            if (!got && g_daemon.dht_enabled)
+            {
+                DHT_LOCATION locations[DHT_STORE_MAX_LOCATIONS];
+                EnterCriticalSection(&g_daemon.dht_lock);
+                uint32_t loc_count = DhtNode_FindChunkLocations(
+                    &g_daemon.dht_node, manifest->chunks[i].hash,
+                    locations, DHT_STORE_MAX_LOCATIONS);
+                LeaveCriticalSection(&g_daemon.dht_lock);
+
+                if (loc_count == 0)
+                {
+                    for (int poll = 0; poll < 20 && loc_count == 0; poll++)
+                    {
+                        Sleep(150);
+                        EnterCriticalSection(&g_daemon.dht_lock);
+                        loc_count = DhtStore_Get(&g_daemon.dht_node.value_store,
+                            manifest->chunks[i].hash, locations, DHT_STORE_MAX_LOCATIONS);
+                        LeaveCriticalSection(&g_daemon.dht_lock);
+                    }
+                }
+
+                for (uint32_t li = 0; li < loc_count && !got; li++)
+                {
+                    if (locations[li].addr_type != 0x04) continue;
+                    uint8_t zero_addr[16] = {0};
+                    if (memcmp(locations[li].addr, zero_addr, 16) == 0) continue;
+
+                    char addr_str[64];
+                    snprintf(addr_str, sizeof(addr_str), "%u.%u.%u.%u",
+                             locations[li].addr[0], locations[li].addr[1],
+                             locations[li].addr[2], locations[li].addr[3]);
+
+                    got = Daemon_FetchChunkFromPeer(addr_str, locations[li].port,
+                        manifest->chunks[i].hash, chunk_buf, &chunk_size);
+                }
+            }
+
+            if (!got)
+            {
+                LOG_ERROR("[daemon] FILE_GET: failed to retrieve chunk %u\n", i);
+                success = FALSE;
+                break;
+            }
+
+            fwrite(chunk_buf, 1, chunk_size, out_fh);
+            bytes_written += chunk_size;
+        }
+
+        free(chunk_buf);
+        fclose(out_fh);
+
+        if (!success)
+        {
+            remove(output_path);  // Clean up partial file
+            Manifest_Destroy(manifest);
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        LOG("[daemon] FILE_GET: wrote %llu bytes to %s\n",
+            (unsigned long long)bytes_written, output_path);
+
+        Manifest_Destroy(manifest);
+
+        // Response: [1B status][8B bytes_written]
+        response_out[0] = IPC_STATUS_OK;
+        WriteUint64LE(response_out + 1, bytes_written);
+        return 9;
     }
 
     //--- SHUTDOWN: clean daemon shutdown ---
@@ -2708,6 +3720,19 @@ int main(int argc, char *argv[])
         goto cleanup;
     }
 
+    // Step 5b: Initialize file registry
+    if (!FileRegistry_Init())
+    {
+        LOG("[daemon] Warning: Failed to initialize file registry\n");
+    }
+
+    // Step 5c: Start background work queue
+    if (!WorkQueue_Init())
+    {
+        LOG_ERROR("[daemon] Failed to start work queue\n");
+        goto cleanup;
+    }
+
     // Step 6: Optionally connect to relay
     if (g_daemon.relay_enabled)
     {
@@ -2806,9 +3831,11 @@ int main(int argc, char *argv[])
     time_t last_health_check = time(NULL);
     time_t last_dht_expire = time(NULL);
     time_t last_dht_bootstrap_retry = time(NULL);
+    time_t last_replication_check = time(NULL);
     uint32_t dht_bootstrap_retries = 0;
 #define DHT_MAX_BOOTSTRAP_RETRIES 6
 #define DHT_BOOTSTRAP_RETRY_SEC   10
+#define REPLICATION_CHECK_SEC     60
 
     while (InterlockedCompareExchange(&g_daemon.shutdown_requested, 0, 0) == 0)
     {
@@ -2911,6 +3938,31 @@ int main(int argc, char *argv[])
                 }
                 LeaveCriticalSection(&g_daemon.dht_lock);
                 last_dht_bootstrap_retry = now;
+            }
+        }
+
+        // Periodic replication check for REPLICATING files
+        {
+            time_t now = time(NULL);
+            if (now - last_replication_check >= REPLICATION_CHECK_SEC)
+            {
+                FILE_REG_ENTRY entries[64];
+                uint32_t count = FileRegistry_List(entries, 64);
+                for (uint32_t fi = 0; fi < count; fi++)
+                {
+                    if (entries[fi].status == FILE_STATUS_REPLICATING)
+                    {
+                        WORK_ITEM *check = (WORK_ITEM *)calloc(1, sizeof(WORK_ITEM));
+                        if (check)
+                        {
+                            check->type = WORK_CHECK_REPLICATION;
+                            memcpy(check->check_repl.manifest_hash,
+                                   entries[fi].manifest_hash, WH_HASH_SIZE);
+                            WorkQueue_Push(check);
+                        }
+                    }
+                }
+                last_replication_check = now;
             }
         }
 
@@ -3093,6 +4145,9 @@ int main(int argc, char *argv[])
     LOG("[daemon] Shutting down...\n");
 
 cleanup:
+    // Stop background work queue
+    WorkQueue_Shutdown();
+
     // Stop IPC server
     IpcServer_Stop();
 

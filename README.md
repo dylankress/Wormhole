@@ -1,28 +1,10 @@
 # Wormhole
 
-Secure peer-to-peer file transfer and decentralized storage over QUIC. No accounts, no cloud, no file size limits.
+Decentralized P2P file storage — a privacy-respecting alternative to Dropbox and Google Drive, powered by QUIC.
 
-Wormhole started as a direct file transfer tool — share a ticket code, transfer directly between machines. It has since evolved into a decentralized P2P storage platform: peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without relying on centralized cloud providers.
+Wormhole started as a direct file transfer tool and evolved into what it really is: a decentralized storage platform. Peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without relying on centralized cloud providers. It also happens to be great for quick peer-to-peer file transfers.
 
 ## How It Works
-
-### Direct Transfer
-
-```
-Machine A:                          Machine B:
-$ wormhole send report.pdf          $ wormhole receive 3-guitar-battery
-Ticket: 3-guitar-battery            Connecting...
-Waiting for receiver...             Receiving report.pdf (4.2 MB)
-Sending...                          [=========>        ] 45% 12.3 MB/s ETA 0:08
-Done!                               Done! Saved to ~/Downloads/report.pdf
-```
-
-Directories work too:
-```
-$ wormhole send ./my-project/
-Scanning directory... 47 files (128.5 MB)
-Ticket: 5-ocean-maple
-```
 
 ### Distributed Storage
 
@@ -43,6 +25,26 @@ $ wormhole get a3f8c2...              $ wormhole status
 Retrieved report.pdf chunk              Chunks: 26, Peers: 1, Storage: 6.5 MB
 ```
 
+### Direct Transfer
+
+Wormhole is also great for quick one-off file transfers — no daemon required:
+
+```
+Machine A:                          Machine B:
+$ wormhole send report.pdf          $ wormhole receive 3-guitar-battery
+Ticket: 3-guitar-battery            Connecting...
+Waiting for receiver...             Receiving report.pdf (4.2 MB)
+Sending...                          [=========>        ] 45% 12.3 MB/s ETA 0:08
+Done!                               Done! Saved to ~/Downloads/report.pdf
+```
+
+Directories work too:
+```
+$ wormhole send ./my-project/
+Scanning directory... 47 files (128.5 MB)
+Ticket: 5-ocean-maple
+```
+
 ### Connection Flow
 
 1. **Sender** registers with a relay server and gets a short ticket code (e.g., `3-guitar-battery`)
@@ -53,16 +55,7 @@ Retrieved report.pdf chunk              Chunks: 26, Peers: 1, Storage: 6.5 MB
 
 ## Features
 
-- **Direct P2P transfer** — files go straight between machines, not through the cloud
-- **Directory transfer** — send entire directories with `wormhole send <dir>` (recursive, multi-file manifest)
-- **Progress bar** — live transfer speed and ETA display
-- **Resumable transfers** — interrupted transfers resume from last checkpoint
-- **NAT traversal** — automatic hole punching with parallel connection racing (LAN > IPv6 > public IP > relay fallback)
-- **QUIC transport** — encrypted, multiplexed, congestion-controlled (via MsQuic)
-- **Content-addressed chunking** — Blake3-hashed 256KB chunks with dedup
-- **Ed25519 identity** — each peer has a persistent cryptographic identity
-- **Relay fallback** — QUIC packets tunneled through relay when direct connection is impossible
-- **Ticket codes** — human-friendly codes like `3-guitar-battery` (EFF wordlist)
+### Decentralized Storage
 - **Persistent daemon** — `wormholed` runs in the background with QUIC listener, relay connectivity, and DHT node
 - **Kademlia DHT** — decentralized peer and chunk discovery (UDP port 4568), relay bootstrap
 - **Erasure coding** — RS(4,2) Reed-Solomon for fault-tolerant storage (4 data + 2 parity shards per stripe)
@@ -71,6 +64,20 @@ Retrieved report.pdf chunk              Chunks: 26, Peers: 1, Storage: 6.5 MB
 - **Storage incentives** — per-peer reciprocity tracking, reject freeloading peers (ratio < 0.5)
 - **Storage quota** — configurable disk limit with LRU eviction (prefers evicting highly-replicated chunks)
 - **Configuration** — `~/.wormhole/config` INI file with 12 tunable settings
+
+### Direct Transfer
+- **Direct P2P transfer** — files go straight between machines, not through the cloud
+- **Directory transfer** — send entire directories with `wormhole send <dir>` (recursive, multi-file manifest)
+- **Progress bar** — live transfer speed and ETA display
+- **Resumable transfers** — interrupted transfers resume from last checkpoint
+- **NAT traversal** — automatic hole punching with parallel connection racing (LAN > IPv6 > public IP > relay fallback)
+- **Relay fallback** — QUIC packets tunneled through relay when direct connection is impossible
+- **Ticket codes** — human-friendly codes like `3-guitar-battery` (EFF wordlist)
+
+### Shared Infrastructure
+- **QUIC transport** — encrypted, multiplexed, congestion-controlled (via MsQuic)
+- **Content-addressed chunking** — Blake3-hashed 256KB chunks with dedup
+- **Ed25519 identity** — each peer has a persistent cryptographic identity
 
 ## Project Status
 
@@ -116,19 +123,23 @@ Output: `relay-server/build/relay-server`
 
 ## Usage
 
-### Send a file or directory
-```
-wormhole send <file|directory>
-```
-Registers with the relay, creates a ticket, and waits for a receiver. Directories are sent recursively with a multi-file manifest.
+### Daemon
 
-### Receive a file
-```
-wormhole receive <ticket>
-```
-Looks up the sender via the ticket, connects, and downloads to `~/Downloads/`. Interrupted transfers resume automatically.
+The persistent daemon `wormholed` is the core of the storage network. It manages the QUIC listener, chunk store, relay connection, DHT node, health checks, and peer discovery. The CLI communicates with it via named pipe IPC.
 
-### Store a file (P2P storage)
+```
+wormholed [options]
+
+Options:
+  --port <port>           QUIC listener port (default: 4567)
+  --data-dir <path>       Data directory (default: ~/.wormhole)
+  --dht-port <port>       DHT UDP port (default: 4568)
+  --bootstrap <host:port> DHT bootstrap peer (default: relay server)
+  --no-relay              Disable relay connection
+  --help                  Show help
+```
+
+### Store a file
 ```
 wormhole store <file>
 ```
@@ -153,25 +164,21 @@ wormhole config get <key>         # Get a config value
 wormhole config set <key> <val>   # Set a config value
 ```
 
+### Send a file or directory
+```
+wormhole send <file|directory>
+```
+Registers with the relay, creates a ticket, and waits for a receiver. Directories are sent recursively with a multi-file manifest.
+
+### Receive a file
+```
+wormhole receive <ticket>
+```
+Looks up the sender via the ticket, connects, and downloads to `~/Downloads/`. Interrupted transfers resume automatically.
+
 ### Client global option
 ```
 wormhole --daemon <port> <command>    # Connect to daemon on non-default port (default: 4567)
-```
-
-### Daemon
-
-The persistent daemon `wormholed` manages the QUIC listener, chunk store, relay connection, DHT node, health checks, and peer discovery. The CLI communicates with it via named pipe IPC.
-
-```
-wormholed [options]
-
-Options:
-  --port <port>           QUIC listener port (default: 4567)
-  --data-dir <path>       Data directory (default: ~/.wormhole)
-  --dht-port <port>       DHT UDP port (default: 4568)
-  --bootstrap <host:port> DHT bootstrap peer (default: relay server)
-  --no-relay              Disable relay connection
-  --help                  Show help
 ```
 
 ## Architecture
@@ -204,9 +211,7 @@ Options:
 
 The project has three components:
 
-**Client** (`src/wormhole.c`) — Windows CLI for direct file transfer (`send`/`receive`) and daemon commands (`store`/`get`/`status`/`config`). Uses MsQuic for QUIC transport, libsodium for Ed25519 identity, and Blake3 for content-addressed chunking.
-
-**Daemon** (`src/wormholed.c`) — Persistent background process that manages:
+**Daemon** (`src/wormholed.c`) — The core of the network. A persistent background process that manages:
 - QUIC listener for peer-to-peer chunk transfer
 - Content-addressed chunk store with dedup and LRU eviction
 - Relay connection with auto-reconnect for peer coordination
@@ -215,6 +220,8 @@ The project has three components:
 - Health monitoring with proof-of-storage challenges
 - Storage incentive ledger for reciprocity enforcement
 - Named pipe IPC server for CLI communication
+
+**Client** (`src/wormhole.c`) — Windows CLI for storage commands (`store`/`get`/`status`/`config`) and direct file transfer (`send`/`receive`). Uses MsQuic for QUIC transport, libsodium for Ed25519 identity, and Blake3 for content-addressed chunking.
 
 **Relay Server** (`relay-server/`) — Lightweight Linux UDP server for:
 - Peer registration and NAT reflection

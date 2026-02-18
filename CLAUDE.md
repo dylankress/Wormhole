@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Wormhole is a secure peer-to-peer file transfer tool written in C. It uses QUIC (via MsQuic) for encrypted file streaming and a custom UDP relay server for peer coordination and NAT traversal. Users share files with ticket codes like "3-guitar-battery".
+Wormhole is a decentralized P2P file storage platform written in C — a privacy-respecting alternative to Dropbox/Google Drive. Peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without centralized cloud providers. Built on QUIC (via MsQuic) with a Kademlia DHT for decentralized discovery and a UDP relay server for NAT traversal. Also supports direct peer-to-peer file transfer via ticket codes like "3-guitar-battery".
 
-**Current focus:** Phases 1–4.5 complete. File transfer with progress bar, resume, and directory support is production-ready. Daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(4,2)), proof-of-storage verification, and storage incentive tracking — all wired together and tested (15 unit test suites + E2E daemon tests).
+**Current focus:** Phases 1–4.5 complete. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(4,2)), proof-of-storage verification, and storage incentive tracking — all wired together and tested (15 unit test suites + E2E daemon tests). Direct file transfer with progress bar, resume, and directory support is also production-ready.
 
-**Long-term vision:** Wormhole will evolve into a decentralized P2P file storage platform — a privacy-respecting alternative to Dropbox/Google Drive. Peers contribute available disk space to the network, and files are distributed (like BitTorrent) so users can store and recover their files on demand without centralized cloud providers. Design decisions should keep this trajectory in mind.
+Design decisions should keep the decentralized storage trajectory in mind.
 
 ## Build Commands
 

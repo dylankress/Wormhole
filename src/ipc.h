@@ -18,10 +18,12 @@
 
 // IPC command types
 #define IPC_CMD_STORE      0x01  // Client->Daemon: chunk file and store
-#define IPC_CMD_GET        0x02  // Client->Daemon: retrieve chunk by hash
+#define IPC_CMD_GET        0x02  // Client->Daemon: retrieve chunk by hash (internal)
 #define IPC_CMD_STATUS     0x03  // Client->Daemon: request daemon stats
 #define IPC_CMD_SHUTDOWN   0x04  // Client->Daemon: request clean shutdown
 #define IPC_CMD_DHT_STATUS 0x05  // Client->Daemon: request DHT stats
+#define IPC_CMD_LIST_FILES 0x06  // Client->Daemon: list stored files
+#define IPC_CMD_FILE_GET   0x07  // Client->Daemon: retrieve file by manifest hash
 
 // IPC response status codes
 #define IPC_STATUS_OK        0x00

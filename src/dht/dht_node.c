@@ -86,8 +86,17 @@ static void SockaddrToNodeInfo(const struct sockaddr_storage *addr,
         *port = ntohs(sin->sin_port);
     } else if (addr->ss_family == AF_INET6) {
         const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
-        *addr_type = DHT_ADDR_IPV6;
-        memcpy(addr_out, &sin6->sin6_addr, 16);
+        const uint8_t *bytes = (const uint8_t *)&sin6->sin6_addr;
+
+        // Check for IPv4-mapped IPv6 address (::ffff:x.x.x.x)
+        static const uint8_t v4mapped[12] = {0,0,0,0, 0,0,0,0, 0,0,0xff,0xff};
+        if (memcmp(bytes, v4mapped, 12) == 0) {
+            *addr_type = DHT_ADDR_IPV4;
+            memcpy(addr_out, bytes + 12, 4);
+        } else {
+            *addr_type = DHT_ADDR_IPV6;
+            memcpy(addr_out, bytes, 16);
+        }
         *port = ntohs(sin6->sin6_port);
     }
 }
@@ -162,8 +171,32 @@ static BOOLEAN VerifyMessage(const uint8_t *sender_id, uint8_t *msg, size_t msg_
 static BOOLEAN SendRawUDP(DHT_NODE *node, const struct sockaddr_storage *addr,
                            socklen_t addr_len, const uint8_t *data, size_t len)
 {
-    int sent = sendto(node->socket_fd, (const char *)data, (int)len, 0,
-                      (const struct sockaddr *)addr, (int)addr_len);
+    const struct sockaddr *sa = (const struct sockaddr *)addr;
+    socklen_t sa_len = addr_len;
+
+    // Dual-stack socket: map AF_INET to IPv4-mapped AF_INET6
+    struct sockaddr_in6 mapped;
+    if (addr->ss_family == AF_INET) {
+        const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
+        memset(&mapped, 0, sizeof(mapped));
+        mapped.sin6_family = AF_INET6;
+        mapped.sin6_port = sin->sin_port;
+        // Build ::ffff:x.x.x.x
+        uint8_t *b = (uint8_t *)&mapped.sin6_addr;
+        memset(b + 10, 0xff, 2);
+        memcpy(b + 12, &sin->sin_addr, 4);
+        sa = (const struct sockaddr *)&mapped;
+        sa_len = sizeof(mapped);
+    }
+
+    int sent = sendto(node->socket_fd, (const char *)data, (int)len, 0, sa, (int)sa_len);
+    if (sent <= 0) {
+#ifdef _WIN32
+        printf("[dht] SendRawUDP failed: WSA error %d\n", WSAGetLastError());
+#else
+        printf("[dht] SendRawUDP failed: errno %d\n", errno);
+#endif
+    }
     return (sent > 0) ? TRUE : FALSE;
 }
 
@@ -597,10 +630,18 @@ static void DhtDispatchMessage(DHT_NODE *node, uint8_t *data, size_t len,
     DHT_HEADER *hdr = (DHT_HEADER *)data;
 
     // Verify protocol version
-    if (hdr->version != DHT_PROTOCOL_VERSION) return;
+    if (hdr->version != DHT_PROTOCOL_VERSION) {
+        printf("[dht] REJECT: version %u (expected %u), type 0x%02x\n",
+               hdr->version, DHT_PROTOCOL_VERSION, hdr->msg_type);
+        return;
+    }
 
     // Verify signature
-    if (!VerifyMessage(hdr->sender_id, data, len)) return;
+    if (!VerifyMessage(hdr->sender_id, data, len)) {
+        printf("[dht] REJECT: signature verification failed (type 0x%02x, len %zu)\n",
+               hdr->msg_type, len);
+        return;
+    }
 
     // Update routing table with sender info
     uint8_t addr_type;
@@ -695,8 +736,8 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
     }
 #endif
 
-    // Create UDP socket
-    node->socket_fd = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    // Create dual-stack UDP socket (handles both IPv4 and IPv6)
+    node->socket_fd = (int)socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (node->socket_fd < 0) {
         fprintf(stderr, "[DHT] Failed to create UDP socket\n");
         DhtStore_Destroy(&node->value_store);
@@ -704,6 +745,13 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
         WSACleanup();
 #endif
         return FALSE;
+    }
+
+    // Enable dual-stack (receive IPv4 on the same socket)
+    {
+        int v6only = 0;
+        setsockopt(node->socket_fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                   (const char *)&v6only, sizeof(v6only));
     }
 
     // Set non-blocking mode so DhtNode_Poll can drain multiple packets
@@ -719,12 +767,12 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
     }
 #endif
 
-    // Bind to port
-    struct sockaddr_in bind_addr;
+    // Bind to [::]:port (dual-stack accepts both IPv4 and IPv6)
+    struct sockaddr_in6 bind_addr;
     memset(&bind_addr, 0, sizeof(bind_addr));
-    bind_addr.sin_family = AF_INET;
-    bind_addr.sin_addr.s_addr = INADDR_ANY;
-    bind_addr.sin_port = htons(port);
+    bind_addr.sin6_family = AF_INET6;
+    bind_addr.sin6_addr = in6addr_any;
+    bind_addr.sin6_port = htons(port);
 
     if (bind(node->socket_fd, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) != 0) {
         fprintf(stderr, "[DHT] Failed to bind to port %u\n", port);
@@ -741,10 +789,10 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
 
     // If port was 0, retrieve the assigned port
     if (port == 0) {
-        struct sockaddr_in actual;
+        struct sockaddr_in6 actual;
         socklen_t actual_len = sizeof(actual);
         if (getsockname(node->socket_fd, (struct sockaddr *)&actual, &actual_len) == 0) {
-            node->listen_port = ntohs(actual.sin_port);
+            node->listen_port = ntohs(actual.sin6_port);
         }
     }
 
@@ -752,7 +800,7 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
     if (bootstrap_host && bootstrap_port > 0) {
         struct addrinfo hints, *result;
         memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_INET;
+        hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6
         hints.ai_socktype = SOCK_DGRAM;
 
         char port_str[16];
@@ -763,6 +811,11 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
                 struct sockaddr_in *sin = (struct sockaddr_in *)result->ai_addr;
                 node->bootstrap_addr_type = DHT_ADDR_IPV4;
                 memcpy(node->bootstrap_addr, &sin->sin_addr, 4);
+                node->bootstrap_port = bootstrap_port;
+            } else if (result->ai_family == AF_INET6) {
+                struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)result->ai_addr;
+                node->bootstrap_addr_type = DHT_ADDR_IPV6;
+                memcpy(node->bootstrap_addr, &sin6->sin6_addr, 16);
                 node->bootstrap_port = bootstrap_port;
             }
             freeaddrinfo(result);
@@ -817,6 +870,9 @@ void DhtNode_Poll(DHT_NODE *node, int timeout_ms)
             }
             if (n >= (ssize_t)DHT_HEADER_SIZE) {
                 DhtDispatchMessage(node, buf, (size_t)n, &from_addr, from_len);
+            } else if (n > 0) {
+                printf("[dht] Poll: dropped short packet (%zd bytes, need %u)\n",
+                       n, (unsigned)DHT_HEADER_SIZE);
             }
         }
     }

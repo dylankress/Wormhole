@@ -48,6 +48,7 @@ del /q *.obj *.pdb *.ilk *.exe >nul 2>&1
 set /a TOTAL=0
 set /a PASS_COUNT=0
 set /a FAIL_COUNT=0
+set /a SKIP_COUNT=0
 
 REM ===================================================================
 echo.
@@ -59,9 +60,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_manifest
 )
-test_wire_format.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_wire_format.exe
 
 :test_manifest
 REM ===================================================================
@@ -74,9 +73,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_chunk_store
 )
-test_manifest.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_manifest.exe
 
 :test_chunk_store
 REM ===================================================================
@@ -89,9 +86,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_transfer_state
 )
-test_chunk_store.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_chunk_store.exe
 
 :test_transfer_state
 REM ===================================================================
@@ -104,9 +99,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_config
 )
-test_transfer_state.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_transfer_state.exe
 
 :test_config
 REM ===================================================================
@@ -119,24 +112,20 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_chunker
 )
-test_config.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_config.exe
 
 :test_chunker
 REM ===================================================================
 echo.
 echo --- test_chunker ---
-cl %CFLAGS% %INCLUDES% test_chunker.c %BUILD%\chunker.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BLAKE3_OBJS% /Fe:test_chunker.exe /link ole32.lib
+cl %CFLAGS% %INCLUDES% test_chunker.c %BUILD%\chunker.obj %BUILD%\chunk_store.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_chunker.exe /link ole32.lib
 if errorlevel 1 (
     echo   COMPILE FAILED
     set /a FAIL_COUNT+=1
     set /a TOTAL+=1
     goto :test_reed_solomon
 )
-test_chunker.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_chunker.exe
 
 :test_reed_solomon
 REM ===================================================================
@@ -149,9 +138,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_erasure
 )
-test_reed_solomon.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_reed_solomon.exe
 
 :test_erasure
 REM ===================================================================
@@ -164,9 +151,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_routing_table
 )
-test_erasure.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_erasure.exe
 
 :test_routing_table
 REM ===================================================================
@@ -179,9 +164,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_dht_protocol
 )
-test_routing_table.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_routing_table.exe
 
 :test_dht_protocol
 REM ===================================================================
@@ -194,9 +177,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_dht_store
 )
-test_dht_protocol.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_dht_protocol.exe
 
 :test_dht_store
 REM ===================================================================
@@ -209,9 +190,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_dht_lookup
 )
-test_dht_store.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_dht_store.exe
 
 :test_dht_lookup
 REM ===================================================================
@@ -224,9 +203,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_proof
 )
-test_dht_lookup.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_dht_lookup.exe
 
 :test_proof
 REM ===================================================================
@@ -239,9 +216,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_incentives
 )
-test_proof.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_proof.exe
 
 :test_incentives
 REM ===================================================================
@@ -254,9 +229,7 @@ if errorlevel 1 (
     set /a TOTAL+=1
     goto :test_health
 )
-test_incentives.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_incentives.exe
 
 :test_health
 REM ===================================================================
@@ -267,17 +240,32 @@ if errorlevel 1 (
     echo   COMPILE FAILED
     set /a FAIL_COUNT+=1
     set /a TOTAL+=1
+    goto :test_file_registry
+)
+call :run_test test_health.exe
+
+:test_file_registry
+REM ===================================================================
+echo.
+echo --- test_file_registry ---
+cl %CFLAGS% %INCLUDES% test_file_registry.c %BUILD%\file_registry.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BLAKE3_OBJS% /Fe:test_file_registry.exe /link ole32.lib
+if errorlevel 1 (
+    echo   COMPILE FAILED
+    set /a FAIL_COUNT+=1
+    set /a TOTAL+=1
     goto :summary
 )
-test_health.exe
-if "!ERRORLEVEL!"=="0" ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
-set /a TOTAL+=1
+call :run_test test_file_registry.exe
 
 :summary
 REM ===================================================================
 echo.
 echo =============================================
-echo   TEST SUMMARY: !PASS_COUNT!/!TOTAL! passed
+if !SKIP_COUNT! gtr 0 (
+    echo   TEST SUMMARY: !PASS_COUNT!/!TOTAL! passed, !SKIP_COUNT! skipped [Device Guard]
+) else (
+    echo   TEST SUMMARY: !PASS_COUNT!/!TOTAL! passed
+)
 echo =============================================
 if !FAIL_COUNT! gtr 0 (
     echo   SOME TESTS FAILED
@@ -289,3 +277,22 @@ echo   ALL TESTS PASSED
 popd
 endlocal
 exit /b 0
+
+:run_test
+REM Usage: call :run_test <exe_name>
+REM Runs a test exe, detects Device Guard blocks as SKIP
+%~1 2>_dg_err.tmp
+set _TEST_ERR=!ERRORLEVEL!
+findstr /C:"blocked" _dg_err.tmp >nul 2>&1
+if !ERRORLEVEL! == 0 (
+    type _dg_err.tmp
+    echo   [SKIPPED - blocked by Device Guard]
+    set /a SKIP_COUNT+=1
+    set /a TOTAL+=1
+    del /q _dg_err.tmp >nul 2>&1
+    goto :eof
+)
+if exist _dg_err.tmp del /q _dg_err.tmp >nul 2>&1
+if !_TEST_ERR! == 0 ( set /a PASS_COUNT+=1 ) else ( set /a FAIL_COUNT+=1 )
+set /a TOTAL+=1
+goto :eof

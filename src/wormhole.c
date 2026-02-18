@@ -117,6 +117,7 @@ static int cmd_send(const char *filepath);
 static int cmd_receive(const char *ticket);
 static int cmd_store(const char *filepath);
 static int cmd_get(int argc, char *argv[]);
+static int cmd_files(void);
 static int cmd_status(void);
 static int cmd_config(int argc, char *argv[]);
 static void PrintUsage(void);
@@ -2257,6 +2258,19 @@ static int cmd_receive(const char* ticket)
 // Thin Client Commands (communicate with wormholed daemon via IPC)
 //=============================================================================
 
+// Format a byte size as a human-readable string (e.g., "100 MB")
+static void FormatSize(uint64_t bytes, char *buf, size_t buf_len)
+{
+	if (bytes >= 1024ULL * 1024 * 1024)
+		snprintf(buf, buf_len, "%.1f GB", (double)bytes / (1024.0 * 1024.0 * 1024.0));
+	else if (bytes >= 1024ULL * 1024)
+		snprintf(buf, buf_len, "%.1f MB", (double)bytes / (1024.0 * 1024.0));
+	else if (bytes >= 1024)
+		snprintf(buf, buf_len, "%.1f KB", (double)bytes / 1024.0);
+	else
+		snprintf(buf, buf_len, "%llu B", (unsigned long long)bytes);
+}
+
 static int cmd_store(const char *filepath)
 {
 	if (!FileExists(filepath))
@@ -2308,33 +2322,38 @@ static int cmd_store(const char *filepath)
 		return 1;
 	}
 
-	// Parse response: [1B status][32B manifest_hash][4B chunk_count][32B hash_0]...[32B hash_N]
-	if (response_size >= 1 + WH_HASH_SIZE + 4)
+	// Parse response: [1B status][32B manifest_hash][2B filename_len][filename]
+	if (response_size >= 1 + WH_HASH_SIZE + 2)
 	{
-		uint32_t chunk_count = ReadUint32LE(response + 1 + WH_HASH_SIZE);
+		uint16_t fn_len = ReadUint16LE(response + 1 + WH_HASH_SIZE);
+		char filename[260] = {0};
+		if (fn_len > 0 && fn_len < 260 &&
+			(uint32_t)(1 + WH_HASH_SIZE + 2 + fn_len) <= response_size)
+		{
+			memcpy(filename, response + 1 + WH_HASH_SIZE + 2, fn_len);
+			filename[fn_len] = '\0';
+		}
+		else
+		{
+			snprintf(filename, sizeof(filename), "%s", filepath);
+		}
 
-		// Print manifest hash
-		LOG("Stored %s (%u chunks)\n", filepath, chunk_count);
-		LOG("  Manifest: ");
-		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+		// Get file size for display
+		uint64_t fsize = 0;
+		GetWormholeFileSize(filepath, &fsize);
+		char size_str[32];
+		FormatSize(fsize, size_str, sizeof(size_str));
+
+		printf("Stored %s (%s)\n", filename, size_str);
+		printf("  File ID: ");
+		for (int hi = 0; hi < 4; hi++)
 			printf("%02x", response[1 + hi]);
 		printf("\n");
-
-		// Print individual chunk hashes
-		uint32_t hash_offset = 1 + WH_HASH_SIZE + 4;
-		for (uint32_t ci = 0; ci < chunk_count; ci++)
-		{
-			if (hash_offset + WH_HASH_SIZE > response_size) break;
-			LOG("  Chunk %3u: ", ci);
-			for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-				printf("%02x", response[hash_offset + hi]);
-			printf("\n");
-			hash_offset += WH_HASH_SIZE;
-		}
+		printf("  Replicating to network...\n");
 	}
 	else
 	{
-		LOG("[Store] File stored successfully\n");
+		printf("File stored successfully\n");
 	}
 
 	free(response);
@@ -2344,28 +2363,48 @@ static int cmd_store(const char *filepath)
 
 static int cmd_get(int argc, char *argv[])
 {
-	const char *hash_hex = NULL;
+	const char *file_id = NULL;
 	const char *output_file = NULL;
 
-	// Parse args: get [options] <hash>
+	// Parse args: get <file_id> [-o <path>]
 	for (int i = 0; i < argc; i++)
 	{
 		if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
 		{
 			output_file = argv[++i];
 		}
-		else if (!hash_hex && strlen(argv[i]) == 64)
+		else if (!file_id)
 		{
-			hash_hex = argv[i];
+			file_id = argv[i];
 		}
 	}
 
-	if (!hash_hex)
+	if (!file_id)
 	{
-		LOG_ERROR("Error: Hash must be 64 hex characters\n");
+		LOG_ERROR("Error: Missing file ID\n");
+		LOG_ERROR("Usage: wormhole get <file_id> [-o <path>]\n");
 		return 1;
 	}
 
+	size_t id_len = strlen(file_id);
+	if (id_len < 8)
+	{
+		LOG_ERROR("Error: File ID must be at least 8 hex characters\n");
+		return 1;
+	}
+
+	// Validate hex characters
+	for (size_t i = 0; i < id_len; i++)
+	{
+		char c = file_id[i];
+		if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+		{
+			LOG_ERROR("Error: Invalid hex character in file ID\n");
+			return 1;
+		}
+	}
+
+	// Use IPC_CMD_LIST_FILES to find the file by prefix, then IPC_CMD_FILE_GET
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
@@ -2382,29 +2421,132 @@ static int cmd_get(int argc, char *argv[])
 	}
 	uint32_t response_size = 0;
 
-	// Convert 64-char hex string to 32-byte binary hash
-	uint8_t hash_bin[WH_HASH_SIZE];
-	for (int i = 0; i < WH_HASH_SIZE; i++)
+	// First: list files to find the matching manifest hash
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_LIST_FILES,
+		NULL, 0, response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 5 || response[0] != IPC_STATUS_OK)
 	{
-		unsigned int byte_val;
-		if (sscanf(hash_hex + i * 2, "%2x", &byte_val) != 1)
+		LOG_ERROR("Error: Failed to list files\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t file_count = ReadUint32LE(response + 1);
+	uint32_t off = 5;
+
+	// Find matching file by prefix
+	uint8_t matched_hash[WH_HASH_SIZE] = {0};
+	char matched_filename[260] = {0};
+	uint64_t matched_size = 0;
+	uint32_t matches = 0;
+
+	for (uint32_t i = 0; i < file_count; i++)
+	{
+		if (off + WH_HASH_SIZE + 1 + 8 + 4 + 4 + 8 + 2 > response_size) break;
+
+		uint8_t *hash = response + off; off += WH_HASH_SIZE;
+		off += 1;  // status
+		uint64_t fsize = ReadUint64LE(response + off); off += 8;
+		off += 4;  // chunk_count
+		off += 4;  // replicated_count
+		off += 8;  // store_time
+		uint16_t name_len = ReadUint16LE(response + off); off += 2;
+
+		char fname[260] = {0};
+		if (name_len > 0 && name_len < 260 && off + name_len <= response_size)
 		{
-			LOG_ERROR("Error: Invalid hex character in hash\n");
+			memcpy(fname, response + off, name_len);
+			fname[name_len] = '\0';
+		}
+		off += name_len;
+
+		// Convert hash to hex and compare prefix
+		char hex[65];
+		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+			sprintf(hex + hi * 2, "%02x", hash[hi]);
+		hex[64] = '\0';
+
+		if (_strnicmp(hex, file_id, id_len) == 0)
+		{
+			memcpy(matched_hash, hash, WH_HASH_SIZE);
+			strncpy(matched_filename, fname, sizeof(matched_filename) - 1);
+			matched_size = fsize;
+			matches++;
+		}
+	}
+
+	if (matches == 0)
+	{
+		LOG_ERROR("Error: No file found with ID prefix: %s\n", file_id);
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	if (matches > 1)
+	{
+		LOG_ERROR("Error: Ambiguous file ID: %s (matches %u files)\n", file_id, matches);
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	// Determine output path
+	char final_output[MAX_PATH];
+	if (output_file)
+	{
+		strncpy(final_output, output_file, sizeof(final_output) - 1);
+		final_output[sizeof(final_output) - 1] = '\0';
+	}
+	else
+	{
+		// Default to ~/Downloads/<original_filename>
+		const char *home = getenv("USERPROFILE");
+		if (!home) home = getenv("HOME");
+		if (!home)
+		{
+			LOG_ERROR("Error: Cannot determine home directory\n");
 			free(response);
 			IpcClient_Disconnect(client);
 			return 1;
 		}
-		hash_bin[i] = (uint8_t)byte_val;
+#ifdef _WIN32
+		snprintf(final_output, sizeof(final_output), "%s\\Downloads\\%s", home, matched_filename);
+#else
+		snprintf(final_output, sizeof(final_output), "%s/Downloads/%s", home, matched_filename);
+#endif
 	}
 
-	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_GET,
-		hash_bin, WH_HASH_SIZE,
+	char size_str[32];
+	FormatSize(matched_size, size_str, sizeof(size_str));
+	printf("Retrieving %s (%s)...\n", matched_filename, size_str);
+
+	// Build FILE_GET payload: [32B manifest_hash][2B path_len][output_path]
+	uint16_t out_path_len = (uint16_t)strlen(final_output);
+	uint32_t fg_payload_size = WH_HASH_SIZE + 2 + out_path_len;
+	uint8_t *fg_payload = (uint8_t *)malloc(fg_payload_size);
+	if (!fg_payload)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	memcpy(fg_payload, matched_hash, WH_HASH_SIZE);
+	WriteUint16LE(fg_payload + WH_HASH_SIZE, out_path_len);
+	memcpy(fg_payload + WH_HASH_SIZE + 2, final_output, out_path_len);
+
+	response_size = 0;
+	ok = IpcClient_SendCommand(client, IPC_CMD_FILE_GET,
+		fg_payload, fg_payload_size,
 		response, IPC_MAX_MESSAGE_SIZE, &response_size);
+	free(fg_payload);
 
 	if (!ok || response_size < 1 || response[0] != IPC_STATUS_OK)
 	{
 		if (response_size >= 1 && response[0] == IPC_STATUS_NOT_FOUND)
-			LOG_ERROR("Error: Chunk not found\n");
+			LOG_ERROR("Error: File not found in registry\n");
 		else
 			LOG_ERROR("Error: Get command failed\n");
 		free(response);
@@ -2412,38 +2554,137 @@ static int cmd_get(int argc, char *argv[])
 		return 1;
 	}
 
-	// Response: [1B status][4B data_size][chunk_data]
-	if (response_size < 1 + 4)
+	// Response: [1B status][8B bytes_written]
+	if (response_size >= 9)
 	{
-		LOG_ERROR("Error: Invalid response\n");
+		uint64_t bytes_written = ReadUint64LE(response + 1);
+		char dl_size_str[32];
+		FormatSize(bytes_written, dl_size_str, sizeof(dl_size_str));
+		printf("Downloaded %s\n", dl_size_str);
+		printf("Saved to %s\n", final_output);
+	}
+
+	free(response);
+	IpcClient_Disconnect(client);
+	return 0;
+}
+
+static const char *StatusString(uint8_t status)
+{
+	switch (status)
+	{
+	case 0x01: return "STORING";
+	case 0x02: return "REPLICATING";
+	case 0x03: return "SAFE";
+	case 0x04: return "OFFLOADED";
+	default:   return "UNKNOWN";
+	}
+}
+
+static int cmd_files(void)
+{
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		return 1;
+	}
+
+	uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+	if (!response)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	uint32_t response_size = 0;
+
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_LIST_FILES,
+		NULL, 0, response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 5 || response[0] != IPC_STATUS_OK)
+	{
+		LOG_ERROR("Error: Failed to list files\n");
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
 	}
 
-	uint32_t data_size = ReadUint32LE(response + 1);
-	uint8_t *chunk_data = response + 1 + 4;
+	uint32_t file_count = ReadUint32LE(response + 1);
 
-	if (output_file)
+	if (file_count == 0)
 	{
-		FILE *fp = fopen(output_file, "wb");
-		if (!fp)
+		printf("\nNo stored files.\n\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 0;
+	}
+
+	printf("\n%-10s %-24s %-10s %s\n", "ID", "NAME", "SIZE", "STATUS");
+	printf("%-10s %-24s %-10s %s\n", "--------", "------------------------", "--------", "----------");
+
+	uint32_t off = 5;
+	for (uint32_t i = 0; i < file_count; i++)
+	{
+		if (off + WH_HASH_SIZE + 1 + 8 + 4 + 4 + 8 + 2 > response_size) break;
+
+		uint8_t *hash = response + off; off += WH_HASH_SIZE;
+		uint8_t status = response[off]; off += 1;
+		uint64_t fsize = ReadUint64LE(response + off); off += 8;
+		uint32_t chunk_count = ReadUint32LE(response + off); off += 4;
+		uint32_t repl_count = ReadUint32LE(response + off); off += 4;
+		off += 8;  // store_time
+		uint16_t name_len = ReadUint16LE(response + off); off += 2;
+
+		char fname[260] = {0};
+		if (name_len > 0 && name_len < 260 && off + name_len <= response_size)
 		{
-			LOG_ERROR("Error: Cannot open output file: %s\n", output_file);
-			free(response);
-			IpcClient_Disconnect(client);
-			return 1;
+			memcpy(fname, response + off, name_len);
+			fname[name_len] = '\0';
 		}
-		fwrite(chunk_data, 1, data_size, fp);
-		fclose(fp);
-		fprintf(stderr, "Retrieved %u bytes -> %s\n", data_size, output_file);
+		off += name_len;
+
+		// Truncate filename for display
+		char display_name[25];
+		if (strlen(fname) > 24)
+		{
+			memcpy(display_name, fname, 21);
+			display_name[21] = '.';
+			display_name[22] = '.';
+			display_name[23] = '.';
+			display_name[24] = '\0';
+		}
+		else
+		{
+			strncpy(display_name, fname, sizeof(display_name) - 1);
+			display_name[sizeof(display_name) - 1] = '\0';
+		}
+
+		char id_str[9];
+		for (int hi = 0; hi < 4; hi++)
+			sprintf(id_str + hi * 2, "%02x", hash[hi]);
+		id_str[8] = '\0';
+
+		char size_str[32];
+		FormatSize(fsize, size_str, sizeof(size_str));
+
+		char status_detail[64];
+		if (status == 0x02)  // REPLICATING
+		{
+			if (chunk_count > 0)
+				snprintf(status_detail, sizeof(status_detail), "REPLICATING (%u%%)",
+					(repl_count * 100) / chunk_count);
+			else
+				snprintf(status_detail, sizeof(status_detail), "REPLICATING");
+		}
+		else
+		{
+			snprintf(status_detail, sizeof(status_detail), "%s", StatusString(status));
+		}
+
+		printf("%-10s %-24s %-10s %s\n", id_str, display_name, size_str, status_detail);
 	}
-	else
-	{
-		// Write binary to stdout
-		fwrite(chunk_data, 1, data_size, stdout);
-		fprintf(stderr, "Retrieved %u bytes\n", data_size);
-	}
+	printf("\n");
 
 	free(response);
 	IpcClient_Disconnect(client);
@@ -2517,6 +2758,53 @@ static int cmd_status(void)
 	{
 		LOG("  DHT:           not available\n");
 	}
+
+	// Fetch file summary via LIST_FILES
+	{
+		uint32_t files_response_size = 0;
+		BOOLEAN files_ok = IpcClient_SendCommand(client, IPC_CMD_LIST_FILES,
+			NULL, 0, response, IPC_MAX_MESSAGE_SIZE, &files_response_size);
+
+		if (files_ok && files_response_size >= 5 && response[0] == IPC_STATUS_OK)
+		{
+			uint32_t file_count = ReadUint32LE(response + 1);
+			uint32_t safe = 0, replicating = 0, offloaded = 0;
+			uint32_t foff = 5;
+
+			for (uint32_t i = 0; i < file_count; i++)
+			{
+				if (foff + WH_HASH_SIZE + 1 + 8 + 4 + 4 + 8 + 2 > files_response_size) break;
+				foff += WH_HASH_SIZE;  // hash
+				uint8_t fstatus = response[foff]; foff += 1;
+				foff += 8;  // size
+				foff += 4;  // chunk_count
+				foff += 4;  // repl_count
+				foff += 8;  // store_time
+				uint16_t name_len = ReadUint16LE(response + foff); foff += 2;
+				foff += name_len;
+
+				if (fstatus == 0x03) safe++;
+				else if (fstatus == 0x02) replicating++;
+				else if (fstatus == 0x04) offloaded++;
+			}
+
+			if (file_count > 0)
+			{
+				LOG("  Stored Files:  %u", file_count);
+				if (safe > 0 || replicating > 0 || offloaded > 0)
+				{
+					printf(" (");
+					BOOLEAN first = TRUE;
+					if (safe > 0) { printf("%u safe", safe); first = FALSE; }
+					if (offloaded > 0) { if (!first) printf(", "); printf("%u offloaded", offloaded); first = FALSE; }
+					if (replicating > 0) { if (!first) printf(", "); printf("%u replicating", replicating); }
+					printf(")");
+				}
+				printf("\n");
+			}
+		}
+	}
+
 	LOG("\n");
 
 	free(response);
@@ -2628,8 +2916,9 @@ static void PrintUsage(void)
 	LOG("Usage:\n");
 	LOG("  wormhole send <file|directory>      Send a file or directory\n");
 	LOG("  wormhole receive <ticket>           Receive a file using a ticket\n");
-	LOG("  wormhole store <file>               Store file chunks via daemon\n");
-	LOG("  wormhole get <hash> [-o <file>]     Retrieve a chunk by hash\n");
+	LOG("  wormhole store <file>               Store file via daemon\n");
+	LOG("  wormhole get <id> [-o <file>]       Retrieve a stored file by ID\n");
+	LOG("  wormhole files                      List stored files\n");
 	LOG("  wormhole status                     Show daemon status\n");
 	LOG("  wormhole config list                Show all settings\n");
 	LOG("  wormhole config get <key>           Get a config value\n");
@@ -2641,7 +2930,8 @@ static void PrintUsage(void)
 	LOG("  wormhole send document.pdf\n");
 	LOG("  wormhole send ./my-project/\n");
 	LOG("  wormhole receive 7-guitar-battery\n");
-	LOG("  wormhole --daemon 4569 get <hash> -o chunk.bin\n\n");
+	LOG("  wormhole store myfile.bin\n");
+	LOG("  wormhole get a1b2c3d4 -o recovered.bin\n\n");
 }
 
 //=============================================================================
@@ -2714,12 +3004,16 @@ int main(int argc, char *argv[])
 	{
 		if (cmd_start + 1 >= argc)
 		{
-			LOG_ERROR("ERROR: Missing chunk hash\n");
+			LOG_ERROR("ERROR: Missing file ID\n");
 			PrintUsage();
 			return 1;
 		}
 		// Pass remaining args after "get" to cmd_get for -o parsing
 		return cmd_get(argc - cmd_start - 1, argv + cmd_start + 1);
+	}
+	else if (strcmp(cmd, "files") == 0)
+	{
+		return cmd_files();
 	}
 	else if (strcmp(cmd, "status") == 0)
 	{

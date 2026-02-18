@@ -1,0 +1,947 @@
+Machine 1 Terminal 1:
+
+C:\Dev\Wormhole\src\build>wormholed.exe --port 4567
+[15:42:33.486] [config] No config file at C:\Users\dylan\.wormhole\config, using defaults
+[15:42:33.486] [daemon] Storage quota: 10 GB
+[15:42:33.486] [daemon] Replication target: 3
+[PeerID] Loaded keypair from C:\Users\dylan\.wormhole\identity
+[15:42:33.487] [daemon] PeerID: 1f498cc3a9b1df606e5c4b1182cf09d1b55def77f61b6bc10891dc204fc5527e
+[15:42:33.487] === wormholed - Wormhole Persistent Node Daemon ===
+[15:42:33.487]   Port:  4567
+[15:42:33.488]   Relay: enabled
+[15:42:33.488] ================================================
+[15:42:33.488] [daemon] Initializing chunk store...
+[15:42:33.488] [daemon] Chunk store ready
+[15:42:33.488] [daemon] Opening MsQuic library...
+[15:42:33.499] [daemon] MsQuic initialized
+[15:42:33.499] [daemon] Loading server configuration...
+[15:42:33.499] Checking for existing Wormhole-Dev certificate...
+[15:42:33.800] Found existing certificate: 130F4FEFFC1A5CF305A1ED7FCD8C5FA4D86B9F85
+[15:42:33.800] [daemon] Certificate thumbprint: 130F4FEFFC1A5CF305A1ED7FCD8C5FA4D86B9F85
+[15:42:33.807] [daemon] Server configuration loaded
+[15:42:33.808] [daemon] Client configuration loaded
+[15:42:33.810] [daemon] QUIC listener started on port 4567
+[15:42:33.811] [ipc] Server listening on \\.\pipe\wormhole_4567
+[15:42:33.811] [worker] Background worker thread started
+[Discovery] Found IPv6 address (priority 75)
+[Discovery] Found IPv6 address (priority 75)
+[Discovery] Found IPv6 address (priority 75)
+[Discovery] Found 3 total endpoints
+[15:42:33.819] [daemon] Discovered 3 endpoints
+[RelayClient] Created client for wormholerelay.com:443 (IPv4)
+[RelayClient] Sent REGISTER (3 endpoints)
+[15:42:33.828] [daemon] Relay registration sent
+[15:42:33.961] [daemon] DHT node initialized on port 4568
+[dht] Bootstrap: sending FIND_NODE(self) to 2604:a880:800:14:0:2:7dad:f000:443
+[15:42:33.961] [daemon] Loaded ledger (1 peers)
+[15:42:33.961] [daemon] Daemon is running. Press Ctrl+C to stop.
+[RelayClient] REGISTERED (session 12882858601788894419)
+[15:42:33.962] [daemon] Relay connected (session 12882858601788894419)
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (0 peers)
+[15:42:38.136] [daemon] Peer discovery: no active peers found
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:43:08.129] [daemon] Peer discovery: found 1 active peers
+[15:43:08.129] [daemon]   Peer 0: 273b2695... (9 endpoints)
+[15:43:08.129] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 2 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[15:43:32.598] [ipc] Client connected
+[15:43:33.074] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
+[15:43:33.078] [worker] File test_10mb.bin: 0/40 chunks replicated
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:43:38.033] [daemon] Peer discovery: found 1 active peers
+[15:43:38.033] [daemon]   Peer 0: 273b2695... (9 endpoints)
+[15:43:38.033] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 2 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:44:08.068] [daemon] Peer discovery: found 1 active peers
+[15:44:08.069] [daemon]   Peer 0: 273b2695... (9 endpoints)
+[15:44:08.069] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 2 nodes
+[15:44:12.882] [ipc] Client connected
+[15:44:12.882] [daemon] STORE request: C:\Users\dylan\Desktop\test_10mb.bin
+[15:44:13.051] [Chunker] Built manifest and stored 40/40 chunks for C:\Users\dylan\Desktop\test_10mb.bin
+[15:44:13.051] [daemon] Stored 40/40 chunks for C:\Users\dylan\Desktop\test_10mb.bin
+[15:44:13.402] [worker] EC: 10 stripes with RS(4,2)
+[15:44:13.594] [replicate-batch] Sending 40 chunks to 192.168.1.122:4567
+[15:44:13.643] [punch] NAT mapping connection succeeded
+[15:44:13.710] [replicate-batch] Hole-punch ACK received, waiting for NAT...
+[15:44:14.717] [replicate-batch] Queued 40 chunks to 192.168.1.122:4567
+[15:44:14.737] [replicate] Connected to peer for replication
+[15:44:14.755] [replicate] Session ticket saved (58 bytes) for 0-RTT
+[15:44:14.786] [daemon] Chunk stored by peer (ACK)
+[15:44:14.787] [daemon] SetReplicaLocation(f87115dd42181ba4..., peer=273b269548789640...): OK
+[15:44:14.800] [daemon] Chunk stored by peer (ACK)
+[15:44:14.802] [daemon] SetReplicaLocation(7393d6584f8d97d1..., peer=273b269548789640...): OK
+[15:44:14.813] [daemon] Chunk stored by peer (ACK)
+[15:44:14.815] [daemon] SetReplicaLocation(221e3f56e0c8f1ab..., peer=273b269548789640...): OK
+[15:44:14.828] [daemon] Chunk stored by peer (ACK)
+[15:44:14.830] [daemon] SetReplicaLocation(b8313576a449b677..., peer=273b269548789640...): OK
+[15:44:14.841] [daemon] Chunk stored by peer (ACK)
+[15:44:14.842] [daemon] SetReplicaLocation(5e1fd366757df172..., peer=273b269548789640...): OK
+[15:44:14.854] [daemon] Chunk stored by peer (ACK)
+[15:44:14.855] [daemon] SetReplicaLocation(1e5d653f376aae13..., peer=273b269548789640...): OK
+[15:44:14.889] [daemon] Chunk stored by peer (ACK)
+[15:44:14.890] [daemon] SetReplicaLocation(fae64fe9412cab83..., peer=273b269548789640...): OK
+[15:44:14.891] [daemon] Chunk stored by peer (ACK)
+[15:44:14.891] [daemon] SetReplicaLocation(abefc3ae9f75331e..., peer=273b269548789640...): OK
+[15:44:14.904] [daemon] Chunk stored by peer (ACK)
+[15:44:14.906] [daemon] SetReplicaLocation(992f23f56aec0ba1..., peer=273b269548789640...): OK
+[15:44:14.928] [daemon] Chunk stored by peer (ACK)
+[15:44:14.929] [daemon] SetReplicaLocation(fa91e08a3a50111d..., peer=273b269548789640...): OK
+[15:44:14.930] [daemon] Chunk stored by peer (ACK)
+[15:44:14.930] [daemon] SetReplicaLocation(cb133effb8e90bf4..., peer=273b269548789640...): OK
+[15:44:14.940] [daemon] Chunk stored by peer (ACK)
+[15:44:14.942] [daemon] SetReplicaLocation(686277b53f3d1c98..., peer=273b269548789640...): OK
+[15:44:14.997] [daemon] Chunk stored by peer (ACK)
+[15:44:14.998] [daemon] SetReplicaLocation(84ea733d08e81eb6..., peer=273b269548789640...): OK
+[15:44:14.998] [daemon] Chunk stored by peer (ACK)
+[15:44:14.999] [daemon] SetReplicaLocation(2232ab4fdec6c047..., peer=273b269548789640...): OK
+[15:44:14.999] [daemon] Chunk stored by peer (ACK)
+[15:44:15.000] [daemon] SetReplicaLocation(f7015f63603ce5ab..., peer=273b269548789640...): OK
+[15:44:15.000] [daemon] Chunk stored by peer (ACK)
+[15:44:15.001] [daemon] SetReplicaLocation(60be2310b2eed281..., peer=273b269548789640...): OK
+[15:44:15.015] [daemon] Chunk stored by peer (ACK)
+[15:44:15.016] [daemon] SetReplicaLocation(c4b869062d865506..., peer=273b269548789640...): OK
+[15:44:15.075] [daemon] Chunk stored by peer (ACK)
+[15:44:15.076] [daemon] SetReplicaLocation(65966d774d68b1a5..., peer=273b269548789640...): OK
+[15:44:15.076] [daemon] Chunk stored by peer (ACK)
+[15:44:15.077] [daemon] SetReplicaLocation(83b9c049484a9415..., peer=273b269548789640...): OK
+[15:44:15.077] [daemon] Chunk stored by peer (ACK)
+[15:44:15.079] [daemon] SetReplicaLocation(dce0224389c9439e..., peer=273b269548789640...): OK
+[15:44:15.079] [daemon] Chunk stored by peer (ACK)
+[15:44:15.080] [daemon] SetReplicaLocation(e28e00ada4a4c605..., peer=273b269548789640...): OK
+[15:44:15.103] [daemon] Chunk stored by peer (ACK)
+[15:44:15.104] [daemon] SetReplicaLocation(6d6cf853f1064e11..., peer=273b269548789640...): OK
+[15:44:15.175] [daemon] Chunk stored by peer (ACK)
+[15:44:15.176] [daemon] SetReplicaLocation(fe24378a3bc681a3..., peer=273b269548789640...): OK
+[15:44:15.176] [daemon] Chunk stored by peer (ACK)
+[15:44:15.176] [daemon] SetReplicaLocation(172461d5a076a33b..., peer=273b269548789640...): OK
+[15:44:15.177] [daemon] Chunk stored by peer (ACK)
+[15:44:15.177] [daemon] SetReplicaLocation(87be971b171251fe..., peer=273b269548789640...): OK
+[15:44:15.178] [daemon] Chunk stored by peer (ACK)
+[15:44:15.178] [daemon] SetReplicaLocation(b829e5adc5a082c0..., peer=273b269548789640...): OK
+[15:44:15.203] [daemon] Chunk stored by peer (ACK)
+[15:44:15.204] [daemon] SetReplicaLocation(7e34270aca865c17..., peer=273b269548789640...): OK
+[15:44:15.206] [daemon] Chunk stored by peer (ACK)
+[15:44:15.206] [daemon] SetReplicaLocation(4f77096fcc225134..., peer=273b269548789640...): OK
+[15:44:15.258] [daemon] Chunk stored by peer (ACK)
+[15:44:15.259] [daemon] SetReplicaLocation(eb39124db97a6701..., peer=273b269548789640...): OK
+[15:44:15.259] [daemon] Chunk stored by peer (ACK)
+[15:44:15.262] [daemon] SetReplicaLocation(d26a6cfd7ad5d206..., peer=273b269548789640...): OK
+[15:44:15.262] [daemon] Chunk stored by peer (ACK)
+[15:44:15.262] [daemon] SetReplicaLocation(a5809cf4dbac01f6..., peer=273b269548789640...): OK
+[15:44:15.263] [daemon] Chunk stored by peer (ACK)
+[15:44:15.263] [daemon] SetReplicaLocation(d34d989689e4f5f3..., peer=273b269548789640...): OK
+[15:44:15.285] [daemon] Chunk stored by peer (ACK)
+[15:44:15.286] [daemon] SetReplicaLocation(5f351c26bfe775d9..., peer=273b269548789640...): OK
+[15:44:15.286] [daemon] Chunk stored by peer (ACK)
+[15:44:15.287] [daemon] SetReplicaLocation(9037f9d691e1cb66..., peer=273b269548789640...): OK
+[15:44:15.347] [daemon] Chunk stored by peer (ACK)
+[15:44:15.347] [daemon] SetReplicaLocation(0e4e0c89defccc41..., peer=273b269548789640...): OK
+[15:44:15.347] [daemon] Chunk stored by peer (ACK)
+[15:44:15.349] [daemon] SetReplicaLocation(0a79ecc6569919fd..., peer=273b269548789640...): OK
+[15:44:15.349] [daemon] Chunk stored by peer (ACK)
+[15:44:15.349] [daemon] SetReplicaLocation(09834aa7d8d965be..., peer=273b269548789640...): OK
+[15:44:15.350] [daemon] Chunk stored by peer (ACK)
+[15:44:15.350] [daemon] SetReplicaLocation(0fba16fde9324d7d..., peer=273b269548789640...): OK
+[15:44:15.350] [daemon] Chunk stored by peer (ACK)
+[15:44:15.351] [daemon] SetReplicaLocation(a724fcc27b0c112e..., peer=273b269548789640...): OK
+[15:44:15.361] [daemon] Chunk stored by peer (ACK)
+[15:44:15.361] [daemon] SetReplicaLocation(64b83880be9b61e5..., peer=273b269548789640...): OK
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[15:44:16.059] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
+[15:44:16.062] [worker] File test_10mb.bin: 0/40 chunks replicated
+[15:44:16.063] [replicate-batch] Sending 20 chunks to 192.168.1.122:4567
+[15:44:16.075] [punch] NAT mapping connection succeeded
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[15:44:16.178] [replicate-batch] Hole-punch ACK received, waiting for NAT...
+[15:44:17.193] [replicate-batch] Queued 20 chunks to 192.168.1.122:4567
+[15:44:17.213] [replicate] Connected to peer for replication
+[15:44:17.228] [replicate] Session ticket saved (58 bytes) for 0-RTT
+[15:44:17.269] [daemon] Chunk stored by peer (ACK)
+[15:44:17.270] [daemon] SetReplicaLocation(51e9b034baf3482f..., peer=273b269548789640...): OK
+[15:44:17.286] [daemon] Chunk stored by peer (ACK)
+[15:44:17.287] [daemon] SetReplicaLocation(21513c1261f90c38..., peer=273b269548789640...): OK
+[15:44:17.298] [daemon] Chunk stored by peer (ACK)
+[15:44:17.299] [daemon] SetReplicaLocation(8fbc7cce28eec857..., peer=273b269548789640...): OK
+[15:44:17.310] [daemon] Chunk stored by peer (ACK)
+[15:44:17.311] [daemon] SetReplicaLocation(c3cc5147398f837c..., peer=273b269548789640...): OK
+[15:44:17.324] [daemon] Chunk stored by peer (ACK)
+[15:44:17.325] [daemon] SetReplicaLocation(ddfbc24b9d33ff16..., peer=273b269548789640...): OK
+[15:44:17.337] [daemon] Chunk stored by peer (ACK)
+[15:44:17.338] [daemon] SetReplicaLocation(93fa62ea35bd44f5..., peer=273b269548789640...): OK
+[15:44:17.363] [daemon] Chunk stored by peer (ACK)
+[15:44:17.364] [daemon] SetReplicaLocation(7df3af3e7ea0b611..., peer=273b269548789640...): OK
+[15:44:17.365] [daemon] Chunk stored by peer (ACK)
+[15:44:17.365] [daemon] SetReplicaLocation(46b760bd116fb072..., peer=273b269548789640...): OK
+[15:44:17.391] [daemon] Chunk stored by peer (ACK)
+[15:44:17.392] [daemon] SetReplicaLocation(11bffb995dc0badf..., peer=273b269548789640...): OK
+[15:44:17.427] [daemon] Chunk stored by peer (ACK)
+[15:44:17.429] [daemon] SetReplicaLocation(d13e306de5737f07..., peer=273b269548789640...): OK
+[15:44:17.429] [daemon] Chunk stored by peer (ACK)
+[15:44:17.430] [daemon] SetReplicaLocation(4c7e68a3e9a3d3d7..., peer=273b269548789640...): OK
+[15:44:17.430] [daemon] Chunk stored by peer (ACK)
+[15:44:17.430] [daemon] SetReplicaLocation(6034076bb76934ac..., peer=273b269548789640...): OK
+[15:44:17.445] [daemon] Chunk stored by peer (ACK)
+[15:44:17.446] [daemon] SetReplicaLocation(e797337c88b29a3e..., peer=273b269548789640...): OK
+[15:44:17.484] [daemon] Chunk stored by peer (ACK)
+[15:44:17.485] [daemon] SetReplicaLocation(61278bcba6e2088c..., peer=273b269548789640...): OK
+[15:44:17.485] [daemon] Chunk stored by peer (ACK)
+[15:44:17.486] [daemon] SetReplicaLocation(def7ab81f38e5782..., peer=273b269548789640...): OK
+[15:44:17.486] [daemon] Chunk stored by peer (ACK)
+[15:44:17.487] [daemon] SetReplicaLocation(df471635baba4d7c..., peer=273b269548789640...): OK
+[15:44:17.494] [daemon] Chunk stored by peer (ACK)
+[15:44:17.495] [daemon] SetReplicaLocation(47c9c02534e344b4..., peer=273b269548789640...): OK
+[15:44:17.520] [daemon] Chunk stored by peer (ACK)
+[15:44:17.521] [daemon] SetReplicaLocation(e1b3ebd104a034cc..., peer=273b269548789640...): OK
+[15:44:17.521] [daemon] Chunk stored by peer (ACK)
+[15:44:17.522] [daemon] SetReplicaLocation(11791b6f02e66d9e..., peer=273b269548789640...): OK
+[15:44:17.529] [daemon] Chunk stored by peer (ACK)
+[15:44:17.529] [daemon] SetReplicaLocation(9fad74f5a8d90655..., peer=273b269548789640...): OK
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[dht] Announcing chunk to 2 nodes
+[15:44:17.859] [worker] EC metadata saved to C:\Users\dylan\.wormhole\ec\d0d6b4510bdf2b04ce374d55f67ab64510fcd98d939a950942753e6a80c5703f.ec
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[15:44:33.063] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
+[15:44:33.067] [worker] File test_10mb.bin: 0/40 chunks replicated
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:44:38.135] [daemon] Peer discovery: found 1 active peers
+[15:44:38.135] [daemon]   Peer 0: 273b2695... (9 endpoints)
+[15:44:38.136] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 2 nodes
+[15:44:45.562] [ipc] Client connected
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[15:45:01.952]
+[daemon] Shutdown requested, cleaning up...
+[15:45:01.973] [daemon] Shutting down...
+[15:45:01.973] [worker] Background worker thread exiting
+[15:45:01.974] [ipc] Stopping server...
+[15:45:01.974] [ipc] Client connected
+[15:45:01.974] [ipc] Server thread exiting
+[15:45:02.081] [ipc] Server stopped
+[15:45:02.083] [daemon] DHT node shut down
+[RelayClient] Sent GOODBYE (reason: error)
+[15:45:02.084] [daemon] Relay disconnected
+[RelayClient] Destroyed
+[15:45:02.085] [daemon] Listener stop complete
+[15:45:02.085] [daemon] QUIC listener stopped
+[15:45:02.090] [daemon] Shutdown complete
+
+C:\Dev\Wormhole\src\build>
+
+
+Machine 1 Terminal 2:
+
+C:\Dev\Wormhole\src\build>wormhole.exe status
+[15:43:32.598] === Wormhole - Secure P2P File Transfer ===
+
+[15:43:32.599]
+Wormhole Daemon Status
+[15:43:32.599] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+[15:43:32.599]   Peers:         0
+[15:43:32.599]   Chunks:        0
+[15:43:32.599]   Storage Used:  0 bytes
+[15:43:32.599]   Relay:         connected
+[15:43:32.599]   Listener:      active
+[15:43:32.599]   DHT Nodes:     2
+[15:43:32.599]   DHT Values:    0
+[15:43:32.599]   DHT Sent:      4 msgs
+[15:43:32.600]   DHT Received:  3 msgs
+[15:43:32.600]   Stored Files:  1 (1 replicating)
+[15:43:32.600]
+
+C:\Dev\Wormhole\src\build>wormhole.exe store C:\Users\dylan\Desktop\test_10mb.bin
+[15:44:12.881] === Wormhole - Secure P2P File Transfer ===
+
+Stored test_10mb.bin (10.0 MB)
+  File ID: d0d6b451
+  Replicating to network...
+
+C:\Dev\Wormhole\src\build>wormhole.exe status
+[15:44:45.561] === Wormhole - Secure P2P File Transfer ===
+
+[15:44:45.562]
+Wormhole Daemon Status
+[15:44:45.562] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+[15:44:45.562]   Peers:         0
+[15:44:45.562]   Chunks:        60
+[15:44:45.562]   Storage Used:  15728640 bytes
+[15:44:45.563]   Relay:         connected
+[15:44:45.563]   Listener:      active
+[15:44:45.563]   DHT Nodes:     2
+[15:44:45.563]   DHT Values:    0
+[15:44:45.563]   DHT Sent:      129 msgs
+[15:44:45.563]   DHT Received:  128 msgs
+[15:44:45.564]   Stored Files:  1 (1 replicating)
+[15:44:45.564]
+
+C:\Dev\Wormhole\src\build>
+
+
+Machine 2 Terminal 1:
+
+C:\Users\dylan\Desktop\Wormhole>wormholed.exe --port 4567
+[15:42:45.857] [config] No config file at C:\Users\dylan\.wormhole\config, using defaults
+[15:42:45.857] [daemon] Storage quota: 10 GB
+[15:42:45.857] [daemon] Replication target: 3
+[PeerID] No existing keypair found, generating new one...
+[PeerID] Generated new keypair
+[PeerID] Saved keypair to C:\Users\dylan\.wormhole\identity
+[15:42:45.857] [daemon] PeerID: 273b269548789640496831bd0216bd4036dc9d9ab415b21b9d82dc7512c21ebd
+[15:42:45.857] === wormholed - Wormhole Persistent Node Daemon ===
+[15:42:45.857]   Port:  4567
+[15:42:45.857]   Relay: enabled
+[15:42:45.857] ================================================
+[15:42:45.857] [daemon] Initializing chunk store...
+[15:42:45.864] [daemon] Chunk store ready
+[15:42:45.864] [daemon] Opening MsQuic library...
+[15:42:45.878] [daemon] MsQuic initialized
+[15:42:45.878] [daemon] Loading server configuration...
+[15:42:45.878] Checking for existing Wormhole-Dev certificate...
+[15:42:46.396] Found existing certificate: 0576AA94D8CAB0FDFB3960EC45CC051C9AEA18CB
+[15:42:46.396] [daemon] Certificate thumbprint: 0576AA94D8CAB0FDFB3960EC45CC051C9AEA18CB
+[15:42:46.407] [daemon] Server configuration loaded
+[15:42:46.407] [daemon] Client configuration loaded
+[15:42:46.407] [daemon] QUIC listener started on port 4567
+[15:42:46.407] [ipc] Server listening on \\.\pipe\wormhole_4567
+[15:42:46.407] [worker] Background worker thread started
+[Discovery] Found LAN address (priority 0)
+[Discovery] Found LAN address (priority 0)
+[Discovery] Found LAN address (priority 0)
+[Discovery] Found LAN address (priority 0)
+[Discovery] Found IPv6 address (priority 75)
+[Discovery] Found IPv6 address (priority 75)
+[Discovery] Found IPv6 address (priority 75)
+[Discovery] Found IPv6 address (priority 75)
+[Discovery] Found 8 total endpoints
+[15:42:46.423] [daemon] Discovered 8 endpoints
+[RelayClient] Created client for wormholerelay.com:443 (IPv4)
+[RelayClient] Sent REGISTER (8 endpoints)
+[15:42:46.423] [daemon] Relay registration sent
+[15:42:46.441] [daemon] DHT node initialized on port 4568
+[dht] Bootstrap: sending FIND_NODE(self) to 2604:a880:800:14:0:2:7dad:f000:443
+[15:42:46.441] [daemon] Starting with fresh ledger
+[15:42:46.441] [daemon] Daemon is running. Press Ctrl+C to stop.
+[RelayClient] REGISTERED (session 12741439608864559730)
+[15:42:46.460] [daemon] Relay connected (session 12741439608864559730)
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:42:51.062] [daemon] Peer discovery: found 1 active peers
+[15:42:51.062] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
+[15:42:51.064] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
+[dht] FIND_NODE response: 2 nodes
+[dht] Received msg type 0x22 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:43:21.066] [daemon] Peer discovery: found 1 active peers
+[15:43:21.066] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
+[15:43:21.066] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
+[dht] FIND_NODE response: 2 nodes
+[dht] Received msg type 0x22 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[15:43:42.020] [ipc] Client connected
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:43:51.065] [daemon] Peer discovery: found 1 active peers
+[15:43:51.065] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
+[15:43:51.078] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
+[dht] FIND_NODE response: 2 nodes
+[dht] Received msg type 0x22 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[15:44:13.561] [daemon] Incoming QUIC connection
+[15:44:13.592] [punch] Opened connection to 107.204.80.156:4567 (NAT mapping)
+[15:44:13.612] [daemon] Peer connected
+[15:44:13.612] [daemon] Peer initiated shutdown (error: 0x0)
+[15:44:13.637] [daemon] Peer disconnected (active peers: 0)
+[15:44:14.681] [daemon] Incoming QUIC connection
+[15:44:14.695] [daemon] Peer connected
+[15:44:14.695] [daemon] Peer opened stream
+[15:44:14.727] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.749] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.764] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.780] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.786] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.803] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.819] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.819] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.850] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.869] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.880] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.891] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.913] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.921] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.935] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.945] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.962] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.974] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:14.996] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.006] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.022] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.046] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.068] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.082] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.095] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.113] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.135] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.151] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.174] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.186] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.198] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.208] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.224] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.236] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.256] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.266] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.275] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.286] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.295] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.311] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:15.321] [daemon] PEER_SEND_SHUTDOWN: closing send direction
+[15:44:15.325] [daemon] Peer initiated shutdown (error: 0x0)
+[15:44:15.387] [daemon] Peer disconnected (active peers: 0)
+[15:44:16.027] [daemon] Incoming QUIC connection
+[15:44:16.033] [daemon] Peer connected
+[15:44:16.033] [daemon] Peer initiated shutdown (error: 0x0)
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[15:44:16.058] [daemon] Peer disconnected (active peers: 0)
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[15:44:16.087] [punch] Opened connection to 107.204.80.156:4567 (NAT mapping)
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[15:44:17.158] [daemon] Incoming QUIC connection
+[15:44:17.179] [daemon] Peer connected
+[15:44:17.181] [daemon] Peer opened stream
+[15:44:17.207] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.233] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.249] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.261] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.273] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.287] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.304] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.315] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.330] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.351] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.366] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.377] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.392] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.414] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.414] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.435] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.446] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.461] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.461] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.477] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
+[15:44:17.483] [daemon] PEER_SEND_SHUTDOWN: closing send direction
+[15:44:17.493] [daemon] Peer initiated shutdown (error: 0x0)
+[15:44:17.525] [daemon] Peer disconnected (active peers: 0)
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received STORE: 1 locations for key
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:44:21.093] [daemon] Peer discovery: found 1 active peers
+[15:44:21.093] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
+[15:44:21.093] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
+[dht] FIND_NODE response: 2 nodes
+[dht] Received msg type 0x22 from fd7a:115c:a1e0::3437:2229:4568
+[dht] Received FIND_NODE, returning 2 nodes
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[15:44:51.093] [daemon] Peer discovery: found 1 active peers
+[15:44:51.093] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
+[15:44:51.093] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
+[dht] FIND_NODE response: 2 nodes
+[15:44:51.494] [ipc] Client connected
+[15:45:06.042]
+[daemon] Shutdown requested, cleaning up...
+[15:45:06.074] [daemon] Shutting down...
+[15:45:06.074] [worker] Background worker thread exiting
+[15:45:06.075] [ipc] Stopping server...
+[15:45:06.075] [ipc] Client connected
+[15:45:06.075] [ipc] Server thread exiting
+[15:45:06.186] [ipc] Server stopped
+[15:45:06.190] [daemon] DHT node shut down
+[RelayClient] Sent GOODBYE (reason: error)
+[15:45:06.199] [daemon] Relay disconnected
+[RelayClient] Destroyed
+[15:45:06.202] [daemon] Listener stop complete
+[15:45:06.204] [daemon] QUIC listener stopped
+[15:45:06.222] [daemon] Shutdown complete
+
+C:\Users\dylan\Desktop\Wormhole>
+
+
+Machine 2 Terminal 2:
+
+C:\Users\dylan\Desktop\Wormhole>wormhole.exe status
+[15:43:42.020] === Wormhole - Secure P2P File Transfer ===
+
+[15:43:42.024]
+Wormhole Daemon Status
+[15:43:42.024] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+[15:43:42.024]   Peers:         0
+[15:43:42.024]   Chunks:        0
+[15:43:42.024]   Storage Used:  0 bytes
+[15:43:42.024]   Relay:         connected
+[15:43:42.024]   Listener:      active
+[15:43:42.024]   DHT Nodes:     2
+[15:43:42.024]   DHT Values:    0
+[15:43:42.024]   DHT Sent:      5 msgs
+[15:43:42.024]   DHT Received:  4 msgs
+[15:43:42.024]
+
+C:\Users\dylan\Desktop\Wormhole>wormhole.exe status
+[15:44:51.494] === Wormhole - Secure P2P File Transfer ===
+
+[15:44:51.494]
+Wormhole Daemon Status
+[15:44:51.494] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+[15:44:51.494]   Peers:         0
+[15:44:51.494]   Chunks:        60
+[15:44:51.494]   Storage Used:  15728640 bytes
+[15:44:51.494]   Relay:         connected
+[15:44:51.494]   Listener:      active
+[15:44:51.494]   DHT Nodes:     2
+[15:44:51.494]   DHT Values:    60
+[15:44:51.494]   DHT Sent:      130 msgs
+[15:44:51.494]   DHT Received:  129 msgs
+[15:44:51.494]
+
+C:\Users\dylan\Desktop\Wormhole>
+
+
+Relay Server:
+
+nothing in the relay logs

@@ -46,6 +46,7 @@ static void EnsureStoreLock(void)
 
 // Forward declarations (defined later in the file)
 static BOOLEAN GetReplicaBasePath(char *path, size_t path_len);
+static BOOLEAN GetAccessTimePath(char *path, size_t path_len);
 void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE]);
 
 // Convert a 32-byte hash to a 64-char hex string (no null terminator added).
@@ -360,6 +361,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
 
     if (!EnsureReplicaDirs(hash))
     {
+        LOG_ERROR("[chunk_store] EnsureReplicaDirs failed for hash\n");
 #ifdef _WIN32
         LeaveCriticalSection(&g_store_lock);
 #endif
@@ -369,6 +371,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     char path[MAX_PATH];
     if (!GetReplicaPath(hash, path, sizeof(path)))
     {
+        LOG_ERROR("[chunk_store] GetReplicaPath failed\n");
 #ifdef _WIN32
         LeaveCriticalSection(&g_store_lock);
 #endif
@@ -411,6 +414,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     // Add the new peer
     if (count >= MAX_REPLICAS)
     {
+        LOG_ERROR("[chunk_store] Replica at capacity (%u)\n", MAX_REPLICAS);
 #ifdef _WIN32
         LeaveCriticalSection(&g_store_lock);
 #endif
@@ -424,6 +428,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     fh = fopen(path, "wb");
     if (!fh)
     {
+        LOG_ERROR("[chunk_store] Failed to open replica file: %s\n", path);
 #ifdef _WIN32
         LeaveCriticalSection(&g_store_lock);
 #endif
@@ -479,6 +484,86 @@ uint32_t ChunkStore_GetReplicaLocations(const uint8_t hash[WH_HASH_SIZE],
     return (uint32_t)read;
 }
 
+// Access time entry: [32B hash][8B unix_timestamp]
+#define ACCESS_ENTRY_SIZE (WH_HASH_SIZE + 8)
+
+//=============================================================================
+// Replica Metadata Clearing
+//=============================================================================
+
+void ChunkStore_ClearReplicas(const uint8_t hash[WH_HASH_SIZE])
+{
+    char path[MAX_PATH];
+    if (GetReplicaPath(hash, path, sizeof(path)))
+        remove(path);
+}
+
+//=============================================================================
+// Chunk Deletion
+//=============================================================================
+
+BOOLEAN ChunkStore_Delete(const uint8_t hash[WH_HASH_SIZE])
+{
+#ifdef _WIN32
+    EnsureStoreLock();
+    EnterCriticalSection(&g_store_lock);
+#endif
+
+    // Remove chunk data file
+    char chunk_path[MAX_PATH];
+    if (GetChunkPath(hash, chunk_path, sizeof(chunk_path)))
+    {
+        remove(chunk_path);
+    }
+
+    // Remove replica metadata
+    char replica_path[MAX_PATH];
+    if (GetReplicaPath(hash, replica_path, sizeof(replica_path)))
+    {
+        remove(replica_path);
+    }
+
+    // Remove proof cache
+    Proof_DeleteCache(hash);
+
+    // Remove from access_times.dat
+    char at_path[MAX_PATH];
+    if (GetAccessTimePath(at_path, sizeof(at_path)))
+    {
+        FILE *old_fh = fopen(at_path, "rb");
+        if (old_fh)
+        {
+            char tmp_path[MAX_PATH];
+            snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+            FILE *new_fh = fopen(tmp_path, "wb");
+            if (new_fh)
+            {
+                uint8_t at_entry[ACCESS_ENTRY_SIZE];
+                while (fread(at_entry, 1, ACCESS_ENTRY_SIZE, old_fh) == ACCESS_ENTRY_SIZE)
+                {
+                    if (memcmp(at_entry, hash, WH_HASH_SIZE) != 0)
+                    {
+                        fwrite(at_entry, 1, ACCESS_ENTRY_SIZE, new_fh);
+                    }
+                }
+                fclose(new_fh);
+                fclose(old_fh);
+                remove(at_path);
+                rename(tmp_path, at_path);
+            }
+            else
+            {
+                fclose(old_fh);
+            }
+        }
+    }
+
+#ifdef _WIN32
+    LeaveCriticalSection(&g_store_lock);
+#endif
+    return TRUE;
+}
+
 //=============================================================================
 // Storage Quota and LRU Eviction
 //=============================================================================
@@ -496,9 +581,6 @@ static BOOLEAN GetAccessTimePath(char *path, size_t path_len)
 #endif
     return TRUE;
 }
-
-// Access time entry: [32B hash][8B unix_timestamp]
-#define ACCESS_ENTRY_SIZE (WH_HASH_SIZE + 8)
 
 void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
 {
