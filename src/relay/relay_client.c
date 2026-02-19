@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 //
 // relay_client.c
 // Wormhole - Relay Client (Protocol Communication)

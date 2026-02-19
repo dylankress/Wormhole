@@ -39,18 +39,25 @@ static char g_ipc_pipe[256] = {0};
 static void CleanupMsQuic(void);
 
 // Global state for clean Ctrl+C shutdown
-static volatile LONG g_shutdown_requested = 0;
+static volatile int32_t g_shutdown_requested = 0;
 static RELAY_CLIENT* g_active_relay_client = NULL;
 static HQUIC g_active_listener = NULL;
 static FILE_MANIFEST* g_active_manifest = NULL;
 static HQUIC g_active_connection = NULL;   // Active QUIC connection for Ctrl+C cleanup
 static RELAY_FORWARDER* g_active_relay_forwarder = NULL;
 
+#ifdef _WIN32
 static BOOL WINAPI ConsoleCtrlHandler(DWORD ctrl_type)
 {
 	if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_CLOSE_EVENT)
 	{
-		if (InterlockedCompareExchange(&g_shutdown_requested, 1, 0) == 0)
+#else
+static void SignalHandler(int sig)
+{
+	(void)sig;
+	{
+#endif
+		if (WH_ATOMIC_CAS(&g_shutdown_requested, 0, 1) == 0)
 		{
 			LOG("\n[Shutdown] Ctrl+C received, cleaning up...\n");
 
@@ -74,7 +81,7 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD ctrl_type)
 			if (g_active_connection && MsQuic)
 			{
 				MsQuic->ConnectionShutdown(g_active_connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-				Sleep(200);  // Let CONNECTION_CLOSE frame be transmitted
+				WH_SLEEP_MS(200);  // Let CONNECTION_CLOSE frame be transmitted
 				g_active_connection = NULL;
 			}
 
@@ -100,10 +107,15 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD ctrl_type)
 #endif
 			LOG("[Shutdown] Cleanup complete\n");
 		}
+#ifdef _WIN32
 		return TRUE;  // Handled
 	}
 	return FALSE;
 }
+#else
+	}
+}
+#endif
 
 //=============================================================================
 // Forward Declarations
@@ -128,11 +140,14 @@ static void PrintUsage(void);
 
 static BOOLEAN SaveSessionTicket(const uint8_t *ticket, uint32_t len)
 {
+#ifdef _WIN32
     const char *home = getenv("USERPROFILE");
-    if (!home) home = getenv("HOME");
+#else
+    const char *home = getenv("HOME");
+#endif
     if (!home) return FALSE;
-    char path[260];
-    snprintf(path, sizeof(path), "%s\\.wormhole\\session_ticket", home);
+    char path[MAX_PATH];
+    snprintf(path, sizeof(path), "%s" PATH_SEP_STR ".wormhole" PATH_SEP_STR "session_ticket", home);
     FILE *f = fopen(path, "wb");
     if (!f) return FALSE;
     fwrite(&len, sizeof(len), 1, f);
@@ -143,11 +158,14 @@ static BOOLEAN SaveSessionTicket(const uint8_t *ticket, uint32_t len)
 
 static uint8_t *LoadSessionTicket(uint32_t *out_len)
 {
+#ifdef _WIN32
     const char *home = getenv("USERPROFILE");
-    if (!home) home = getenv("HOME");
+#else
+    const char *home = getenv("HOME");
+#endif
     if (!home) return NULL;
-    char path[260];
-    snprintf(path, sizeof(path), "%s\\.wormhole\\session_ticket", home);
+    char path[MAX_PATH];
+    snprintf(path, sizeof(path), "%s" PATH_SEP_STR ".wormhole" PATH_SEP_STR "session_ticket", home);
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     uint32_t len;
@@ -263,6 +281,7 @@ static BOOLEAN ServerLoadConfiguration(void)
 	LOG("[server] Loading configuration...\n");
 
 	// Step 1: Generate or retrieve self-signed certificate
+#ifdef _WIN32
 	char thumbprint[41];
 	if (!GenerateSelfSignedCert(thumbprint, sizeof(thumbprint)))
 	{
@@ -294,6 +313,34 @@ static BOOLEAN ServerLoadConfiguration(void)
 	cred_config.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_HASH_STORE;
 	cred_config.CertificateHashStore = &cert_hash_store;
 	cred_config.Flags = QUIC_CREDENTIAL_FLAG_NONE;
+#else
+	char cert_path_buf[MAX_PATH];
+	if (!GenerateSelfSignedCert(cert_path_buf, sizeof(cert_path_buf)))
+	{
+		LOG_ERROR("[server] ERROR: Failed to generate/retrieve certificate\n");
+		return FALSE;
+	}
+
+	char cert_path[MAX_PATH], key_path[MAX_PATH];
+	if (!Crypto_GetCertPaths(cert_path, sizeof(cert_path), key_path, sizeof(key_path)))
+	{
+		LOG_ERROR("[server] ERROR: Failed to determine cert paths\n");
+		return FALSE;
+	}
+
+	LOG("[server] Using PEM certificate: %s\n", cert_path);
+
+	QUIC_CERTIFICATE_FILE cert_file;
+	memset(&cert_file, 0, sizeof(cert_file));
+	cert_file.CertificateFile = cert_path;
+	cert_file.PrivateKeyFile = key_path;
+
+	QUIC_CREDENTIAL_CONFIG cred_config;
+	memset(&cred_config, 0, sizeof(cred_config));
+	cred_config.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
+	cred_config.CertificateFile = &cert_file;
+	cred_config.Flags = QUIC_CREDENTIAL_FLAG_NONE;
+#endif
 
 	// Step 3: Create QUIC settings
 	QUIC_SETTINGS settings = { 0 };
@@ -564,8 +611,8 @@ typedef struct {
 	BOOLEAN peer_disconnected;      // Set by SHUTDOWN_INITIATED_BY_PEER/TRANSPORT
 	BOOLEAN transfer_complete_received; // Set by stream.c when TRANSFER_COMPLETE msg arrives
 	uint64_t peer_error_code;       // Error code from SHUTDOWN_INITIATED_BY_PEER (0 = graceful)
-	HANDLE receiver_connect_event;
-	HANDLE transfer_done_event;
+	WH_EVENT receiver_connect_event;
+	WH_EVENT transfer_done_event;
 	HQUIC connection;
 } SEND_SERVER_CONTEXT;
 
@@ -608,7 +655,7 @@ static QUIC_STATUS QUIC_API ServerListenerCallback_Send(
 			}
 			
 			ctx->receiver_connected = TRUE;
-			SetEvent(ctx->receiver_connect_event);
+			WH_EVENT_SET(ctx->receiver_connect_event);
 			
 			return QUIC_STATUS_SUCCESS;
 		}
@@ -675,7 +722,7 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 			if (ctx->transfer_complete_received)
 			{
 				// Genuine success — TRANSFER_COMPLETE was received before connection closed
-				SetEvent(ctx->transfer_done_event);
+				WH_EVENT_SET(ctx->transfer_done_event);
 			}
 			else
 			{
@@ -686,7 +733,7 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 				ctx->connection = NULL;
 				ctx->peer_disconnected = FALSE;
 				ctx->transfer_failed = TRUE;
-				SetEvent(ctx->transfer_done_event);
+				WH_EVENT_SET(ctx->transfer_done_event);
 			}
 		}
 		return QUIC_STATUS_SUCCESS;
@@ -710,8 +757,8 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 // Context for receiver's QUIC client
 typedef struct {
 	BOOLEAN connected;
-	HANDLE connect_event;
-	HANDLE transfer_done_event;
+	WH_EVENT connect_event;
+	WH_EVENT transfer_done_event;
 	char downloads_path[MAX_PATH];
 	CHUNK_RECEIVE_CONTEXT *chunk_recv_ctx;
 } RECEIVE_CLIENT_CONTEXT;
@@ -731,7 +778,7 @@ static QUIC_STATUS QUIC_API ClientConnectionCallback_Receive(
 			LOG("[Receive] Connected to sender!\n");
 			ctx->connected = TRUE;
 			g_active_connection = Connection;
-			SetEvent(ctx->connect_event);
+			WH_EVENT_SET(ctx->connect_event);
 			return QUIC_STATUS_SUCCESS;
 		}
 
@@ -939,8 +986,8 @@ struct PARALLEL_CONNECT_CTX {
 	PER_CONN_CTX per_conn[MAX_ENDPOINTS];
 	uint16_t count;
 	HQUIC winning_connection;
-	HANDLE race_event;
-	volatile LONG race_won;
+	WH_EVENT race_event;
+	volatile int32_t race_won;
 	uint16_t winning_index;
 };
 
@@ -958,7 +1005,7 @@ static QUIC_STATUS QUIC_API RaceConnectionCallback(
 	{
 		case QUIC_CONNECTION_EVENT_CONNECTED:
 		{
-			if (InterlockedCompareExchange(&shared->race_won, 1, 0) == 0)
+			if (WH_ATOMIC_CAS(&shared->race_won, 0, 1) == 0)
 			{
 				LOG("[Receive] Endpoint %u connected first - winner!\n", ctx->index);
 				shared->winning_connection = Connection;
@@ -973,7 +1020,7 @@ static QUIC_STATUS QUIC_API RaceConnectionCallback(
 					shared->client_ctx);
 
 				shared->client_ctx->connected = TRUE;
-				SetEvent(shared->race_event);
+				WH_EVENT_SET(shared->race_event);
 			}
 			else
 			{
@@ -1001,7 +1048,17 @@ static QUIC_STATUS QUIC_API RaceConnectionCallback(
 static int cmd_send(const char* filepath)
 {
 	// Install Ctrl+C handler for clean shutdown
+#ifdef _WIN32
 	SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+#else
+	{
+		struct sigaction sa;
+		memset(&sa, 0, sizeof(sa));
+		sa.sa_handler = SignalHandler;
+		sigaction(SIGINT, &sa, NULL);
+		sigaction(SIGTERM, &sa, NULL);
+	}
+#endif
 
 	LOG("\n═══════════════════════════════════════\n");
 	LOG("  WORMHOLE SEND\n");
@@ -1403,8 +1460,8 @@ static int cmd_send(const char* filepath)
 	server_ctx.peer_disconnected = FALSE;
 	server_ctx.peer_error_code = UINT64_MAX;
 	server_ctx.connection = NULL;
-	server_ctx.receiver_connect_event = CreateEvent(NULL, FALSE, FALSE, NULL);
-	server_ctx.transfer_done_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+	server_ctx.receiver_connect_event = WH_EVENT_CREATE();
+	server_ctx.transfer_done_event = WH_EVENT_CREATE();
 
 	if (!server_ctx.receiver_connect_event || !server_ctx.transfer_done_event)
 	{
@@ -1430,8 +1487,8 @@ static int cmd_send(const char* filepath)
 	if (QUIC_FAILED(status))
 	{
 		LOG_ERROR("Error: Failed to create QUIC listener: 0x%x\n", status);
-		CloseHandle(server_ctx.receiver_connect_event);
-		CloseHandle(server_ctx.transfer_done_event);
+		WH_EVENT_DESTROY(server_ctx.receiver_connect_event);
+		WH_EVENT_DESTROY(server_ctx.transfer_done_event);
 		CleanupMsQuic();
 		Manifest_Destroy(manifest);
 		free(filename);
@@ -1455,8 +1512,8 @@ static int cmd_send(const char* filepath)
 	{
 		LOG_ERROR("Error: Failed to start QUIC listener: 0x%x\n", status);
 		MsQuic->ListenerClose(listener);
-		CloseHandle(server_ctx.receiver_connect_event);
-		CloseHandle(server_ctx.transfer_done_event);
+		WH_EVENT_DESTROY(server_ctx.receiver_connect_event);
+		WH_EVENT_DESTROY(server_ctx.transfer_done_event);
 		CleanupMsQuic();
 		Manifest_Destroy(manifest);
 		free(filename);
@@ -1504,7 +1561,7 @@ static int cmd_send(const char* filepath)
 	for (int i = 0; i < (timeout_ms / poll_interval_ms); i++)
 	{
 		if (g_shutdown_requested) break;
-		Sleep(poll_interval_ms);
+		WH_SLEEP_MS(poll_interval_ms);
 
 		// Check if receiver connected via QUIC
 		if (server_ctx.receiver_connected)
@@ -1518,8 +1575,8 @@ static int cmd_send(const char* filepath)
 
 			while (elapsed_ms < max_transfer_ms && !g_shutdown_requested)
 			{
-				DWORD wait_result = WaitForSingleObject(server_ctx.transfer_done_event, check_interval_ms);
-				if (wait_result == WAIT_OBJECT_0)
+				int wait_result = WH_EVENT_WAIT(server_ctx.transfer_done_event, check_interval_ms);
+				if (wait_result == WH_EVENT_WAIT_OK)
 				{
 					if (server_ctx.transfer_failed)
 					{
@@ -1597,13 +1654,13 @@ static int cmd_send(const char* filepath)
 	if (server_ctx.connection)
 	{
 		MsQuic->ConnectionShutdown(server_ctx.connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-		Sleep(200);  // Let CONNECTION_CLOSE reach receiver
+		WH_SLEEP_MS(200);  // Let CONNECTION_CLOSE reach receiver
 	}
 
 	MsQuic->ListenerStop(listener);
 	MsQuic->ListenerClose(listener);
-	CloseHandle(server_ctx.receiver_connect_event);
-	CloseHandle(server_ctx.transfer_done_event);
+	WH_EVENT_DESTROY(server_ctx.receiver_connect_event);
+	WH_EVENT_DESTROY(server_ctx.transfer_done_event);
 	CleanupMsQuic();
 
 	Manifest_Destroy(manifest);
@@ -1621,7 +1678,17 @@ static int cmd_send(const char* filepath)
 static int cmd_receive(const char* ticket)
 {
 	// Install Ctrl+C handler for clean shutdown
+#ifdef _WIN32
 	SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+#else
+	{
+		struct sigaction sa;
+		memset(&sa, 0, sizeof(sa));
+		sa.sa_handler = SignalHandler;
+		sigaction(SIGINT, &sa, NULL);
+		sigaction(SIGTERM, &sa, NULL);
+	}
+#endif
 
 	LOG("\n═══════════════════════════════════════\n");
 	LOG("  WORMHOLE RECEIVE\n");
@@ -1814,7 +1881,7 @@ static int cmd_receive(const char* ticket)
 	{
 		send_hole_punch_probes(relay_client, g_peer_endpoints, g_peer_endpoint_count);
 		if (probe_round < 4)
-			Sleep(200);  // 200ms between rounds, skip sleep after last round
+			WH_SLEEP_MS(200);  // 200ms between rounds, skip sleep after last round
 	}
 	LOG("[Receive] Hole-punch probing complete (5 rounds sent)\n");
 
@@ -1865,8 +1932,8 @@ static int cmd_receive(const char* ticket)
 	RECEIVE_CLIENT_CONTEXT client_ctx;
 	memset(&client_ctx, 0, sizeof(client_ctx));
 	client_ctx.connected = FALSE;
-	client_ctx.connect_event = CreateEvent(NULL, FALSE, FALSE, NULL);
-	client_ctx.transfer_done_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+	client_ctx.connect_event = WH_EVENT_CREATE();
+	client_ctx.transfer_done_event = WH_EVENT_CREATE();
 	strncpy_s(client_ctx.downloads_path, sizeof(client_ctx.downloads_path), downloads_path, _TRUNCATE);
 	client_ctx.chunk_recv_ctx = NULL;
 	
@@ -1898,7 +1965,7 @@ static int cmd_receive(const char* ticket)
 		{
 			LOG("[Receive] Retrying connection (attempt %d/%d) in %d seconds...\n",
 				attempt + 1, max_race_attempts, retry_delay_ms / 1000);
-			Sleep(retry_delay_ms);
+			WH_SLEEP_MS(retry_delay_ms);
 		}
 
 		LOG("[Receive] Starting parallel connection race to %u endpoints (attempt %d/%d)...\n",
@@ -1907,7 +1974,7 @@ static int cmd_receive(const char* ticket)
 		PARALLEL_CONNECT_CTX par_ctx;
 		memset(&par_ctx, 0, sizeof(par_ctx));
 		par_ctx.client_ctx = &client_ctx;
-		par_ctx.race_event = CreateEvent(NULL, TRUE, FALSE, NULL);  // Manual-reset
+		par_ctx.race_event = WH_EVENT_CREATE();  // Manual-reset
 		par_ctx.race_won = 0;
 		par_ctx.count = 0;
 
@@ -2015,7 +2082,7 @@ static int cmd_receive(const char* ticket)
 		if (par_ctx.count == 0)
 		{
 			LOG_ERROR("[Receive] Error: No connections could be started\n");
-			CloseHandle(par_ctx.race_event);
+			WH_EVENT_DESTROY(par_ctx.race_event);
 			break;
 		}
 
@@ -2024,9 +2091,9 @@ static int cmd_receive(const char* ticket)
 
 		// Wait for ANY connection to succeed
 		{
-			DWORD wait_result = WaitForSingleObject(par_ctx.race_event, race_timeout_ms);
+			int wait_result = WH_EVENT_WAIT(par_ctx.race_event, race_timeout_ms);
 
-			if (wait_result == WAIT_OBJECT_0 && par_ctx.winning_connection != NULL)
+			if (wait_result == WH_EVENT_WAIT_OK && par_ctx.winning_connection != NULL)
 			{
 				connection = par_ctx.winning_connection;
 				connected = TRUE;
@@ -2053,7 +2120,7 @@ static int cmd_receive(const char* ticket)
 			}
 		}
 
-		CloseHandle(par_ctx.race_event);
+		WH_EVENT_DESTROY(par_ctx.race_event);
 
 		if (!connected && attempt < max_race_attempts - 1)
 		{
@@ -2126,8 +2193,8 @@ static int cmd_receive(const char* ticket)
 					LOG("[Receive] Connecting to sender via relay...\n");
 
 					// Wait for connection (15 second timeout for relay path)
-					DWORD wait_result = WaitForSingleObject(client_ctx.connect_event, 15000);
-					if (wait_result == WAIT_OBJECT_0 && client_ctx.connected)
+					int wait_result = WH_EVENT_WAIT(client_ctx.connect_event, 15000);
+					if (wait_result == WH_EVENT_WAIT_OK && client_ctx.connected)
 					{
 						connection = relay_conn;
 						connected = TRUE;
@@ -2176,8 +2243,8 @@ static int cmd_receive(const char* ticket)
 				g_active_relay_forwarder = NULL;
 			RelayForwarder_Stop(recv_forwarder);
 		}
-		CloseHandle(client_ctx.connect_event);
-		CloseHandle(client_ctx.transfer_done_event);
+		WH_EVENT_DESTROY(client_ctx.connect_event);
+		WH_EVENT_DESTROY(client_ctx.transfer_done_event);
 		CleanupMsQuic();
 #ifdef _WIN32
 		WSACleanup();
@@ -2198,8 +2265,8 @@ static int cmd_receive(const char* ticket)
 
 	while (elapsed_ms < max_transfer_ms && !g_shutdown_requested)
 	{
-		DWORD wait_result = WaitForSingleObject(client_ctx.transfer_done_event, check_interval_ms);
-		if (wait_result == WAIT_OBJECT_0)
+		int wait_result = WH_EVENT_WAIT(client_ctx.transfer_done_event, check_interval_ms);
+		if (wait_result == WH_EVENT_WAIT_OK)
 		{
 			LOG("\n[Receive] File transfer complete!\n");
 			transfer_completed = TRUE;
@@ -2226,11 +2293,11 @@ static int cmd_receive(const char* ticket)
 	if (connection)
 	{
 		MsQuic->ConnectionShutdown(connection, QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
-		Sleep(200);  // Let CONNECTION_CLOSE reach sender
+		WH_SLEEP_MS(200);  // Let CONNECTION_CLOSE reach sender
 		MsQuic->ConnectionClose(connection);
 	}
-	CloseHandle(client_ctx.connect_event);
-	CloseHandle(client_ctx.transfer_done_event);
+	WH_EVENT_DESTROY(client_ctx.connect_event);
+	WH_EVENT_DESTROY(client_ctx.transfer_done_event);
 	CleanupMsQuic();
 	
 	if (recv_forwarder)

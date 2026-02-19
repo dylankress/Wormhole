@@ -77,6 +77,11 @@ uint64_t ChunkStore_Evict(uint64_t bytes_to_free);
 // Returns TRUE if the chunk was deleted (or didn't exist).
 BOOLEAN ChunkStore_Delete(const uint8_t hash[WH_HASH_SIZE]);
 
+// Remove a specific peer from a chunk's replica location list.
+// Returns TRUE if the peer was found and removed.
+BOOLEAN ChunkStore_RemoveReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
+                                           const uint8_t peer_id[32]);
+
 // Clear replica metadata for a chunk without deleting the chunk itself.
 // Used to reset stale replica info on re-store.
 void ChunkStore_ClearReplicas(const uint8_t hash[WH_HASH_SIZE]);

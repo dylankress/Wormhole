@@ -90,18 +90,20 @@ Ticket: 5-ocean-maple
 | 3 | Done | P2P storage foundation — persistent daemon, peer discovery, chunk replication, storage quota |
 | 4 | Done | Decentralized network — Kademlia DHT, erasure coding, proof-of-storage, storage incentives |
 | 4.5 | Done | Integration — wire EC into daemon, enforce ledger, connect health checks, E2E tests |
-| 5 | Next | Multi-platform support (Linux client) |
+| 5 | In Progress | Multi-platform — Linux client (Makefile + Docker), file registry, multi-node testing |
 
-15 unit test suites + E2E daemon smoke tests. See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
+16 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests. See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
 
 ## Building
 
 ### Prerequisites
 
-- **Windows** with Visual Studio 2019+ (MSVC x64) for the client
-- **Linux** with GCC for the relay server
+- **Windows client**: Visual Studio 2019+ (MSVC x64)
+- **Linux client**: `build-essential cmake libsodium-dev libssl-dev` (see [BUILD_LINUX.md](BUILD_LINUX.md))
+- **Linux relay server**: GCC + `libsodium-dev`
 - **MsQuic** — git submodule, build separately (`git submodule update --init --recursive`)
 - **libsodium** — pre-built Windows binaries in `deps/libsodium/`; on Linux: `apt install libsodium-dev`
+- **Docker** (optional) — for multi-node testing without a local toolchain
 
 ### Client (Windows)
 
@@ -111,6 +113,27 @@ build_with_env.bat
 ```
 
 Output: `src/build/wormhole.exe`, `src/build/wormholed.exe` (plus `msquic.dll` and `libsodium.dll`)
+
+### Client (Linux)
+
+```bash
+cd src
+make
+```
+
+Output: `src/build/wormhole`, `src/build/wormholed` (plus `libmsquic.so`)
+
+See [BUILD_LINUX.md](BUILD_LINUX.md) for full prerequisites including MsQuic build from source.
+
+### Docker
+
+```bash
+cd docker
+docker compose up -d        # Build images + start relay + 5 nodes
+docker compose down -v       # Tear down
+```
+
+See [BUILD_LINUX.md](BUILD_LINUX.md) for detailed Docker usage (manual setup, interaction, debugging).
 
 ### Relay Server (Linux)
 
@@ -125,7 +148,7 @@ Output: `relay-server/build/relay-server`
 
 ### Daemon
 
-The persistent daemon `wormholed` is the core of the storage network. It manages the QUIC listener, chunk store, relay connection, DHT node, health checks, and peer discovery. The CLI communicates with it via named pipe IPC.
+The persistent daemon `wormholed` is the core of the storage network. It manages the QUIC listener, chunk store, relay connection, DHT node, health checks, and peer discovery. The CLI communicates with it via IPC (named pipes on Windows, Unix domain sockets on Linux).
 
 ```
 wormholed [options]
@@ -150,6 +173,12 @@ Chunks the file, erasure-codes each stripe, and stores chunks via the daemon, wh
 wormhole get <hash> [-o output_file]
 ```
 Retrieves a chunk by its Blake3 hash from the daemon's store or the network.
+
+### List stored files
+```
+wormhole files
+```
+Lists all files stored via the daemon, showing filename, size, chunk count, replication status, and file ID.
 
 ### Daemon status
 ```
@@ -219,9 +248,9 @@ The project has three components:
 - RS(4,2) erasure coding for fault-tolerant storage
 - Health monitoring with proof-of-storage challenges
 - Storage incentive ledger for reciprocity enforcement
-- Named pipe IPC server for CLI communication
+- IPC server for CLI communication (named pipes on Windows, Unix domain sockets on Linux)
 
-**Client** (`src/wormhole.c`) — Windows CLI for storage commands (`store`/`get`/`status`/`config`) and direct file transfer (`send`/`receive`). Uses MsQuic for QUIC transport, libsodium for Ed25519 identity, and Blake3 for content-addressed chunking.
+**Client** (`src/wormhole.c`) — Cross-platform CLI (Windows + Linux) for storage commands (`store`/`get`/`files`/`status`/`config`) and direct file transfer (`send`/`receive`). Uses MsQuic for QUIC transport, libsodium for Ed25519 identity, and Blake3 for content-addressed chunking.
 
 **Relay Server** (`relay-server/`) — Lightweight Linux UDP server for:
 - Peer registration and NAT reflection

@@ -4,11 +4,18 @@ Step-by-step guide for building and running all tests.
 
 ## Prerequisites
 
+### Windows
 - **Visual Studio Developer Command Prompt** (x64 Native Tools) — `cl.exe` must be on PATH
 - **MsQuic** built from the `msquic/` submodule (`git submodule update --init --recursive`, then build)
 - **libsodium** pre-built binaries in `deps/libsodium/` (Windows x64)
 - **Blake3** portable C sources in `deps/blake3/`
 - **Reed-Solomon** codec in `deps/reed_solomon/` (rs.h, rs.c)
+
+### Linux
+- **GCC** and **make** (`sudo apt install build-essential`)
+- **libsodium** (`sudo apt install libsodium-dev`)
+- **MsQuic** built from source (see [BUILD_LINUX.md](BUILD_LINUX.md))
+- **Docker** (optional, for multi-node integration tests)
 
 ## Step 1: Build the Main Project
 
@@ -27,7 +34,9 @@ It also copies `msquic.dll` and `libsodium.dll` into `src\build\`.
 
 **Verify:** Check that both `.exe` files exist in `src\build\`.
 
-## Step 2: Run All 15 Unit Tests
+## Step 2: Run All 16 Unit Tests
+
+### Windows
 
 From the same Developer Command Prompt:
 
@@ -36,7 +45,7 @@ cd src\test
 test.bat
 ```
 
-`test.bat` does the following for each of the 15 tests:
+`test.bat` does the following for each of the 16 tests:
 1. Compiles the test source against required `.obj` files from the main build
 2. Runs the resulting test executable
 3. Tracks pass/fail counts
@@ -45,12 +54,23 @@ At the end it prints a summary:
 
 ```
 =============================================
-  TEST SUMMARY: 15/15 passed
+  TEST SUMMARY: 16/16 passed
 =============================================
   ALL TESTS PASSED
 ```
 
 The script exits with code 0 on success, 1 if any test failed.
+
+### Linux
+
+From a terminal (after running `make` in `src/`):
+
+```bash
+cd src/test
+./test_linux.sh
+```
+
+`test_linux.sh` compiles and runs all 16 test suites, linking each test against its required source files (no MsQuic needed for most tests). Output format matches the Windows test runner.
 
 ## Step 3: Interpret Results
 
@@ -99,7 +119,7 @@ Output: `relay-server/build/relay-server`
 
 ## Cross-Network Manual Testing Guide
 
-Steps 6–22 cover comprehensive manual testing of **every user-facing feature** across a real network. Run these after all 15 unit tests and the E2E daemon tests pass.
+Steps 6–22 cover comprehensive manual testing of **every user-facing feature** across a real network. Run these after all 16 unit tests and the E2E daemon tests pass. These steps show Windows commands but work equivalently on Linux (replace `wormhole.exe` with `wormhole`, `wormholed.exe` with `wormholed`, and use Linux equivalents for file operations).
 
 ### Setup & Prerequisites
 
@@ -935,6 +955,7 @@ Copy this checklist and fill in results after each test run.
 | 13 | `test_proof` | Proof computation determinism, wrong seed detection, pre-compute cache hit/miss | `proof.obj`, Blake3 objs, libsodium |
 | 14 | `test_incentives` | Balanced/unbalanced ledger, ratio enforcement, save/load roundtrip | `incentives.obj` |
 | 15 | `test_health` | EC-based chunk recovery, health check stats, degraded chunk detection, replication needs | `health.obj`, `erasure.obj`, `chunk_store.obj`, `manifest.obj`, `file_io.obj`, Blake3 objs, `rs.c`, ole32.lib |
+| 16 | `test_file_registry` | File registry save/load/update/list, hex prefix lookup | `file_registry.obj`, `manifest.obj`, `file_io.obj`, Blake3 objs |
 
 All tests use the `greatest.h` single-header test framework. Tests that need filesystem access use `setup_test_home()`/`cleanup_test_home()` to redirect HOME to a temp directory.
 
@@ -1015,3 +1036,43 @@ REM Watch daemon logs for "EC recovered chunk" after ~15 seconds
 ...
 [daemon] EC recovered chunk 0 from <hash>.ec
 ```
+
+## Step 24: Docker Multi-Node Integration Tests
+
+`docker/test_multi_node.sh` runs automated integration tests across a 5-node Docker cluster (relay + 5 daemon nodes). This validates the full distributed storage pipeline without manual setup.
+
+### Prerequisites
+
+- Docker and Docker Compose installed
+- Docker images built (`docker compose build` in `docker/`)
+
+### Running the tests
+
+```bash
+cd docker
+docker compose up -d                    # Start relay + 5 nodes
+./test_multi_node.sh                    # Run automated test suite
+docker compose down -v                  # Tear down
+```
+
+### What it tests
+
+| # | Test | What it validates |
+|---|------|-------------------|
+| 1 | Daemon health check | All 5 daemons start and respond to `wormhole status` |
+| 2 | Store file on node1 | File chunking, EC encoding, and local storage work |
+| 3 | DHT peer discovery | Nodes discover each other via DHT (>= 2 peers) |
+| 4 | Chunk replication | Chunks replicate to >= 2 additional nodes within 30s |
+| 5 | Cross-node retrieval | Store on node3, retrieve on node5 |
+| 6 | Node failure | Stop node2, verify other daemons survive peer failure |
+
+### Windows multi-node test
+
+There is also a Windows-native multi-node test that runs 3 daemon instances on localhost:
+
+```bat
+cd src\test
+test_multi_node.bat
+```
+
+This starts 3 `wormholed.exe` instances on different ports, stores a file on node 1, waits for relay-mediated peer discovery and replication, then verifies chunks are present across nodes. Requires internet connectivity (relay server) and takes ~2 minutes.

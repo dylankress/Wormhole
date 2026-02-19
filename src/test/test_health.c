@@ -385,6 +385,68 @@ SUITE(recovery_suite)
     RUN_TEST(test_health_recover_too_many_missing);
 }
 
+TEST test_health_get_replicated_chunks(void)
+{
+    // Create chunks and set replicas for some
+    uint8_t data1[64], data2[64], data3[64];
+    memset(data1, 0xF1, sizeof(data1));
+    memset(data2, 0xF2, sizeof(data2));
+    memset(data3, 0xF3, sizeof(data3));
+
+    uint8_t h1[WH_HASH_SIZE], h2[WH_HASH_SIZE], h3[WH_HASH_SIZE];
+    blake3_hasher hasher;
+
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, data1, sizeof(data1));
+    blake3_hasher_finalize(&hasher, h1, WH_HASH_SIZE);
+
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, data2, sizeof(data2));
+    blake3_hasher_finalize(&hasher, h2, WH_HASH_SIZE);
+
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, data3, sizeof(data3));
+    blake3_hasher_finalize(&hasher, h3, WH_HASH_SIZE);
+
+    ChunkStore_Put(h1, data1, sizeof(data1));
+    ChunkStore_Put(h2, data2, sizeof(data2));
+    ChunkStore_Put(h3, data3, sizeof(data3));
+
+    // Set replicas for h1 and h3 only
+    uint8_t peer[32];
+    memset(peer, 0xAA, 32);
+    ChunkStore_SetReplicaLocation(h1, peer);
+    ChunkStore_SetReplicaLocation(h3, peer);
+
+    // Get replicated chunks
+    uint8_t repl[10][WH_HASH_SIZE];
+    uint32_t count = Health_GetReplicatedChunks(repl, 10);
+
+    // Should find at least h1 and h3
+    ASSERT(count >= 2);
+
+    // Verify returned hashes exist in store and have replicas
+    for (uint32_t i = 0; i < count; i++)
+    {
+        ASSERT(ChunkStore_Has(repl[i]));
+        ASSERT(ChunkStore_GetReplicaCount(repl[i]) > 0);
+    }
+
+    PASS();
+}
+
+TEST test_health_get_replicated_null_params(void)
+{
+    uint32_t count = Health_GetReplicatedChunks(NULL, 10);
+    ASSERT_EQ(count, 0u);
+
+    uint8_t repl[1][WH_HASH_SIZE];
+    count = Health_GetReplicatedChunks(repl, 0);
+    ASSERT_EQ(count, 0u);
+
+    PASS();
+}
+
 SUITE(check_suite)
 {
     RUN_TEST(test_health_check_chunks_basic);
@@ -393,6 +455,8 @@ SUITE(check_suite)
     RUN_TEST(test_health_get_degraded_chunks);
     RUN_TEST(test_health_get_degraded_chunks_capped);
     RUN_TEST(test_health_get_degraded_null_params);
+    RUN_TEST(test_health_get_replicated_chunks);
+    RUN_TEST(test_health_get_replicated_null_params);
 }
 
 int main(void)

@@ -7,6 +7,7 @@
 #pragma once
 
 #include "dht_protocol.h"
+#include "../common.h"
 #include <time.h>
 
 #ifdef _WIN32

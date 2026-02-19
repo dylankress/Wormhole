@@ -230,7 +230,7 @@ BOOLEAN GetUniqueFilename(const char *base_path, const char *filename,
     }
     
     // Try original filename first
-    snprintf(unique_path_out, unique_path_len, "%s\\%s", base_path, filename);
+    snprintf(unique_path_out, unique_path_len, "%s" PATH_SEP_STR "%s", base_path, filename);
     
     if (!FileExists(unique_path_out)) {
         return TRUE;  // Original filename is available
@@ -248,7 +248,7 @@ BOOLEAN GetUniqueFilename(const char *base_path, const char *filename,
         snprintf(new_filename, sizeof(new_filename), "%.*s(%d)%s", 
                  (int)base_len, filename, i, ext);
         
-        snprintf(unique_path_out, unique_path_len, "%s\\%s", base_path, new_filename);
+        snprintf(unique_path_out, unique_path_len, "%s" PATH_SEP_STR "%s", base_path, new_filename);
         
         if (!FileExists(unique_path_out)) {
             return TRUE;  // Found available filename

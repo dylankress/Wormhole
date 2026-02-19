@@ -1084,11 +1084,15 @@ static bool dht_sign_message(RELAY_SERVER* server, uint8_t* msg, size_t msg_len)
     // Zero signature field before signing
     memset(msg + DHT_SIGNATURE_OFFSET, 0, 64);
 
+    // Sign into separate buffer to avoid aliasing — Ed25519 reads msg twice
+    // and writes R between reads, so sig output must not overlap msg input
+    uint8_t sig[64];
     unsigned long long sig_len;
-    if (crypto_sign_detached(msg + DHT_SIGNATURE_OFFSET, &sig_len,
+    if (crypto_sign_detached(sig, &sig_len,
                              msg, msg_len, server->dht_secret_key) != 0) {
         return false;
     }
+    memcpy(msg + DHT_SIGNATURE_OFFSET, sig, 64);
     return true;
 }
 

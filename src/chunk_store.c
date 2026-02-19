@@ -21,8 +21,9 @@
 #include <dirent.h>
 #endif
 
+static WH_MUTEX g_store_lock;
+
 #ifdef _WIN32
-static CRITICAL_SECTION g_store_lock;
 static INIT_ONCE g_store_lock_once = INIT_ONCE_STATIC_INIT;
 
 static BOOL CALLBACK InitStoreLock(PINIT_ONCE InitOnce, PVOID Parameter, PVOID *lpContext)
@@ -30,13 +31,25 @@ static BOOL CALLBACK InitStoreLock(PINIT_ONCE InitOnce, PVOID Parameter, PVOID *
     (void)InitOnce;
     (void)Parameter;
     (void)lpContext;
-    InitializeCriticalSection(&g_store_lock);
+    WH_MUTEX_INIT(g_store_lock);
     return TRUE;
 }
 
 static void EnsureStoreLock(void)
 {
     InitOnceExecuteOnce(&g_store_lock_once, InitStoreLock, NULL, NULL);
+}
+#else
+static pthread_once_t g_store_lock_once = PTHREAD_ONCE_INIT;
+
+static void InitStoreLock(void)
+{
+    WH_MUTEX_INIT(g_store_lock);
+}
+
+static void EnsureStoreLock(void)
+{
+    pthread_once(&g_store_lock_once, InitStoreLock);
 }
 #endif
 
@@ -117,9 +130,7 @@ static BOOLEAN EnsureDir(const char *dir)
 
 BOOLEAN ChunkStore_Init(void)
 {
-#ifdef _WIN32
     EnsureStoreLock();
-#endif
     char base[MAX_PATH];
     if (!GetStoreBasePath(base, sizeof(base))) return FALSE;
 
@@ -354,17 +365,13 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
 {
     if (!peer_id) return FALSE;
 
-#ifdef _WIN32
     EnsureStoreLock();
-    EnterCriticalSection(&g_store_lock);
-#endif
+    WH_MUTEX_LOCK(g_store_lock);
 
     if (!EnsureReplicaDirs(hash))
     {
         LOG_ERROR("[chunk_store] EnsureReplicaDirs failed for hash\n");
-#ifdef _WIN32
-        LeaveCriticalSection(&g_store_lock);
-#endif
+        WH_MUTEX_UNLOCK(g_store_lock);
         return FALSE;
     }
 
@@ -372,9 +379,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     if (!GetReplicaPath(hash, path, sizeof(path)))
     {
         LOG_ERROR("[chunk_store] GetReplicaPath failed\n");
-#ifdef _WIN32
-        LeaveCriticalSection(&g_store_lock);
-#endif
+        WH_MUTEX_UNLOCK(g_store_lock);
         return FALSE;
     }
 
@@ -403,9 +408,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
         {
             if (memcmp(existing_peers[i], peer_id, 32) == 0)
             {
-#ifdef _WIN32
-                LeaveCriticalSection(&g_store_lock);
-#endif
+                WH_MUTEX_UNLOCK(g_store_lock);
                 return TRUE;  // Already tracked
             }
         }
@@ -415,9 +418,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     if (count >= MAX_REPLICAS)
     {
         LOG_ERROR("[chunk_store] Replica at capacity (%u)\n", MAX_REPLICAS);
-#ifdef _WIN32
-        LeaveCriticalSection(&g_store_lock);
-#endif
+        WH_MUTEX_UNLOCK(g_store_lock);
         return FALSE;  // At capacity
     }
 
@@ -429,9 +430,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     if (!fh)
     {
         LOG_ERROR("[chunk_store] Failed to open replica file: %s\n", path);
-#ifdef _WIN32
-        LeaveCriticalSection(&g_store_lock);
-#endif
+        WH_MUTEX_UNLOCK(g_store_lock);
         return FALSE;
     }
 
@@ -445,9 +444,7 @@ BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
     fwrite(existing_peers, 32, count, fh);
     fclose(fh);
 
-#ifdef _WIN32
-    LeaveCriticalSection(&g_store_lock);
-#endif
+    WH_MUTEX_UNLOCK(g_store_lock);
     return TRUE;
 }
 
@@ -491,6 +488,90 @@ uint32_t ChunkStore_GetReplicaLocations(const uint8_t hash[WH_HASH_SIZE],
 // Replica Metadata Clearing
 //=============================================================================
 
+BOOLEAN ChunkStore_RemoveReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
+                                           const uint8_t peer_id[32])
+{
+    if (!peer_id) return FALSE;
+
+    EnsureStoreLock();
+    WH_MUTEX_LOCK(g_store_lock);
+
+    char path[MAX_PATH];
+    if (!GetReplicaPath(hash, path, sizeof(path)))
+    {
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return FALSE;
+    }
+
+    // Read existing replicas
+    uint8_t existing_peers[MAX_REPLICAS][32];
+    uint32_t count = 0;
+
+    FILE *fh = fopen(path, "rb");
+    if (!fh)
+    {
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return FALSE;  // No replica file = peer not found
+    }
+
+    uint8_t count_buf[4];
+    if (fread(count_buf, 1, 4, fh) == 4)
+    {
+        count = (uint32_t)count_buf[0] |
+                ((uint32_t)count_buf[1] << 8) |
+                ((uint32_t)count_buf[2] << 16) |
+                ((uint32_t)count_buf[3] << 24);
+        if (count > MAX_REPLICAS) count = MAX_REPLICAS;
+        fread(existing_peers, 32, count, fh);
+    }
+    fclose(fh);
+
+    // Find and remove the peer
+    BOOLEAN found = FALSE;
+    for (uint32_t i = 0; i < count; i++)
+    {
+        if (memcmp(existing_peers[i], peer_id, 32) == 0)
+        {
+            // Shift remaining entries down
+            for (uint32_t j = i; j < count - 1; j++)
+                memcpy(existing_peers[j], existing_peers[j + 1], 32);
+            count--;
+            found = TRUE;
+            break;
+        }
+    }
+
+    if (!found)
+    {
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return FALSE;
+    }
+
+    if (count == 0)
+    {
+        // No replicas left — remove the file
+        remove(path);
+    }
+    else
+    {
+        // Rewrite with updated list
+        fh = fopen(path, "wb");
+        if (fh)
+        {
+            count_buf[0] = (uint8_t)(count);
+            count_buf[1] = (uint8_t)(count >> 8);
+            count_buf[2] = (uint8_t)(count >> 16);
+            count_buf[3] = (uint8_t)(count >> 24);
+            fwrite(count_buf, 1, 4, fh);
+            fwrite(existing_peers, 32, count, fh);
+            fclose(fh);
+        }
+    }
+
+    WH_MUTEX_UNLOCK(g_store_lock);
+    return TRUE;
+}
+
 void ChunkStore_ClearReplicas(const uint8_t hash[WH_HASH_SIZE])
 {
     char path[MAX_PATH];
@@ -504,10 +585,8 @@ void ChunkStore_ClearReplicas(const uint8_t hash[WH_HASH_SIZE])
 
 BOOLEAN ChunkStore_Delete(const uint8_t hash[WH_HASH_SIZE])
 {
-#ifdef _WIN32
     EnsureStoreLock();
-    EnterCriticalSection(&g_store_lock);
-#endif
+    WH_MUTEX_LOCK(g_store_lock);
 
     // Remove chunk data file
     char chunk_path[MAX_PATH];
@@ -558,9 +637,7 @@ BOOLEAN ChunkStore_Delete(const uint8_t hash[WH_HASH_SIZE])
         }
     }
 
-#ifdef _WIN32
-    LeaveCriticalSection(&g_store_lock);
-#endif
+    WH_MUTEX_UNLOCK(g_store_lock);
     return TRUE;
 }
 
@@ -584,17 +661,13 @@ static BOOLEAN GetAccessTimePath(char *path, size_t path_len)
 
 void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
 {
-#ifdef _WIN32
     EnsureStoreLock();
-    EnterCriticalSection(&g_store_lock);
-#endif
+    WH_MUTEX_LOCK(g_store_lock);
 
     char path[MAX_PATH];
     if (!GetAccessTimePath(path, sizeof(path)))
     {
-#ifdef _WIN32
-        LeaveCriticalSection(&g_store_lock);
-#endif
+        WH_MUTEX_UNLOCK(g_store_lock);
         return;
     }
 
@@ -606,9 +679,7 @@ void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
         fh = fopen(path, "wb");
         if (!fh)
         {
-#ifdef _WIN32
-            LeaveCriticalSection(&g_store_lock);
-#endif
+            WH_MUTEX_UNLOCK(g_store_lock);
             return;
         }
 
@@ -626,9 +697,7 @@ void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
 
         fwrite(entry, 1, ACCESS_ENTRY_SIZE, fh);
         fclose(fh);
-#ifdef _WIN32
-        LeaveCriticalSection(&g_store_lock);
-#endif
+        WH_MUTEX_UNLOCK(g_store_lock);
         return;
     }
 
@@ -682,9 +751,7 @@ void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE])
     }
 
     fclose(fh);
-#ifdef _WIN32
-    LeaveCriticalSection(&g_store_lock);
-#endif
+    WH_MUTEX_UNLOCK(g_store_lock);
 }
 
 uint64_t ChunkStore_GetTotalSize(void)
@@ -937,10 +1004,8 @@ uint64_t ChunkStore_Evict(uint64_t bytes_to_free)
     // Rewrite access_times.dat to remove entries for evicted/missing chunks
     if (evicted > 0)
     {
-#ifdef _WIN32
         EnsureStoreLock();
-        EnterCriticalSection(&g_store_lock);
-#endif
+        WH_MUTEX_LOCK(g_store_lock);
         FILE *old_fh = fopen(at_path, "rb");
         if (old_fh)
         {
@@ -969,9 +1034,7 @@ uint64_t ChunkStore_Evict(uint64_t bytes_to_free)
                 fclose(old_fh);
             }
         }
-#ifdef _WIN32
-        LeaveCriticalSection(&g_store_lock);
-#endif
+        WH_MUTEX_UNLOCK(g_store_lock);
     }
 
     LOG("[evict] Evicted %u chunks, freed %llu bytes\n",

@@ -45,8 +45,8 @@ static void CleanupReceiveContext(CHUNK_RECEIVE_CONTEXT *ctx);
 static void PrintProgressBar(
     uint32_t chunks_done, uint32_t total_chunks,
     uint64_t bytes_transferred, uint64_t total_bytes,
-    LARGE_INTEGER *start_time,
-    LARGE_INTEGER *last_progress_time,
+    double *start_time,
+    double *last_progress_time,
     uint64_t *last_progress_bytes,
     const char *label)
 {
@@ -54,30 +54,27 @@ static void PrintProgressBar(
 
     BOOLEAN is_complete = (chunks_done == total_chunks);
 
-    LARGE_INTEGER now, frequency;
-    QueryPerformanceCounter(&now);
-    QueryPerformanceFrequency(&frequency);
-    double freq = (double)frequency.QuadPart;
+    double now = WH_TIMER_NOW();
 
     // Throttle: only update every 100ms (unless transfer is complete)
-    if (!is_complete && last_progress_time->QuadPart != 0)
+    if (!is_complete && *last_progress_time != 0.0)
     {
-        double since_last = (double)(now.QuadPart - last_progress_time->QuadPart) / freq;
+        double since_last = now - *last_progress_time;
         if (since_last < 0.1) return;
     }
 
     // Calculate instantaneous speed (bytes/sec) from last interval
     double speed = 0.0;
-    if (last_progress_time->QuadPart != 0)
+    if (*last_progress_time != 0.0)
     {
-        double interval = (double)(now.QuadPart - last_progress_time->QuadPart) / freq;
+        double interval = now - *last_progress_time;
         if (interval > 0.0)
             speed = (double)(bytes_transferred - *last_progress_bytes) / interval;
     }
     else
     {
         // First update — use overall speed
-        double elapsed = (double)(now.QuadPart - start_time->QuadPart) / freq;
+        double elapsed = now - *start_time;
         if (elapsed > 0.0)
             speed = (double)bytes_transferred / elapsed;
     }
@@ -86,7 +83,7 @@ static void PrintProgressBar(
     double eta_seconds = 0.0;
     if (!is_complete)
     {
-        double overall = (double)(now.QuadPart - start_time->QuadPart) / freq;
+        double overall = now - *start_time;
         if (overall > 0.0)
         {
             double avg_speed = (double)bytes_transferred / overall;
@@ -753,7 +750,7 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
                 }
 
                 LOG("[SenderCtrl] Data stream opened, starting chunk send...\n");
-                QueryPerformanceCounter(&ctx->start_time);
+                ctx->start_time = WH_TIMER_NOW();
 
                 // Pipeline initial chunks (adaptive: fill to ideal or fallback limit)
                 while (ShouldSendMore(ctx))
@@ -784,11 +781,8 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
                 }
 
                 // Report transfer stats
-                LARGE_INTEGER end_time, frequency;
-                QueryPerformanceCounter(&end_time);
-                QueryPerformanceFrequency(&frequency);
-                double duration = (double)(end_time.QuadPart - ctx->start_time.QuadPart) /
-                                  frequency.QuadPart;
+                double end_time = WH_TIMER_NOW();
+                double duration = end_time - ctx->start_time;
                 double throughput = (ctx->manifest->file_size / 1024.0) / duration;
 
                 LOG("[SenderCtrl] Transfer complete: %llu bytes in %.2f sec (%.1f KB/s)\n",
@@ -797,7 +791,7 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
                 // Signal completion
                 if (ctx->transfer_complete_event)
                 {
-                    SetEvent(ctx->transfer_complete_event);
+                    WH_EVENT_SET(ctx->transfer_complete_event);
                 }
                 break;
             }
@@ -978,7 +972,7 @@ QUIC_STATUS QUIC_API ReceiverControlStreamCallback(
         if (ctx->transfer_complete_pending && ctx->transfer_complete_event)
         {
             ctx->transfer_complete_pending = FALSE;
-            SetEvent(ctx->transfer_complete_event);
+            WH_EVENT_SET(ctx->transfer_complete_event);
         }
         break;
     }
@@ -1080,11 +1074,8 @@ QUIC_STATUS QUIC_API ReceiverDataStreamCallback(
             TransferState_Delete(ctx->manifest->manifest_hash);
 
             // Report transfer stats
-            LARGE_INTEGER end_time, frequency;
-            QueryPerformanceCounter(&end_time);
-            QueryPerformanceFrequency(&frequency);
-            double duration = (double)(end_time.QuadPart - ctx->start_time.QuadPart) /
-                              frequency.QuadPart;
+            double end_time = WH_TIMER_NOW();
+            double duration = end_time - ctx->start_time;
             double throughput = (ctx->manifest->file_size / 1024.0) / duration;
 
             LOG("[RecvData] Transfer: %llu bytes in %.2f sec (%.1f KB/s)\n",
@@ -1099,7 +1090,7 @@ QUIC_STATUS QUIC_API ReceiverDataStreamCallback(
             }
             else if (ctx->transfer_complete_event)
             {
-                SetEvent(ctx->transfer_complete_event);
+                WH_EVENT_SET(ctx->transfer_complete_event);
             }
         }
         else if (ctx->manifest)
@@ -1394,7 +1385,7 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
                 }
             }
 
-            QueryPerformanceCounter(&ctx->start_time);
+            ctx->start_time = WH_TIMER_NOW();
             ctx->last_state_save_time = ctx->start_time;
             ctx->last_save_chunk_count = ctx->chunks_received_count;
 
@@ -1432,7 +1423,7 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
                 }
                 else if (ctx->transfer_complete_event)
                 {
-                    SetEvent(ctx->transfer_complete_event);
+                    WH_EVENT_SET(ctx->transfer_complete_event);
                 }
                 break;
             }
@@ -1620,11 +1611,8 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
             BOOLEAN should_save = (ctx->chunks_received_count - ctx->last_save_chunk_count >= 100);
             if (!should_save)
             {
-                LARGE_INTEGER now, freq;
-                QueryPerformanceCounter(&now);
-                QueryPerformanceFrequency(&freq);
-                double elapsed = (double)(now.QuadPart - ctx->last_state_save_time.QuadPart) /
-                                 freq.QuadPart;
+                double now = WH_TIMER_NOW();
+                double elapsed = now - ctx->last_state_save_time;
                 should_save = (elapsed >= 5.0);
             }
             if (should_save)
@@ -1632,7 +1620,7 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
                 TransferState_Save(ctx->manifest->manifest_hash,
                                    ctx->chunks_received, ctx->total_chunks);
                 ctx->last_save_chunk_count = ctx->chunks_received_count;
-                QueryPerformanceCounter(&ctx->last_state_save_time);
+                ctx->last_state_save_time = WH_TIMER_NOW();
             }
         }
 
@@ -1645,7 +1633,7 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
 //=============================================================================
 
 void ChunkSendFile(HQUIC Connection, const char *file_path,
-                   FILE_MANIFEST *manifest, HANDLE transfer_complete_event,
+                   FILE_MANIFEST *manifest, WH_EVENT transfer_complete_event,
                    BOOLEAN *transfer_complete_flag)
 {
     QUIC_STATUS status;

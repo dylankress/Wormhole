@@ -1,0 +1,62 @@
+# docker-compose.yml — 5-node Wormhole interactive test network
+#
+# Usage:
+#   docker compose build               # Build image (one-time)
+#   docker compose up -d               # Start 5 containers
+#   docker exec -it docker-node1-1 bash  # Shell into node1
+#   docker compose down                # Stop all
+
+services:
+  node1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: sleep infinity
+    stdin_open: true
+    tty: true
+    networks:
+      - wormhole-net
+
+  node2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: sleep infinity
+    stdin_open: true
+    tty: true
+    networks:
+      - wormhole-net
+
+  node3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: sleep infinity
+    stdin_open: true
+    tty: true
+    networks:
+      - wormhole-net
+
+  node4:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: sleep infinity
+    stdin_open: true
+    tty: true
+    networks:
+      - wormhole-net
+
+  node5:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: sleep infinity
+    stdin_open: true
+    tty: true
+    networks:
+      - wormhole-net
+
+networks:
+  wormhole-net:
+    driver: bridge

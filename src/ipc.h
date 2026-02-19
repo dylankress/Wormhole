@@ -9,9 +9,18 @@
 #include "common.h"
 #include <stdint.h>
 
-// Named pipe path (default; use port-derived names for multi-daemon)
+// IPC endpoint path (platform-specific)
+#ifdef _WIN32
 #define IPC_PIPE_NAME "\\\\.\\pipe\\wormhole"
 #define IPC_PIPE_PREFIX "\\\\.\\pipe\\wormhole_"
+#else
+// Unix domain socket path — runtime-resolved from $HOME
+#define IPC_SOCKET_NAME "wormhole.sock"
+#define IPC_SOCKET_PREFIX "wormhole_"
+// Pipe name/prefix aliases for shared code
+#define IPC_PIPE_NAME   IPC_SOCKET_NAME
+#define IPC_PIPE_PREFIX IPC_SOCKET_PREFIX
+#endif
 
 // IPC message framing: [4B little-endian length][1B command][payload...]
 // The length field includes the command byte and payload (not the length itself).

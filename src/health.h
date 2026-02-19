@@ -48,6 +48,11 @@ BOOLEAN Health_RecoverChunk(const uint8_t hash[WH_HASH_SIZE],
 // Returns number of degraded chunk hashes written.
 uint32_t Health_GetDegradedChunks(uint8_t (*out_hashes)[WH_HASH_SIZE], uint32_t max_count);
 
+// Get hashes of replicated chunks (replica_count > 0).
+// out_hashes: caller-allocated array of [max_count][WH_HASH_SIZE].
+// Returns number of replicated chunk hashes written.
+uint32_t Health_GetReplicatedChunks(uint8_t (*out_hashes)[WH_HASH_SIZE], uint32_t max_count);
+
 // Check if a chunk needs more replicas and initiate replication.
 // current_replicas: known replica count
 // target: desired replica count

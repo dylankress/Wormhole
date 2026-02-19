@@ -1,0 +1,8 @@
+msquic/build/
+msquic/.git/
+.git/
+src/build/
+*.exe
+*.dll
+*.obj
+*.pdb

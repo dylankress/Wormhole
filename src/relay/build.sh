@@ -14,7 +14,7 @@ mkdir -p build
 
 # Compiler and flags
 CC=gcc
-CFLAGS="-Wall -Wextra -O2 -std=c11 -I."
+CFLAGS="-Wall -Wextra -O2 -std=c11 -D_GNU_SOURCE -I."
 LDFLAGS="-lpthread -lm -lsodium"
 
 # Source files

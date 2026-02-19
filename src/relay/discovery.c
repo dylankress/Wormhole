@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 //
 // discovery.c
 // Wormhole - Endpoint Discovery (LAN, Public IP, IPv6)

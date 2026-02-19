@@ -132,9 +132,12 @@ typedef struct {
 #define MAX_FIND_PEERS 50             // Maximum peers returned by FIND_PEERS
 
 // Helper macros for endianness (little-endian)
+// Guarded because Linux <endian.h> may already define these
+#ifndef htole16
 #define htole16(x) (x)  // No-op on x86/x64 (already little-endian)
 #define htole32(x) (x)
 #define htole64(x) (x)
 #define le16toh(x) (x)
 #define le32toh(x) (x)
 #define le64toh(x) (x)
+#endif

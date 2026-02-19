@@ -1,0 +1,28 @@
+# Dockerfile.relay — Wormhole relay server
+
+FROM ubuntu:22.04 AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libsodium-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY relay-server/ /build/relay-server/
+COPY deps/ /build/deps/
+
+WORKDIR /build/relay-server
+RUN ./build.sh
+
+# ─── Runtime ───────────────────────────────────────────────────────────
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsodium23 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /build/relay-server/build/relay-server /usr/local/bin/
+COPY deps/eff_large_wordlist.txt /usr/local/share/wormhole/
+
+EXPOSE 443/udp
+
+ENTRYPOINT ["relay-server"]
+CMD ["-p", "443", "-w", "/usr/local/share/wormhole/eff_large_wordlist.txt"]

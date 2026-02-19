@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 //
 // peer_id.c
 // Wormhole - Ed25519 Keypair Management (Peer Identity)

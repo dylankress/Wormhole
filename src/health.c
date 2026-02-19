@@ -245,6 +245,41 @@ uint32_t Health_GetDegradedChunks(uint8_t (*out_hashes)[WH_HASH_SIZE], uint32_t 
     return ctx.found;
 }
 
+// Visitor: Health_GetReplicatedChunks
+typedef struct {
+    uint8_t (*out_hashes)[WH_HASH_SIZE];
+    uint32_t max_count;
+    uint32_t found;
+} REPLICATED_CTX;
+
+static BOOLEAN ReplicatedVisitor(const uint8_t hash[WH_HASH_SIZE], void *ctx)
+{
+    REPLICATED_CTX *rc = (REPLICATED_CTX *)ctx;
+
+    uint32_t replicas = ChunkStore_GetReplicaCount(hash);
+    if (replicas > 0)
+    {
+        memcpy(rc->out_hashes[rc->found], hash, WH_HASH_SIZE);
+        rc->found++;
+        if (rc->found >= rc->max_count)
+            return FALSE;  // stop scanning
+    }
+    return TRUE;
+}
+
+uint32_t Health_GetReplicatedChunks(uint8_t (*out_hashes)[WH_HASH_SIZE], uint32_t max_count)
+{
+    if (!out_hashes || max_count == 0) return 0;
+
+    REPLICATED_CTX ctx;
+    ctx.out_hashes = out_hashes;
+    ctx.max_count = max_count;
+    ctx.found = 0;
+
+    ScanStoreChunks(0, ReplicatedVisitor, &ctx);  // 0 = scan all
+    return ctx.found;
+}
+
 BOOLEAN Health_RecoverChunk(const uint8_t hash[WH_HASH_SIZE],
                              const EC_GROUP *ec_group,
                              const FILE_MANIFEST *manifest)

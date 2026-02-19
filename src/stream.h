@@ -44,15 +44,15 @@ typedef struct {
     HQUIC           connection;             // parent QUIC connection
     HQUIC           control_stream;
     HQUIC           data_stream;
-    HANDLE          transfer_complete_event;
-    LARGE_INTEGER   start_time;
+    WH_EVENT        transfer_complete_event;
+    double          start_time;
 
     // Progress tracking
     uint64_t        bytes_sent;             // bytes of actually sent chunks (excludes skipped)
     uint32_t        chunks_sent_count;      // count of actually sent chunks (excludes skipped)
     uint32_t        total_needed_chunks;    // total chunks the receiver needs (for resume progress)
     uint64_t        total_needed_bytes;     // total bytes the receiver needs (for resume progress)
-    LARGE_INTEGER   last_progress_time;
+    double          last_progress_time;
     uint64_t        last_progress_bytes;
 
     // Adaptive pipelining (Phase B)
@@ -106,17 +106,17 @@ typedef struct {
 
     HQUIC           control_stream;
     HQUIC           data_stream;
-    HANDLE          transfer_complete_event;
-    LARGE_INTEGER   start_time;
+    WH_EVENT        transfer_complete_event;
+    double          start_time;
 
     // Progress tracking
     uint64_t        bytes_received;
-    LARGE_INTEGER   last_progress_time;
+    double          last_progress_time;
     uint64_t        last_progress_bytes;
 
     // Periodic state save tracking
     uint32_t        last_save_chunk_count;
-    LARGE_INTEGER   last_state_save_time;
+    double          last_state_save_time;
 
     // Multi-file (v2 manifest) support
     uint32_t        current_file_index;     // index of currently open file (UINT32_MAX = none)
@@ -134,7 +134,7 @@ typedef struct {
 // Opens control stream (bidirectional) on Connection, waits for MANIFEST_REQUEST,
 // then sends manifest + chunks. Signals transfer_complete_event when done.
 void ChunkSendFile(HQUIC Connection, const char *file_path,
-                   FILE_MANIFEST *manifest, HANDLE transfer_complete_event,
+                   FILE_MANIFEST *manifest, WH_EVENT transfer_complete_event,
                    BOOLEAN *transfer_complete_flag);
 
 //=============================================================================

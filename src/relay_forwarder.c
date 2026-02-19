@@ -39,7 +39,7 @@ struct RELAY_FORWARDER {
 	uint16_t proxy_port;
 
 	// Keepalive tracking (per-instance, not static)
-	DWORD last_keepalive;
+	double last_keepalive;
 
 	// MsQuic's address (learned from first packet in receiver mode)
 	struct sockaddr_storage msquic_addr;
@@ -50,8 +50,8 @@ struct RELAY_FORWARDER {
 	uint16_t local_quic_port;
 
 	// Thread control
-	HANDLE thread;
-	volatile LONG running;
+	WH_THREAD thread;
+	volatile int32_t running;
 };
 
 // Relay callbacks (minimal — we only need registration)
@@ -69,7 +69,7 @@ static void fwd_on_disconnected(void* ctx)
 }
 
 // The forwarding thread: polls both relay socket and proxy socket.
-static DWORD WINAPI ForwarderThread(LPVOID param)
+static WH_THREAD_RETURN ForwarderThread(WH_THREAD_PARAM param)
 {
 	RELAY_FORWARDER* fwd = (RELAY_FORWARDER*)param;
 	uint8_t buf[FORWARDER_MAX_PACKET];
@@ -97,7 +97,7 @@ static DWORD WINAPI ForwarderThread(LPVOID param)
 	LOG("[RelayFwd] Forwarder thread started (relay_sock=%d, proxy_sock=%d)\n",
 		relay_sock, fwd->proxy_sock);
 
-	while (InterlockedCompareExchange(&fwd->running, 1, 1) == 1)
+	while (WH_ATOMIC_LOAD(&fwd->running) == 1)
 	{
 		// Poll both sockets with a short timeout
 		fd_set readfds;
@@ -131,13 +131,17 @@ static DWORD WINAPI ForwarderThread(LPVOID param)
 					{
 						int ret = sendto(fwd->proxy_sock, (const char*)buf, recv_len, 0,
 						       (struct sockaddr*)&fwd->msquic_addr, fwd->msquic_addr_len);
-						if (ret == SOCKET_ERROR)
+						if (ret < 0)
 						{
-							static DWORD last_error_log_proxy = 0;
-							DWORD err_now = GetTickCount();
-							if (err_now - last_error_log_proxy > 5000)
+							static double last_error_log_proxy = 0;
+							double err_now = WH_TIMER_NOW();
+							if (err_now - last_error_log_proxy > 5.0)
 							{
+								#ifdef _WIN32
 								printf("[relay_forwarder] sendto proxy failed: %d\n", WSAGetLastError());
+								#else
+								printf("[relay_forwarder] sendto proxy failed: %d\n", errno);
+								#endif
 								last_error_log_proxy = err_now;
 							}
 						}
@@ -176,9 +180,9 @@ static DWORD WINAPI ForwarderThread(LPVOID param)
 				if (!RelayClient_ForwardPacket(fwd->relay_client, fwd->remote_peer_id,
 				                               buf, (uint16_t)recv_len))
 				{
-					static DWORD last_error_log_fwd = 0;
-					DWORD err_now = GetTickCount();
-					if (err_now - last_error_log_fwd > 5000)
+					static double last_error_log_fwd = 0;
+					double err_now = WH_TIMER_NOW();
+					if (err_now - last_error_log_fwd > 5.0)
 					{
 						printf("[relay_forwarder] ForwardPacket failed\n");
 						last_error_log_fwd = err_now;
@@ -189,8 +193,8 @@ static DWORD WINAPI ForwarderThread(LPVOID param)
 
 		// Send keepalive periodically (relay_client handles timing internally
 		// through Poll, but we do an explicit one every ~10s as backup)
-		DWORD now = GetTickCount();
-		if (now - fwd->last_keepalive > 10000)
+		double now = WH_TIMER_NOW();
+		if (now - fwd->last_keepalive > 10.0)
 		{
 			RelayClient_SendKeepalive(fwd->relay_client);
 			fwd->last_keepalive = now;
@@ -309,8 +313,7 @@ RELAY_FORWARDER* RelayForwarder_Start(const RELAY_FORWARDER_CONFIG* config)
 
 	// Start forwarder thread
 	fwd->running = 1;
-	fwd->thread = CreateThread(NULL, 0, ForwarderThread, fwd, 0, NULL);
-	if (!fwd->thread)
+	if (!WH_THREAD_CREATE(fwd->thread, ForwarderThread, fwd))
 	{
 		LOG_ERROR("[RelayFwd] Failed to create forwarder thread\n");
 #ifdef _WIN32
@@ -344,7 +347,7 @@ void RelayForwarder_Stop(RELAY_FORWARDER* fwd)
 	LOG("[RelayFwd] Stopping...\n");
 
 	// Signal thread to stop
-	InterlockedExchange(&fwd->running, 0);
+	WH_ATOMIC_SET(&fwd->running, 0);
 
 	// Close proxy socket to unblock any pending select()/recvfrom() in the thread
 	if (fwd->proxy_sock >= 0)
@@ -358,15 +361,7 @@ void RelayForwarder_Stop(RELAY_FORWARDER* fwd)
 	}
 
 	// Wait for thread to finish (up to 5 seconds)
-	if (fwd->thread)
-	{
-		DWORD wait_result = WaitForSingleObject(fwd->thread, 5000);
-		if (wait_result == WAIT_TIMEOUT)
-		{
-			LOG_ERROR("[RelayFwd] Thread did not exit within timeout\n");
-		}
-		CloseHandle(fwd->thread);
-	}
+	WH_THREAD_JOIN(fwd->thread, 5000);
 
 	// Clean up relay
 	if (fwd->relay_client)

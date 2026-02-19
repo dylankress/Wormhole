@@ -1,424 +1,1528 @@
 Machine 1 Terminal 1:
 
 C:\Dev\Wormhole\src\build>wormholed.exe --port 4567
-[15:42:33.486] [config] No config file at C:\Users\dylan\.wormhole\config, using defaults
-[15:42:33.486] [daemon] Storage quota: 10 GB
-[15:42:33.486] [daemon] Replication target: 3
-[PeerID] Loaded keypair from C:\Users\dylan\.wormhole\identity
-[15:42:33.487] [daemon] PeerID: 1f498cc3a9b1df606e5c4b1182cf09d1b55def77f61b6bc10891dc204fc5527e
-[15:42:33.487] === wormholed - Wormhole Persistent Node Daemon ===
-[15:42:33.487]   Port:  4567
-[15:42:33.488]   Relay: enabled
-[15:42:33.488] ================================================
-[15:42:33.488] [daemon] Initializing chunk store...
-[15:42:33.488] [daemon] Chunk store ready
-[15:42:33.488] [daemon] Opening MsQuic library...
-[15:42:33.499] [daemon] MsQuic initialized
-[15:42:33.499] [daemon] Loading server configuration...
-[15:42:33.499] Checking for existing Wormhole-Dev certificate...
-[15:42:33.800] Found existing certificate: 130F4FEFFC1A5CF305A1ED7FCD8C5FA4D86B9F85
-[15:42:33.800] [daemon] Certificate thumbprint: 130F4FEFFC1A5CF305A1ED7FCD8C5FA4D86B9F85
-[15:42:33.807] [daemon] Server configuration loaded
-[15:42:33.808] [daemon] Client configuration loaded
-[15:42:33.810] [daemon] QUIC listener started on port 4567
-[15:42:33.811] [ipc] Server listening on \\.\pipe\wormhole_4567
-[15:42:33.811] [worker] Background worker thread started
+[18:15:37.518] [config] No config file at C:\Users\dylan\.wormhole\config, using defaults
+[18:15:37.519] [daemon] Storage quota: 10 GB
+[18:15:37.519] [daemon] Replication target: 3
+[PeerID] No existing keypair found, generating new one...
+[PeerID] Generated new keypair
+[PeerID] Saved keypair to C:\Users\dylan\.wormhole\identity
+[18:15:37.520] [daemon] PeerID: fa52e7e491d8acea64420bf1a0d234d6a5b5c7551b54544deb1ce36e8120a0e9
+[18:15:37.520] === wormholed - Wormhole Persistent Node Daemon ===
+[18:15:37.521]   Port:  4567
+[18:15:37.521]   Relay: enabled
+[18:15:37.521] ================================================
+[18:15:37.521] [daemon] Initializing chunk store...
+[18:15:37.521] [daemon] Chunk store ready
+[18:15:37.522] [daemon] Opening MsQuic library...
+[18:15:37.531] [daemon] MsQuic initialized
+[18:15:37.531] [daemon] Loading server configuration...
+[18:15:37.531] Checking for existing Wormhole-Dev certificate...
+[18:15:37.831] Found existing certificate: 130F4FEFFC1A5CF305A1ED7FCD8C5FA4D86B9F85
+[18:15:37.831] [daemon] Certificate thumbprint: 130F4FEFFC1A5CF305A1ED7FCD8C5FA4D86B9F85
+[18:15:37.839] [daemon] Server configuration loaded
+[18:15:37.840] [daemon] Client configuration loaded
+[18:15:37.842] [daemon] QUIC listener started on port 4567
+[18:15:37.842] [ipc] Server listening on \\.\pipe\wormhole_4567
+[18:15:37.842] [worker] Background worker thread started
 [Discovery] Found IPv6 address (priority 75)
 [Discovery] Found IPv6 address (priority 75)
 [Discovery] Found IPv6 address (priority 75)
 [Discovery] Found 3 total endpoints
-[15:42:33.819] [daemon] Discovered 3 endpoints
+[18:15:37.850] [daemon] Discovered 3 endpoints
 [RelayClient] Created client for wormholerelay.com:443 (IPv4)
 [RelayClient] Sent REGISTER (3 endpoints)
-[15:42:33.828] [daemon] Relay registration sent
-[15:42:33.961] [daemon] DHT node initialized on port 4568
+[18:15:37.858] [daemon] Relay registration sent
+[18:15:37.861] [daemon] DHT node initialized on port 4568
 [dht] Bootstrap: sending FIND_NODE(self) to 2604:a880:800:14:0:2:7dad:f000:443
-[15:42:33.961] [daemon] Loaded ledger (1 peers)
-[15:42:33.961] [daemon] Daemon is running. Press Ctrl+C to stop.
-[RelayClient] REGISTERED (session 12882858601788894419)
-[15:42:33.962] [daemon] Relay connected (session 12882858601788894419)
+[18:15:37.862] [daemon] Starting with fresh ledger
+[18:15:37.862] [daemon] Daemon is running. Press Ctrl+C to stop.
+[RelayClient] REGISTERED (session 16460316184209412078)
+[18:15:37.893] [daemon] Relay connected (session 16460316184209412078)
 [RelayClient] Sent FIND_PEERS (max 20)
 [RelayClient] PEERS_FOUND (0 peers)
-[15:42:38.136] [daemon] Peer discovery: no active peers found
-[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
-[dht] Received FIND_NODE, returning 2 nodes
+[18:15:42.062] [daemon] Peer discovery: no active peers found
+[18:15:47.073] [daemon] DHT routing table empty, retrying bootstrap (1/6)
+[dht] Bootstrap: sending FIND_NODE(self) to 2604:a880:800:14:0:2:7dad:f000:443
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
 [RelayClient] Sent FIND_PEERS (max 20)
 [RelayClient] PEERS_FOUND (1 peers)
-[15:43:08.129] [daemon] Peer discovery: found 1 active peers
-[15:43:08.129] [daemon]   Peer 0: 273b2695... (9 endpoints)
-[15:43:08.129] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[18:16:12.074] [daemon] Peer discovery: found 1 active peers
+[18:16:12.074] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:16:12.075] [daemon] Seeded DHT routing table with 1 peers from relay discovery
 [dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] FIND_NODE response: 2 nodes
-[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
-[dht] Received FIND_NODE, returning 2 nodes
-[15:43:32.598] [ipc] Client connected
-[15:43:33.074] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
-[15:43:33.078] [worker] File test_10mb.bin: 0/40 chunks replicated
+[dht] FIND_NODE response: 1 nodes
+[18:16:22.382] [ipc] Client connected
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
 [RelayClient] Sent FIND_PEERS (max 20)
 [RelayClient] PEERS_FOUND (1 peers)
-[15:43:38.033] [daemon] Peer discovery: found 1 active peers
-[15:43:38.033] [daemon]   Peer 0: 273b2695... (9 endpoints)
-[15:43:38.033] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[18:16:42.064] [daemon] Peer discovery: found 1 active peers
+[18:16:42.064] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:16:42.065] [daemon] Seeded DHT routing table with 1 peers from relay discovery
 [dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] FIND_NODE response: 2 nodes
-[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
-[dht] Received FIND_NODE, returning 2 nodes
+[dht] FIND_NODE response: 1 nodes
+[18:16:48.812] [ipc] Client connected
+[18:16:48.812] [daemon] STORE request: C:\Users\dylan\Desktop\test_10mb.bin
+[18:16:49.017] [Chunker] Built manifest and stored 40/40 chunks for C:\Users\dylan\Desktop\test_10mb.bin
+[18:16:49.017] [daemon] Stored 40/40 chunks for C:\Users\dylan\Desktop\test_10mb.bin
+[18:16:49.484] [worker] EC: 10 stripes with RS(4,2)
+[18:16:49.665] [replicate-batch] Sending 40 chunks to 192.168.1.122:4567
+[18:16:49.704] [punch] NAT mapping connection succeeded
+[18:16:49.793] [replicate-batch] Hole-punch ACK received, waiting for NAT...
+[18:16:50.806] [replicate-batch] Queued 40 chunks to 192.168.1.122:4567
+[18:16:50.825] [replicate] Connected to peer for replication
+[18:16:50.838] [replicate] Session ticket saved (58 bytes) for 0-RTT
+[18:16:50.876] [daemon] Chunk stored by peer (ACK)
+[18:16:50.877] [daemon] SetReplicaLocation(f87115dd42181ba4..., peer=323d71898ec09077...): OK
+[18:16:50.901] [daemon] Chunk stored by peer (ACK)
+[18:16:50.903] [daemon] SetReplicaLocation(7393d6584f8d97d1..., peer=323d71898ec09077...): OK
+[18:16:50.916] [daemon] Chunk stored by peer (ACK)
+[18:16:50.917] [daemon] SetReplicaLocation(221e3f56e0c8f1ab..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:50.931] [daemon] Chunk stored by peer (ACK)
+[18:16:50.933] [daemon] SetReplicaLocation(b8313576a449b677..., peer=323d71898ec09077...): OK
+[18:16:50.944] [daemon] Chunk stored by peer (ACK)
+[18:16:50.946] [daemon] SetReplicaLocation(5e1fd366757df172..., peer=323d71898ec09077...): OK
+[18:16:50.961] [daemon] Chunk stored by peer (ACK)
+[18:16:50.962] [daemon] SetReplicaLocation(1e5d653f376aae13..., peer=323d71898ec09077...): OK
+[18:16:50.975] [daemon] Chunk stored by peer (ACK)
+[18:16:50.976] [daemon] SetReplicaLocation(fae64fe9412cab83..., peer=323d71898ec09077...): OK
+[18:16:50.989] [daemon] Chunk stored by peer (ACK)
+[18:16:50.991] [daemon] SetReplicaLocation(abefc3ae9f75331e..., peer=323d71898ec09077...): OK
+[18:16:51.012] [daemon] Chunk stored by peer (ACK)
+[18:16:51.013] [daemon] SetReplicaLocation(992f23f56aec0ba1..., peer=323d71898ec09077...): OK
+[18:16:51.013] [daemon] Chunk stored by peer (ACK)
+[18:16:51.014] [daemon] SetReplicaLocation(fa91e08a3a50111d..., peer=323d71898ec09077...): OK
+[18:16:51.028] [daemon] Chunk stored by peer (ACK)
+[18:16:51.031] [daemon] SetReplicaLocation(cb133effb8e90bf4..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:51.056] [daemon] Chunk stored by peer (ACK)
+[18:16:51.057] [daemon] SetReplicaLocation(686277b53f3d1c98..., peer=323d71898ec09077...): OK
+[18:16:51.057] [daemon] Chunk stored by peer (ACK)
+[18:16:51.059] [daemon] SetReplicaLocation(84ea733d08e81eb6..., peer=323d71898ec09077...): OK
+[18:16:51.066] [daemon] Chunk stored by peer (ACK)
+[18:16:51.068] [daemon] SetReplicaLocation(2232ab4fdec6c047..., peer=323d71898ec09077...): OK
+[18:16:51.109] [daemon] Chunk stored by peer (ACK)
+[18:16:51.110] [daemon] SetReplicaLocation(f7015f63603ce5ab..., peer=323d71898ec09077...): OK
+[18:16:51.110] [daemon] Chunk stored by peer (ACK)
+[18:16:51.111] [daemon] SetReplicaLocation(60be2310b2eed281..., peer=323d71898ec09077...): OK
+[18:16:51.111] [daemon] Chunk stored by peer (ACK)
+[18:16:51.112] [daemon] SetReplicaLocation(c4b869062d865506..., peer=323d71898ec09077...): OK
+[18:16:51.129] [daemon] Chunk stored by peer (ACK)
+[18:16:51.130] [daemon] SetReplicaLocation(65966d774d68b1a5..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:51.167] [daemon] Chunk stored by peer (ACK)
+[18:16:51.168] [daemon] SetReplicaLocation(83b9c049484a9415..., peer=323d71898ec09077...): OK
+[18:16:51.168] [daemon] Chunk stored by peer (ACK)
+[18:16:51.169] [daemon] SetReplicaLocation(dce0224389c9439e..., peer=323d71898ec09077...): OK
+[18:16:51.169] [daemon] Chunk stored by peer (ACK)
+[18:16:51.170] [daemon] SetReplicaLocation(e28e00ada4a4c605..., peer=323d71898ec09077...): OK
+[18:16:51.182] [daemon] Chunk stored by peer (ACK)
+[18:16:51.183] [daemon] SetReplicaLocation(6d6cf853f1064e11..., peer=323d71898ec09077...): OK
+[18:16:51.230] [daemon] Chunk stored by peer (ACK)
+[18:16:51.231] [daemon] SetReplicaLocation(fe24378a3bc681a3..., peer=323d71898ec09077...): OK
+[18:16:51.232] [daemon] Chunk stored by peer (ACK)
+[18:16:51.232] [daemon] SetReplicaLocation(172461d5a076a33b..., peer=323d71898ec09077...): OK
+[18:16:51.233] [daemon] Chunk stored by peer (ACK)
+[18:16:51.234] [daemon] SetReplicaLocation(87be971b171251fe..., peer=323d71898ec09077...): OK
+[18:16:51.234] [daemon] Chunk stored by peer (ACK)
+[18:16:51.235] [daemon] SetReplicaLocation(b829e5adc5a082c0..., peer=323d71898ec09077...): OK
+[18:16:51.244] [daemon] Chunk stored by peer (ACK)
+[18:16:51.245] [daemon] SetReplicaLocation(7e34270aca865c17..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:51.272] [daemon] Chunk stored by peer (ACK)
+[18:16:51.273] [daemon] SetReplicaLocation(4f77096fcc225134..., peer=323d71898ec09077...): OK
+[18:16:51.273] [daemon] Chunk stored by peer (ACK)
+[18:16:51.274] [daemon] SetReplicaLocation(eb39124db97a6701..., peer=323d71898ec09077...): OK
+[18:16:51.311] [daemon] Chunk stored by peer (ACK)
+[18:16:51.312] [daemon] SetReplicaLocation(d26a6cfd7ad5d206..., peer=323d71898ec09077...): OK
+[18:16:51.313] [daemon] Chunk stored by peer (ACK)
+[18:16:51.313] [daemon] SetReplicaLocation(a5809cf4dbac01f6..., peer=323d71898ec09077...): OK
+[18:16:51.314] [daemon] Chunk stored by peer (ACK)
+[18:16:51.315] [daemon] SetReplicaLocation(d34d989689e4f5f3..., peer=323d71898ec09077...): OK
+[18:16:51.337] [daemon] Chunk stored by peer (ACK)
+[18:16:51.338] [daemon] SetReplicaLocation(5f351c26bfe775d9..., peer=323d71898ec09077...): OK
+[18:16:51.338] [daemon] Chunk stored by peer (ACK)
+[18:16:51.339] [daemon] SetReplicaLocation(9037f9d691e1cb66..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:51.379] [daemon] Chunk stored by peer (ACK)
+[18:16:51.380] [daemon] SetReplicaLocation(0e4e0c89defccc41..., peer=323d71898ec09077...): OK
+[18:16:51.380] [daemon] Chunk stored by peer (ACK)
+[18:16:51.381] [daemon] SetReplicaLocation(0a79ecc6569919fd..., peer=323d71898ec09077...): OK
+[18:16:51.381] [daemon] Chunk stored by peer (ACK)
+[18:16:51.382] [daemon] SetReplicaLocation(09834aa7d8d965be..., peer=323d71898ec09077...): OK
+[18:16:51.405] [daemon] Chunk stored by peer (ACK)
+[18:16:51.407] [daemon] SetReplicaLocation(0fba16fde9324d7d..., peer=323d71898ec09077...): OK
+[18:16:51.407] [daemon] Chunk stored by peer (ACK)
+[18:16:51.408] [daemon] SetReplicaLocation(a724fcc27b0c112e..., peer=323d71898ec09077...): OK
+[18:16:51.416] [daemon] Chunk stored by peer (ACK)
+[18:16:51.417] [daemon] SetReplicaLocation(64b83880be9b61e5..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[18:16:52.151] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
+[18:16:52.154] [worker] File test_10mb.bin: 0/40 chunks replicated
+[18:16:52.155] [replicate-batch] Sending 20 chunks to 192.168.1.122:4567
+[18:16:52.168] [punch] NAT mapping connection succeeded
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[18:16:52.276] [replicate-batch] Hole-punch ACK received, waiting for NAT...
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
+[18:16:53.287] [replicate-batch] Queued 20 chunks to 192.168.1.122:4567
+[18:16:53.308] [replicate] Connected to peer for replication
+[18:16:53.325] [replicate] Session ticket saved (58 bytes) for 0-RTT
+[18:16:53.358] [daemon] Chunk stored by peer (ACK)
+[18:16:53.360] [daemon] SetReplicaLocation(51e9b034baf3482f..., peer=323d71898ec09077...): OK
+[18:16:53.372] [daemon] Chunk stored by peer (ACK)
+[18:16:53.373] [daemon] SetReplicaLocation(21513c1261f90c38..., peer=323d71898ec09077...): OK
+[18:16:53.387] [daemon] Chunk stored by peer (ACK)
+[18:16:53.388] [daemon] SetReplicaLocation(8fbc7cce28eec857..., peer=323d71898ec09077...): OK
+[18:16:53.400] [daemon] Chunk stored by peer (ACK)
+[18:16:53.401] [daemon] SetReplicaLocation(c3cc5147398f837c..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:53.418] [daemon] Chunk stored by peer (ACK)
+[18:16:53.419] [daemon] SetReplicaLocation(ddfbc24b9d33ff16..., peer=323d71898ec09077...): OK
+[18:16:53.430] [daemon] Chunk stored by peer (ACK)
+[18:16:53.431] [daemon] SetReplicaLocation(93fa62ea35bd44f5..., peer=323d71898ec09077...): OK
+[18:16:53.442] [daemon] Chunk stored by peer (ACK)
+[18:16:53.443] [daemon] SetReplicaLocation(7df3af3e7ea0b611..., peer=323d71898ec09077...): OK
+[18:16:53.468] [daemon] Chunk stored by peer (ACK)
+[18:16:53.469] [daemon] SetReplicaLocation(46b760bd116fb072..., peer=323d71898ec09077...): OK
+[18:16:53.469] [daemon] Chunk stored by peer (ACK)
+[18:16:53.470] [daemon] SetReplicaLocation(11bffb995dc0badf..., peer=323d71898ec09077...): OK
+[18:16:53.486] [daemon] Chunk stored by peer (ACK)
+[18:16:53.488] [daemon] SetReplicaLocation(d13e306de5737f07..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:53.523] [daemon] Chunk stored by peer (ACK)
+[18:16:53.524] [daemon] SetReplicaLocation(4c7e68a3e9a3d3d7..., peer=323d71898ec09077...): OK
+[18:16:53.524] [daemon] Chunk stored by peer (ACK)
+[18:16:53.525] [daemon] SetReplicaLocation(6034076bb76934ac..., peer=323d71898ec09077...): OK
+[18:16:53.525] [daemon] Chunk stored by peer (ACK)
+[18:16:53.527] [daemon] SetReplicaLocation(e797337c88b29a3e..., peer=323d71898ec09077...): OK
+[18:16:53.576] [daemon] Chunk stored by peer (ACK)
+[18:16:53.577] [daemon] SetReplicaLocation(61278bcba6e2088c..., peer=323d71898ec09077...): OK
+[18:16:53.577] [daemon] Chunk stored by peer (ACK)
+[18:16:53.578] [daemon] SetReplicaLocation(def7ab81f38e5782..., peer=323d71898ec09077...): OK
+[18:16:53.578] [daemon] Chunk stored by peer (ACK)
+[18:16:53.579] [daemon] SetReplicaLocation(df471635baba4d7c..., peer=323d71898ec09077...): OK
+[18:16:53.589] [daemon] Chunk stored by peer (ACK)
+[18:16:53.590] [daemon] SetReplicaLocation(47c9c02534e344b4..., peer=323d71898ec09077...): OK
+[18:16:53.626] [daemon] Chunk stored by peer (ACK)
+[18:16:53.627] [daemon] SetReplicaLocation(e1b3ebd104a034cc..., peer=323d71898ec09077...): OK
+[18:16:53.628] [daemon] Chunk stored by peer (ACK)
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:53.629] [daemon] SetReplicaLocation(11791b6f02e66d9e..., peer=323d71898ec09077...): OK
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[18:16:53.629] [daemon] Chunk stored by peer (ACK)
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[18:16:53.630] [daemon] SetReplicaLocation(9fad74f5a8d90655..., peer=323d71898ec09077...): OK
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x26 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] Received STORE: 1 locations for key
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[dht] Announcing chunk to 1 nodes
+[18:16:53.961] [worker] EC metadata saved to C:\Users\dylan\.wormhole\ec\d0d6b4510bdf2b04ce374d55f67ab64510fcd98d939a950942753e6a80c5703f.ec
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received msg type 0x27 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
 [RelayClient] Sent FIND_PEERS (max 20)
 [RelayClient] PEERS_FOUND (1 peers)
-[15:44:08.068] [daemon] Peer discovery: found 1 active peers
-[15:44:08.069] [daemon]   Peer 0: 273b2695... (9 endpoints)
-[15:44:08.069] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[18:17:12.084] [daemon] Peer discovery: found 1 active peers
+[18:17:12.084] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:17:12.084] [daemon] Seeded DHT routing table with 1 peers from relay discovery
 [dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] FIND_NODE response: 2 nodes
-[15:44:12.882] [ipc] Client connected
-[15:44:12.882] [daemon] STORE request: C:\Users\dylan\Desktop\test_10mb.bin
-[15:44:13.051] [Chunker] Built manifest and stored 40/40 chunks for C:\Users\dylan\Desktop\test_10mb.bin
-[15:44:13.051] [daemon] Stored 40/40 chunks for C:\Users\dylan\Desktop\test_10mb.bin
-[15:44:13.402] [worker] EC: 10 stripes with RS(4,2)
-[15:44:13.594] [replicate-batch] Sending 40 chunks to 192.168.1.122:4567
-[15:44:13.643] [punch] NAT mapping connection succeeded
-[15:44:13.710] [replicate-batch] Hole-punch ACK received, waiting for NAT...
-[15:44:14.717] [replicate-batch] Queued 40 chunks to 192.168.1.122:4567
-[15:44:14.737] [replicate] Connected to peer for replication
-[15:44:14.755] [replicate] Session ticket saved (58 bytes) for 0-RTT
-[15:44:14.786] [daemon] Chunk stored by peer (ACK)
-[15:44:14.787] [daemon] SetReplicaLocation(f87115dd42181ba4..., peer=273b269548789640...): OK
-[15:44:14.800] [daemon] Chunk stored by peer (ACK)
-[15:44:14.802] [daemon] SetReplicaLocation(7393d6584f8d97d1..., peer=273b269548789640...): OK
-[15:44:14.813] [daemon] Chunk stored by peer (ACK)
-[15:44:14.815] [daemon] SetReplicaLocation(221e3f56e0c8f1ab..., peer=273b269548789640...): OK
-[15:44:14.828] [daemon] Chunk stored by peer (ACK)
-[15:44:14.830] [daemon] SetReplicaLocation(b8313576a449b677..., peer=273b269548789640...): OK
-[15:44:14.841] [daemon] Chunk stored by peer (ACK)
-[15:44:14.842] [daemon] SetReplicaLocation(5e1fd366757df172..., peer=273b269548789640...): OK
-[15:44:14.854] [daemon] Chunk stored by peer (ACK)
-[15:44:14.855] [daemon] SetReplicaLocation(1e5d653f376aae13..., peer=273b269548789640...): OK
-[15:44:14.889] [daemon] Chunk stored by peer (ACK)
-[15:44:14.890] [daemon] SetReplicaLocation(fae64fe9412cab83..., peer=273b269548789640...): OK
-[15:44:14.891] [daemon] Chunk stored by peer (ACK)
-[15:44:14.891] [daemon] SetReplicaLocation(abefc3ae9f75331e..., peer=273b269548789640...): OK
-[15:44:14.904] [daemon] Chunk stored by peer (ACK)
-[15:44:14.906] [daemon] SetReplicaLocation(992f23f56aec0ba1..., peer=273b269548789640...): OK
-[15:44:14.928] [daemon] Chunk stored by peer (ACK)
-[15:44:14.929] [daemon] SetReplicaLocation(fa91e08a3a50111d..., peer=273b269548789640...): OK
-[15:44:14.930] [daemon] Chunk stored by peer (ACK)
-[15:44:14.930] [daemon] SetReplicaLocation(cb133effb8e90bf4..., peer=273b269548789640...): OK
-[15:44:14.940] [daemon] Chunk stored by peer (ACK)
-[15:44:14.942] [daemon] SetReplicaLocation(686277b53f3d1c98..., peer=273b269548789640...): OK
-[15:44:14.997] [daemon] Chunk stored by peer (ACK)
-[15:44:14.998] [daemon] SetReplicaLocation(84ea733d08e81eb6..., peer=273b269548789640...): OK
-[15:44:14.998] [daemon] Chunk stored by peer (ACK)
-[15:44:14.999] [daemon] SetReplicaLocation(2232ab4fdec6c047..., peer=273b269548789640...): OK
-[15:44:14.999] [daemon] Chunk stored by peer (ACK)
-[15:44:15.000] [daemon] SetReplicaLocation(f7015f63603ce5ab..., peer=273b269548789640...): OK
-[15:44:15.000] [daemon] Chunk stored by peer (ACK)
-[15:44:15.001] [daemon] SetReplicaLocation(60be2310b2eed281..., peer=273b269548789640...): OK
-[15:44:15.015] [daemon] Chunk stored by peer (ACK)
-[15:44:15.016] [daemon] SetReplicaLocation(c4b869062d865506..., peer=273b269548789640...): OK
-[15:44:15.075] [daemon] Chunk stored by peer (ACK)
-[15:44:15.076] [daemon] SetReplicaLocation(65966d774d68b1a5..., peer=273b269548789640...): OK
-[15:44:15.076] [daemon] Chunk stored by peer (ACK)
-[15:44:15.077] [daemon] SetReplicaLocation(83b9c049484a9415..., peer=273b269548789640...): OK
-[15:44:15.077] [daemon] Chunk stored by peer (ACK)
-[15:44:15.079] [daemon] SetReplicaLocation(dce0224389c9439e..., peer=273b269548789640...): OK
-[15:44:15.079] [daemon] Chunk stored by peer (ACK)
-[15:44:15.080] [daemon] SetReplicaLocation(e28e00ada4a4c605..., peer=273b269548789640...): OK
-[15:44:15.103] [daemon] Chunk stored by peer (ACK)
-[15:44:15.104] [daemon] SetReplicaLocation(6d6cf853f1064e11..., peer=273b269548789640...): OK
-[15:44:15.175] [daemon] Chunk stored by peer (ACK)
-[15:44:15.176] [daemon] SetReplicaLocation(fe24378a3bc681a3..., peer=273b269548789640...): OK
-[15:44:15.176] [daemon] Chunk stored by peer (ACK)
-[15:44:15.176] [daemon] SetReplicaLocation(172461d5a076a33b..., peer=273b269548789640...): OK
-[15:44:15.177] [daemon] Chunk stored by peer (ACK)
-[15:44:15.177] [daemon] SetReplicaLocation(87be971b171251fe..., peer=273b269548789640...): OK
-[15:44:15.178] [daemon] Chunk stored by peer (ACK)
-[15:44:15.178] [daemon] SetReplicaLocation(b829e5adc5a082c0..., peer=273b269548789640...): OK
-[15:44:15.203] [daemon] Chunk stored by peer (ACK)
-[15:44:15.204] [daemon] SetReplicaLocation(7e34270aca865c17..., peer=273b269548789640...): OK
-[15:44:15.206] [daemon] Chunk stored by peer (ACK)
-[15:44:15.206] [daemon] SetReplicaLocation(4f77096fcc225134..., peer=273b269548789640...): OK
-[15:44:15.258] [daemon] Chunk stored by peer (ACK)
-[15:44:15.259] [daemon] SetReplicaLocation(eb39124db97a6701..., peer=273b269548789640...): OK
-[15:44:15.259] [daemon] Chunk stored by peer (ACK)
-[15:44:15.262] [daemon] SetReplicaLocation(d26a6cfd7ad5d206..., peer=273b269548789640...): OK
-[15:44:15.262] [daemon] Chunk stored by peer (ACK)
-[15:44:15.262] [daemon] SetReplicaLocation(a5809cf4dbac01f6..., peer=273b269548789640...): OK
-[15:44:15.263] [daemon] Chunk stored by peer (ACK)
-[15:44:15.263] [daemon] SetReplicaLocation(d34d989689e4f5f3..., peer=273b269548789640...): OK
-[15:44:15.285] [daemon] Chunk stored by peer (ACK)
-[15:44:15.286] [daemon] SetReplicaLocation(5f351c26bfe775d9..., peer=273b269548789640...): OK
-[15:44:15.286] [daemon] Chunk stored by peer (ACK)
-[15:44:15.287] [daemon] SetReplicaLocation(9037f9d691e1cb66..., peer=273b269548789640...): OK
-[15:44:15.347] [daemon] Chunk stored by peer (ACK)
-[15:44:15.347] [daemon] SetReplicaLocation(0e4e0c89defccc41..., peer=273b269548789640...): OK
-[15:44:15.347] [daemon] Chunk stored by peer (ACK)
-[15:44:15.349] [daemon] SetReplicaLocation(0a79ecc6569919fd..., peer=273b269548789640...): OK
-[15:44:15.349] [daemon] Chunk stored by peer (ACK)
-[15:44:15.349] [daemon] SetReplicaLocation(09834aa7d8d965be..., peer=273b269548789640...): OK
-[15:44:15.350] [daemon] Chunk stored by peer (ACK)
-[15:44:15.350] [daemon] SetReplicaLocation(0fba16fde9324d7d..., peer=273b269548789640...): OK
-[15:44:15.350] [daemon] Chunk stored by peer (ACK)
-[15:44:15.351] [daemon] SetReplicaLocation(a724fcc27b0c112e..., peer=273b269548789640...): OK
-[15:44:15.361] [daemon] Chunk stored by peer (ACK)
-[15:44:15.361] [daemon] SetReplicaLocation(64b83880be9b61e5..., peer=273b269548789640...): OK
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[15:44:16.059] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
-[15:44:16.062] [worker] File test_10mb.bin: 0/40 chunks replicated
-[15:44:16.063] [replicate-batch] Sending 20 chunks to 192.168.1.122:4567
-[15:44:16.075] [punch] NAT mapping connection succeeded
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[15:44:16.178] [replicate-batch] Hole-punch ACK received, waiting for NAT...
-[15:44:17.193] [replicate-batch] Queued 20 chunks to 192.168.1.122:4567
-[15:44:17.213] [replicate] Connected to peer for replication
-[15:44:17.228] [replicate] Session ticket saved (58 bytes) for 0-RTT
-[15:44:17.269] [daemon] Chunk stored by peer (ACK)
-[15:44:17.270] [daemon] SetReplicaLocation(51e9b034baf3482f..., peer=273b269548789640...): OK
-[15:44:17.286] [daemon] Chunk stored by peer (ACK)
-[15:44:17.287] [daemon] SetReplicaLocation(21513c1261f90c38..., peer=273b269548789640...): OK
-[15:44:17.298] [daemon] Chunk stored by peer (ACK)
-[15:44:17.299] [daemon] SetReplicaLocation(8fbc7cce28eec857..., peer=273b269548789640...): OK
-[15:44:17.310] [daemon] Chunk stored by peer (ACK)
-[15:44:17.311] [daemon] SetReplicaLocation(c3cc5147398f837c..., peer=273b269548789640...): OK
-[15:44:17.324] [daemon] Chunk stored by peer (ACK)
-[15:44:17.325] [daemon] SetReplicaLocation(ddfbc24b9d33ff16..., peer=273b269548789640...): OK
-[15:44:17.337] [daemon] Chunk stored by peer (ACK)
-[15:44:17.338] [daemon] SetReplicaLocation(93fa62ea35bd44f5..., peer=273b269548789640...): OK
-[15:44:17.363] [daemon] Chunk stored by peer (ACK)
-[15:44:17.364] [daemon] SetReplicaLocation(7df3af3e7ea0b611..., peer=273b269548789640...): OK
-[15:44:17.365] [daemon] Chunk stored by peer (ACK)
-[15:44:17.365] [daemon] SetReplicaLocation(46b760bd116fb072..., peer=273b269548789640...): OK
-[15:44:17.391] [daemon] Chunk stored by peer (ACK)
-[15:44:17.392] [daemon] SetReplicaLocation(11bffb995dc0badf..., peer=273b269548789640...): OK
-[15:44:17.427] [daemon] Chunk stored by peer (ACK)
-[15:44:17.429] [daemon] SetReplicaLocation(d13e306de5737f07..., peer=273b269548789640...): OK
-[15:44:17.429] [daemon] Chunk stored by peer (ACK)
-[15:44:17.430] [daemon] SetReplicaLocation(4c7e68a3e9a3d3d7..., peer=273b269548789640...): OK
-[15:44:17.430] [daemon] Chunk stored by peer (ACK)
-[15:44:17.430] [daemon] SetReplicaLocation(6034076bb76934ac..., peer=273b269548789640...): OK
-[15:44:17.445] [daemon] Chunk stored by peer (ACK)
-[15:44:17.446] [daemon] SetReplicaLocation(e797337c88b29a3e..., peer=273b269548789640...): OK
-[15:44:17.484] [daemon] Chunk stored by peer (ACK)
-[15:44:17.485] [daemon] SetReplicaLocation(61278bcba6e2088c..., peer=273b269548789640...): OK
-[15:44:17.485] [daemon] Chunk stored by peer (ACK)
-[15:44:17.486] [daemon] SetReplicaLocation(def7ab81f38e5782..., peer=273b269548789640...): OK
-[15:44:17.486] [daemon] Chunk stored by peer (ACK)
-[15:44:17.487] [daemon] SetReplicaLocation(df471635baba4d7c..., peer=273b269548789640...): OK
-[15:44:17.494] [daemon] Chunk stored by peer (ACK)
-[15:44:17.495] [daemon] SetReplicaLocation(47c9c02534e344b4..., peer=273b269548789640...): OK
-[15:44:17.520] [daemon] Chunk stored by peer (ACK)
-[15:44:17.521] [daemon] SetReplicaLocation(e1b3ebd104a034cc..., peer=273b269548789640...): OK
-[15:44:17.521] [daemon] Chunk stored by peer (ACK)
-[15:44:17.522] [daemon] SetReplicaLocation(11791b6f02e66d9e..., peer=273b269548789640...): OK
-[15:44:17.529] [daemon] Chunk stored by peer (ACK)
-[15:44:17.529] [daemon] SetReplicaLocation(9fad74f5a8d90655..., peer=273b269548789640...): OK
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[dht] Announcing chunk to 2 nodes
-[15:44:17.859] [worker] EC metadata saved to C:\Users\dylan\.wormhole\ec\d0d6b4510bdf2b04ce374d55f67ab64510fcd98d939a950942753e6a80c5703f.ec
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x27 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
-[dht] Received FIND_NODE, returning 2 nodes
-[15:44:33.063] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
-[15:44:33.067] [worker] File test_10mb.bin: 0/40 chunks replicated
+[dht] FIND_NODE response: 1 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[18:17:26.916] [ipc] Client connected
+[18:17:37.013] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
+[18:17:37.016] [worker] File test_10mb.bin: 0/40 chunks replicated
 [RelayClient] Sent FIND_PEERS (max 20)
 [RelayClient] PEERS_FOUND (1 peers)
-[15:44:38.135] [daemon] Peer discovery: found 1 active peers
-[15:44:38.135] [daemon]   Peer 0: 273b2695... (9 endpoints)
-[15:44:38.136] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[18:17:42.083] [daemon] Peer discovery: found 1 active peers
+[18:17:42.083] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:17:42.083] [daemon] Seeded DHT routing table with 1 peers from relay discovery
 [dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
-[dht] FIND_NODE response: 2 nodes
-[15:44:45.562] [ipc] Client connected
-[dht] Received msg type 0x22 from 2600:1700:7d00:1390:f022:7e33:a8f3:aaad:4568
-[dht] Received FIND_NODE, returning 2 nodes
-[15:45:01.952]
+[dht] FIND_NODE response: 1 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[18:18:12.091] [daemon] Peer discovery: found 1 active peers
+[18:18:12.091] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:18:12.091] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 1 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[18:18:31.898] [ipc] Client connected
+[18:18:31.899] [daemon] FILE_GET: retrieving test_10mb.bin (40 chunks) -> C:\Users\dylan\Desktop\thisinonlyatest
+[18:18:31.900] [daemon] FILE_GET: loaded EC metadata for recovery
+[18:18:32.082] [daemon] FILE_GET: wrote 10485760 bytes to C:\Users\dylan\Desktop\thisinonlyatest
+[18:18:37.026] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
+[18:18:37.029] [worker] File test_10mb.bin: 0/40 chunks replicated
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[18:18:42.093] [daemon] Peer discovery: found 1 active peers
+[18:18:42.093] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:18:42.094] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 1 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[18:19:12.109] [daemon] Peer discovery: found 1 active peers
+[18:19:12.109] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:19:12.110] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 1 nodes
+[18:19:23.502] [ipc] Client connected
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[18:19:37.050] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
+[18:19:37.054] [worker] File test_10mb.bin: 0/40 chunks replicated
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[18:19:42.112] [daemon] Peer discovery: found 1 active peers
+[18:19:42.113] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:19:42.113] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 1 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[18:20:12.099] [daemon] Peer discovery: found 1 active peers
+[18:20:12.100] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:20:12.100] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 1 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[18:20:37.038] [worker] Checking replicas: first chunk=f87115dd42181ba4... count=1
+[18:20:37.041] [worker] File test_10mb.bin: 0/40 chunks replicated
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[18:20:42.121] [daemon] Peer discovery: found 1 active peers
+[18:20:42.121] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:20:42.121] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 1 nodes
+[18:20:50.148] [ipc] Client connected
+[18:20:50.149] [daemon] FILE_GET: retrieving test_10mb.bin (40 chunks) -> C:\Users\dylan\Desktop\thisinonlyatest
+[18:20:50.150] [daemon] FILE_GET: loaded EC metadata for recovery
+[18:20:50.151] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.181] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.208] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:50.213] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.217] [fetch] Stream RECEIVE: 19237 bytes (total so far: 14109)
+[18:20:50.221] [fetch] Stream RECEIVE: 6006 bytes (total so far: 33346)
+[18:20:50.222] [fetch] Stream RECEIVE: 6015 bytes (total so far: 39352)
+[18:20:50.225] [fetch] Stream RECEIVE: 12021 bytes (total so far: 45367)
+[18:20:50.225] [fetch] Stream RECEIVE: 1203 bytes (total so far: 57388)
+[18:20:50.226] [fetch] Stream RECEIVE: 10818 bytes (total so far: 58591)
+[18:20:50.226] [fetch] Stream RECEIVE: 4812 bytes (total so far: 69409)
+[18:20:50.227] [fetch] Stream RECEIVE: 10818 bytes (total so far: 74221)
+[18:20:50.227] [fetch] Stream RECEIVE: 4812 bytes (total so far: 85039)
+[18:20:50.230] [fetch] Stream RECEIVE: 13224 bytes (total so far: 89851)
+[18:20:50.230] [fetch] Stream RECEIVE: 8421 bytes (total so far: 103075)
+[18:20:50.231] [fetch] Stream RECEIVE: 6015 bytes (total so far: 111496)
+[18:20:50.231] [fetch] Stream RECEIVE: 25254 bytes (total so far: 117511)
+[18:20:50.231] [fetch] Stream RECEIVE: 7218 bytes (total so far: 142765)
+[18:20:50.232] [fetch] Stream RECEIVE: 2406 bytes (total so far: 149983)
+[18:20:50.233] [fetch] Stream RECEIVE: 1203 bytes (total so far: 152389)
+[18:20:50.233] [fetch] Stream RECEIVE: 7218 bytes (total so far: 153592)
+[18:20:50.234] [fetch] Stream RECEIVE: 14427 bytes (total so far: 160810)
+[18:20:50.234] [fetch] Stream RECEIVE: 9624 bytes (total so far: 175237)
+[18:20:50.234] [fetch] Stream RECEIVE: 7209 bytes (total so far: 184861)
+[18:20:50.235] [fetch] Stream RECEIVE: 26457 bytes (total so far: 192070)
+[18:20:50.235] [fetch] Stream RECEIVE: 15639 bytes (total so far: 218527)
+[18:20:50.236] [fetch] Stream RECEIVE: 15630 bytes (total so far: 234166)
+[18:20:50.236] [fetch] Stream RECEIVE: 12390 bytes (total so far: 249796)
+[18:20:50.236] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.236] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.237] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.247] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.263] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:50.266] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:50.269] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14100)
+[18:20:50.270] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32134)
+[18:20:50.272] [fetch] Stream RECEIVE: 6006 bytes (total so far: 33337)
+[18:20:50.275] [fetch] Stream RECEIVE: 12021 bytes (total so far: 39343)
+[18:20:50.276] [fetch] Stream RECEIVE: 2406 bytes (total so far: 51364)
+[18:20:50.279] [fetch] Stream RECEIVE: 13224 bytes (total so far: 53770)
+[18:20:50.279] [fetch] Stream RECEIVE: 7218 bytes (total so far: 66994)
+[18:20:50.282] [fetch] Stream RECEIVE: 14427 bytes (total so far: 74212)
+[18:20:50.282] [fetch] Stream RECEIVE: 4812 bytes (total so far: 88639)
+[18:20:50.283] [fetch] Stream RECEIVE: 6015 bytes (total so far: 93451)
+[18:20:50.285] [fetch] Stream RECEIVE: 20442 bytes (total so far: 99466)
+[18:20:50.285] [fetch] Stream RECEIVE: 8421 bytes (total so far: 119908)
+[18:20:50.286] [fetch] Stream RECEIVE: 9615 bytes (total so far: 128329)
+[18:20:50.286] [fetch] Stream RECEIVE: 7218 bytes (total so far: 137944)
+[18:20:50.288] [fetch] Stream RECEIVE: 14436 bytes (total so far: 145162)
+[18:20:50.288] [fetch] Stream RECEIVE: 25254 bytes (total so far: 159598)
+[18:20:50.289] [fetch] Stream RECEIVE: 1203 bytes (total so far: 184852)
+[18:20:50.289] [fetch] Stream RECEIVE: 20451 bytes (total so far: 186055)
+[18:20:50.289] [fetch] Stream RECEIVE: 21645 bytes (total so far: 206506)
+[18:20:50.290] [fetch] Stream RECEIVE: 7218 bytes (total so far: 228151)
+[18:20:50.290] [fetch] Stream RECEIVE: 9615 bytes (total so far: 235369)
+[18:20:50.291] [fetch] Stream RECEIVE: 10827 bytes (total so far: 244984)
+[18:20:50.291] [fetch] Stream RECEIVE: 6375 bytes (total so far: 255811)
+[18:20:50.291] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.292] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.292] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.301] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.317] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:50.320] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.323] [fetch] Stream RECEIVE: 18032 bytes (total so far: 14109)
+[18:20:50.324] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32141)
+[18:20:50.326] [fetch] Stream RECEIVE: 8412 bytes (total so far: 33344)
+[18:20:50.330] [fetch] Stream RECEIVE: 16833 bytes (total so far: 41756)
+[18:20:50.332] [fetch] Stream RECEIVE: 16833 bytes (total so far: 58589)
+[18:20:50.332] [fetch] Stream RECEIVE: 3609 bytes (total so far: 75422)
+[18:20:50.334] [fetch] Stream RECEIVE: 8421 bytes (total so far: 79031)
+[18:20:50.334] [fetch] Stream RECEIVE: 18036 bytes (total so far: 87452)
+[18:20:50.336] [fetch] Stream RECEIVE: 16833 bytes (total so far: 105488)
+[18:20:50.336] [fetch] Stream RECEIVE: 20451 bytes (total so far: 122321)
+[18:20:50.338] [fetch] Stream RECEIVE: 21654 bytes (total so far: 142772)
+[18:20:50.338] [fetch] Stream RECEIVE: 31269 bytes (total so far: 164426)
+[18:20:50.340] [fetch] Stream RECEIVE: 26466 bytes (total so far: 195695)
+[18:20:50.341] [fetch] Stream RECEIVE: 40025 bytes (total so far: 222161)
+[18:20:50.341] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.342] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.342] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.350] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.365] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:50.367] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:50.370] [fetch] Stream RECEIVE: 21643 bytes (total so far: 14100)
+[18:20:50.372] [fetch] Stream RECEIVE: 6015 bytes (total so far: 35743)
+[18:20:50.374] [fetch] Stream RECEIVE: 21636 bytes (total so far: 41758)
+[18:20:50.376] [fetch] Stream RECEIVE: 21645 bytes (total so far: 63394)
+[18:20:50.376] [fetch] Stream RECEIVE: 7218 bytes (total so far: 85039)
+[18:20:50.381] [fetch] Stream RECEIVE: 37284 bytes (total so far: 92257)
+[18:20:50.382] [fetch] Stream RECEIVE: 26457 bytes (total so far: 129541)
+[18:20:50.383] [fetch] Stream RECEIVE: 28863 bytes (total so far: 155998)
+[18:20:50.384] [fetch] Stream RECEIVE: 68562 bytes (total so far: 184861)
+[18:20:50.385] [fetch] Stream RECEIVE: 6015 bytes (total so far: 253423)
+[18:20:50.386] [fetch] Stream RECEIVE: 2748 bytes (total so far: 259438)
+[18:20:50.386] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.386] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.386] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.395] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.409] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:50.412] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:50.413] [fetch] Stream RECEIVE: 7030 bytes (total so far: 14100)
+[18:20:50.415] [fetch] Stream RECEIVE: 36064 bytes (total so far: 21130)
+[18:20:50.416] [fetch] Stream RECEIVE: 13224 bytes (total so far: 57194)
+[18:20:50.417] [fetch] Stream RECEIVE: 12021 bytes (total so far: 70418)
+[18:20:50.418] [fetch] Stream RECEIVE: 3609 bytes (total so far: 82439)
+[18:20:50.418] [fetch] Stream RECEIVE: 22848 bytes (total so far: 86048)
+[18:20:50.419] [fetch] Stream RECEIVE: 18036 bytes (total so far: 108896)
+[18:20:50.421] [fetch] Stream RECEIVE: 12030 bytes (total so far: 126932)
+[18:20:50.421] [fetch] Stream RECEIVE: 36072 bytes (total so far: 138962)
+[18:20:50.421] [fetch] Stream RECEIVE: 13233 bytes (total so far: 175034)
+[18:20:50.421] [fetch] Stream RECEIVE: 9624 bytes (total so far: 188267)
+[18:20:50.424] [fetch] Stream RECEIVE: 32472 bytes (total so far: 197891)
+[18:20:50.424] [fetch] Stream RECEIVE: 31823 bytes (total so far: 230363)
+[18:20:50.424] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.425] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.425] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.435] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.449] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:50.451] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.454] [fetch] Stream RECEIVE: 21643 bytes (total so far: 14109)
+[18:20:50.455] [fetch] Stream RECEIVE: 6015 bytes (total so far: 35752)
+[18:20:50.459] [fetch] Stream RECEIVE: 21636 bytes (total so far: 41767)
+[18:20:50.461] [fetch] Stream RECEIVE: 13224 bytes (total so far: 63403)
+[18:20:50.462] [fetch] Stream RECEIVE: 15639 bytes (total so far: 76627)
+[18:20:50.463] [fetch] Stream RECEIVE: 2406 bytes (total so far: 92266)
+[18:20:50.463] [fetch] Stream RECEIVE: 21645 bytes (total so far: 94672)
+[18:20:50.464] [fetch] Stream RECEIVE: 9624 bytes (total so far: 116317)
+[18:20:50.464] [fetch] Stream RECEIVE: 16833 bytes (total so far: 125941)
+[18:20:50.464] [fetch] Stream RECEIVE: 10827 bytes (total so far: 142774)
+[18:20:50.466] [fetch] Stream RECEIVE: 12030 bytes (total so far: 153601)
+[18:20:50.467] [fetch] Stream RECEIVE: 25254 bytes (total so far: 165631)
+[18:20:50.468] [fetch] Stream RECEIVE: 32472 bytes (total so far: 190885)
+[18:20:50.468] [fetch] Stream RECEIVE: 38829 bytes (total so far: 223357)
+[18:20:50.469] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.469] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.470] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.478] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.492] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:50.494] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.496] [fetch] Stream RECEIVE: 21643 bytes (total so far: 14109)
+[18:20:50.498] [fetch] Stream RECEIVE: 6015 bytes (total so far: 35752)
+[18:20:50.500] [fetch] Stream RECEIVE: 13215 bytes (total so far: 41767)
+[18:20:50.500] [fetch] Stream RECEIVE: 8421 bytes (total so far: 54982)
+[18:20:50.503] [fetch] Stream RECEIVE: 18036 bytes (total so far: 63403)
+[18:20:50.503] [fetch] Stream RECEIVE: 20442 bytes (total so far: 81439)
+[18:20:50.506] [fetch] Stream RECEIVE: 45696 bytes (total so far: 101881)
+[18:20:50.506] [fetch] Stream RECEIVE: 12030 bytes (total so far: 147577)
+[18:20:50.509] [fetch] Stream RECEIVE: 6015 bytes (total so far: 159607)
+[18:20:50.509] [fetch] Stream RECEIVE: 21645 bytes (total so far: 165622)
+[18:20:50.510] [fetch] Stream RECEIVE: 34887 bytes (total so far: 187267)
+[18:20:50.511] [fetch] Stream RECEIVE: 9624 bytes (total so far: 222154)
+[18:20:50.512] [fetch] Stream RECEIVE: 9624 bytes (total so far: 231778)
+[18:20:50.513] [fetch] Stream RECEIVE: 20784 bytes (total so far: 241402)
+[18:20:50.513] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.514] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.514] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.521] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.535] [fetch] Stream RECEIVE: 7063 bytes (total so far: 0)
+[18:20:50.537] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7063)
+[18:20:50.540] [fetch] Stream RECEIVE: 21644 bytes (total so far: 14101)
+[18:20:50.542] [fetch] Stream RECEIVE: 15631 bytes (total so far: 35745)
+[18:20:50.545] [fetch] Stream RECEIVE: 21646 bytes (total so far: 51376)
+[18:20:50.549] [fetch] Stream RECEIVE: 24052 bytes (total so far: 73022)
+[18:20:50.551] [fetch] Stream RECEIVE: 19240 bytes (total so far: 97074)
+[18:20:50.551] [fetch] Stream RECEIVE: 7218 bytes (total so far: 116314)
+[18:20:50.553] [fetch] Stream RECEIVE: 30067 bytes (total so far: 123532)
+[18:20:50.554] [fetch] Stream RECEIVE: 2406 bytes (total so far: 153599)
+[18:20:50.556] [fetch] Stream RECEIVE: 19240 bytes (total so far: 156005)
+[18:20:50.556] [fetch] Stream RECEIVE: 20451 bytes (total so far: 175245)
+[18:20:50.558] [fetch] Stream RECEIVE: 14436 bytes (total so far: 195696)
+[18:20:50.558] [fetch] Stream RECEIVE: 9616 bytes (total so far: 210132)
+[18:20:50.558] [fetch] Stream RECEIVE: 8421 bytes (total so far: 219748)
+[18:20:50.558] [fetch] Stream RECEIVE: 6015 bytes (total so far: 228169)
+[18:20:50.558] [fetch] Stream RECEIVE: 8421 bytes (total so far: 234184)
+[18:20:50.560] [fetch] Stream RECEIVE: 19581 bytes (total so far: 242605)
+[18:20:50.560] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.560] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.561] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.570] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.584] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:50.587] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:50.589] [fetch] Stream RECEIVE: 1196 bytes (total so far: 14100)
+[18:20:50.590] [fetch] Stream RECEIVE: 18041 bytes (total so far: 15296)
+[18:20:50.592] [fetch] Stream RECEIVE: 12012 bytes (total so far: 33337)
+[18:20:50.592] [fetch] Stream RECEIVE: 2406 bytes (total so far: 45349)
+[18:20:50.597] [fetch] Stream RECEIVE: 12021 bytes (total so far: 47755)
+[18:20:50.597] [fetch] Stream RECEIVE: 6015 bytes (total so far: 59776)
+[18:20:50.600] [fetch] Stream RECEIVE: 21645 bytes (total so far: 65791)
+[18:20:50.600] [fetch] Stream RECEIVE: 2406 bytes (total so far: 87436)
+[18:20:50.603] [fetch] Stream RECEIVE: 20442 bytes (total so far: 89842)
+[18:20:50.603] [fetch] Stream RECEIVE: 9624 bytes (total so far: 110284)
+[18:20:50.603] [fetch] Stream RECEIVE: 1203 bytes (total so far: 119908)
+[18:20:50.606] [fetch] Stream RECEIVE: 28863 bytes (total so far: 121111)
+[18:20:50.606] [fetch] Stream RECEIVE: 2406 bytes (total so far: 149974)
+[18:20:50.606] [fetch] Stream RECEIVE: 7218 bytes (total so far: 152380)
+[18:20:50.609] [fetch] Stream RECEIVE: 25254 bytes (total so far: 159598)
+[18:20:50.609] [fetch] Stream RECEIVE: 25263 bytes (total so far: 184852)
+[18:20:50.613] [fetch] Stream RECEIVE: 38487 bytes (total so far: 210115)
+[18:20:50.613] [fetch] Stream RECEIVE: 13584 bytes (total so far: 248602)
+[18:20:50.613] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.614] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.614] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.623] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.638] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:50.641] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.644] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14109)
+[18:20:50.645] [fetch] Stream RECEIVE: 3609 bytes (total so far: 32143)
+[18:20:50.647] [fetch] Stream RECEIVE: 6015 bytes (total so far: 35752)
+[18:20:50.647] [fetch] Stream RECEIVE: 9615 bytes (total so far: 41767)
+[18:20:50.651] [fetch] Stream RECEIVE: 6015 bytes (total so far: 51382)
+[18:20:50.651] [fetch] Stream RECEIVE: 15630 bytes (total so far: 57397)
+[18:20:50.653] [fetch] Stream RECEIVE: 20442 bytes (total so far: 73027)
+[18:20:50.654] [fetch] Stream RECEIVE: 8421 bytes (total so far: 93469)
+[18:20:50.656] [fetch] Stream RECEIVE: 18036 bytes (total so far: 101890)
+[18:20:50.657] [fetch] Stream RECEIVE: 12030 bytes (total so far: 119926)
+[18:20:50.657] [fetch] Stream RECEIVE: 6015 bytes (total so far: 131956)
+[18:20:50.659] [fetch] Stream RECEIVE: 25254 bytes (total so far: 137971)
+[18:20:50.660] [fetch] Stream RECEIVE: 14436 bytes (total so far: 163225)
+[18:20:50.660] [fetch] Stream RECEIVE: 30066 bytes (total so far: 177661)
+[18:20:50.660] [fetch] Stream RECEIVE: 4812 bytes (total so far: 207727)
+[18:20:50.663] [fetch] Stream RECEIVE: 20451 bytes (total so far: 212539)
+[18:20:50.663] [fetch] Stream RECEIVE: 29196 bytes (total so far: 232990)
+[18:20:50.663] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.664] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.665] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.673] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.689] [fetch] Stream RECEIVE: 7063 bytes (total so far: 0)
+[18:20:50.691] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7063)
+[18:20:50.697] [fetch] Stream RECEIVE: 37267 bytes (total so far: 14101)
+[18:20:50.697] [fetch] Stream RECEIVE: 2406 bytes (total so far: 51368)
+[18:20:50.699] [fetch] Stream RECEIVE: 10819 bytes (total so far: 53774)
+[18:20:50.699] [fetch] Stream RECEIVE: 1203 bytes (total so far: 64593)
+[18:20:50.700] [fetch] Stream RECEIVE: 10819 bytes (total so far: 65796)
+[18:20:50.700] [fetch] Stream RECEIVE: 1203 bytes (total so far: 76615)
+[18:20:50.702] [fetch] Stream RECEIVE: 21646 bytes (total so far: 77818)
+[18:20:50.702] [fetch] Stream RECEIVE: 4812 bytes (total so far: 99464)
+[18:20:50.702] [fetch] Stream RECEIVE: 10819 bytes (total so far: 104276)
+[18:20:50.702] [fetch] Stream RECEIVE: 6015 bytes (total so far: 115095)
+[18:20:50.705] [fetch] Stream RECEIVE: 20443 bytes (total so far: 121110)
+[18:20:50.706] [fetch] Stream RECEIVE: 40894 bytes (total so far: 141553)
+[18:20:50.706] [fetch] Stream RECEIVE: 9624 bytes (total so far: 182447)
+[18:20:50.709] [fetch] Stream RECEIVE: 31270 bytes (total so far: 192071)
+[18:20:50.709] [fetch] Stream RECEIVE: 38845 bytes (total so far: 223341)
+[18:20:50.709] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.710] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.710] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.719] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.735] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:50.738] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:50.741] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14100)
+[18:20:50.741] [fetch] Stream RECEIVE: 3609 bytes (total so far: 32134)
+[18:20:50.742] [fetch] Stream RECEIVE: 6015 bytes (total so far: 35743)
+[18:20:50.744] [fetch] Stream RECEIVE: 9615 bytes (total so far: 41758)
+[18:20:50.744] [fetch] Stream RECEIVE: 2406 bytes (total so far: 51373)
+[18:20:50.745] [fetch] Stream RECEIVE: 9615 bytes (total so far: 53779)
+[18:20:50.747] [fetch] Stream RECEIVE: 21645 bytes (total so far: 63394)
+[18:20:50.747] [fetch] Stream RECEIVE: 8412 bytes (total so far: 85039)
+[18:20:50.748] [fetch] Stream RECEIVE: 18027 bytes (total so far: 93451)
+[18:20:50.748] [fetch] Stream RECEIVE: 8421 bytes (total so far: 111478)
+[18:20:50.749] [fetch] Stream RECEIVE: 6015 bytes (total so far: 119899)
+[18:20:50.750] [fetch] Stream RECEIVE: 10818 bytes (total so far: 125914)
+[18:20:50.750] [fetch] Stream RECEIVE: 20442 bytes (total so far: 136732)
+[18:20:50.751] [fetch] Stream RECEIVE: 4812 bytes (total so far: 157174)
+[18:20:50.751] [fetch] Stream RECEIVE: 13233 bytes (total so far: 161986)
+[18:20:50.751] [fetch] Stream RECEIVE: 19239 bytes (total so far: 175219)
+[18:20:50.752] [fetch] Stream RECEIVE: 27660 bytes (total so far: 194458)
+[18:20:50.752] [fetch] Stream RECEIVE: 13233 bytes (total so far: 222118)
+[18:20:50.752] [fetch] Stream RECEIVE: 3609 bytes (total so far: 235351)
+[18:20:50.753] [fetch] Stream RECEIVE: 12021 bytes (total so far: 238960)
+[18:20:50.753] [fetch] Stream RECEIVE: 11205 bytes (total so far: 250981)
+[18:20:50.753] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.753] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.754] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.763] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.779] [fetch] Stream RECEIVE: 7063 bytes (total so far: 0)
+[18:20:50.783] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7063)
+[18:20:50.786] [fetch] Stream RECEIVE: 19238 bytes (total so far: 14101)
+[18:20:50.786] [fetch] Stream RECEIVE: 2406 bytes (total so far: 33339)
+[18:20:50.789] [fetch] Stream RECEIVE: 10811 bytes (total so far: 35745)
+[18:20:50.789] [fetch] Stream RECEIVE: 4812 bytes (total so far: 46556)
+[18:20:50.791] [fetch] Stream RECEIVE: 9624 bytes (total so far: 51368)
+[18:20:50.792] [fetch] Stream RECEIVE: 14428 bytes (total so far: 60992)
+[18:20:50.792] [fetch] Stream RECEIVE: 8421 bytes (total so far: 75420)
+[18:20:50.792] [fetch] Stream RECEIVE: 1203 bytes (total so far: 83841)
+[18:20:50.793] [fetch] Stream RECEIVE: 20443 bytes (total so far: 85044)
+[18:20:50.793] [fetch] Stream RECEIVE: 9624 bytes (total so far: 105487)
+[18:20:50.795] [fetch] Stream RECEIVE: 3609 bytes (total so far: 115111)
+[18:20:50.795] [fetch] Stream RECEIVE: 20443 bytes (total so far: 118720)
+[18:20:50.797] [fetch] Stream RECEIVE: 10827 bytes (total so far: 139163)
+[18:20:50.797] [fetch] Stream RECEIVE: 25255 bytes (total so far: 149990)
+[18:20:50.797] [fetch] Stream RECEIVE: 26458 bytes (total so far: 175245)
+[18:20:50.798] [fetch] Stream RECEIVE: 42097 bytes (total so far: 201703)
+[18:20:50.798] [fetch] Stream RECEIVE: 6015 bytes (total so far: 243800)
+[18:20:50.799] [fetch] Stream RECEIVE: 10827 bytes (total so far: 249815)
+[18:20:50.799] [fetch] Stream RECEIVE: 1544 bytes (total so far: 260642)
+[18:20:50.799] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.800] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.800] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.809] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.823] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:50.826] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.829] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14109)
+[18:20:50.829] [fetch] Stream RECEIVE: 3609 bytes (total so far: 32143)
+[18:20:50.832] [fetch] Stream RECEIVE: 10809 bytes (total so far: 35752)
+[18:20:50.833] [fetch] Stream RECEIVE: 4812 bytes (total so far: 46561)
+[18:20:50.835] [fetch] Stream RECEIVE: 9624 bytes (total so far: 51373)
+[18:20:50.835] [fetch] Stream RECEIVE: 12021 bytes (total so far: 60997)
+[18:20:50.837] [fetch] Stream RECEIVE: 10827 bytes (total so far: 73018)
+[18:20:50.837] [fetch] Stream RECEIVE: 18027 bytes (total so far: 83845)
+[18:20:50.838] [fetch] Stream RECEIVE: 9624 bytes (total so far: 101872)
+[18:20:50.840] [fetch] Stream RECEIVE: 33675 bytes (total so far: 111496)
+[18:20:50.840] [fetch] Stream RECEIVE: 2406 bytes (total so far: 145171)
+[18:20:50.841] [fetch] Stream RECEIVE: 20442 bytes (total so far: 147577)
+[18:20:50.842] [fetch] Stream RECEIVE: 3609 bytes (total so far: 168019)
+[18:20:50.843] [fetch] Stream RECEIVE: 22857 bytes (total so far: 171628)
+[18:20:50.843] [fetch] Stream RECEIVE: 28863 bytes (total so far: 194485)
+[18:20:50.843] [fetch] Stream RECEIVE: 20442 bytes (total so far: 223348)
+[18:20:50.844] [fetch] Stream RECEIVE: 2406 bytes (total so far: 243790)
+[18:20:50.844] [fetch] Stream RECEIVE: 12030 bytes (total so far: 246196)
+[18:20:50.845] [fetch] Stream RECEIVE: 3960 bytes (total so far: 258226)
+[18:20:50.845] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.845] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.846] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.855] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.882] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:50.885] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.888] [fetch] Stream RECEIVE: 19237 bytes (total so far: 14109)
+[18:20:50.891] [fetch] Stream RECEIVE: 7209 bytes (total so far: 33346)
+[18:20:50.894] [fetch] Stream RECEIVE: 9615 bytes (total so far: 40555)
+[18:20:50.896] [fetch] Stream RECEIVE: 6015 bytes (total so far: 50170)
+[18:20:50.897] [fetch] Stream RECEIVE: 19239 bytes (total so far: 56185)
+[18:20:50.898] [fetch] Stream RECEIVE: 21645 bytes (total so far: 75424)
+[18:20:50.899] [fetch] Stream RECEIVE: 4803 bytes (total so far: 97069)
+[18:20:50.900] [fetch] Stream RECEIVE: 9624 bytes (total so far: 101872)
+[18:20:50.901] [fetch] Stream RECEIVE: 3609 bytes (total so far: 111496)
+[18:20:50.901] [fetch] Stream RECEIVE: 28863 bytes (total so far: 115105)
+[18:20:50.901] [fetch] Stream RECEIVE: 2406 bytes (total so far: 143968)
+[18:20:50.902] [fetch] Stream RECEIVE: 16833 bytes (total so far: 146374)
+[18:20:50.902] [fetch] Stream RECEIVE: 10827 bytes (total so far: 163207)
+[18:20:50.903] [fetch] Stream RECEIVE: 21645 bytes (total so far: 174034)
+[18:20:50.903] [fetch] Stream RECEIVE: 2406 bytes (total so far: 195679)
+[18:20:50.904] [fetch] Stream RECEIVE: 22848 bytes (total so far: 198085)
+[18:20:50.904] [fetch] Stream RECEIVE: 6015 bytes (total so far: 220933)
+[18:20:50.905] [fetch] Stream RECEIVE: 16833 bytes (total so far: 226948)
+[18:20:50.905] [fetch] Stream RECEIVE: 13233 bytes (total so far: 243781)
+[18:20:50.905] [fetch] Stream RECEIVE: 5172 bytes (total so far: 257014)
+[18:20:50.905] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.906] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.906] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.915] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.929] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:50.932] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.935] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14109)
+[18:20:50.935] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32143)
+[18:20:50.937] [fetch] Stream RECEIVE: 8412 bytes (total so far: 33346)
+[18:20:50.941] [fetch] Stream RECEIVE: 10818 bytes (total so far: 41758)
+[18:20:50.941] [fetch] Stream RECEIVE: 6015 bytes (total so far: 52576)
+[18:20:50.944] [fetch] Stream RECEIVE: 9624 bytes (total so far: 58591)
+[18:20:50.944] [fetch] Stream RECEIVE: 9615 bytes (total so far: 68215)
+[18:20:50.946] [fetch] Stream RECEIVE: 3609 bytes (total so far: 77830)
+[18:20:50.947] [fetch] Stream RECEIVE: 10827 bytes (total so far: 81439)
+[18:20:50.947] [fetch] Stream RECEIVE: 12021 bytes (total so far: 92266)
+[18:20:50.948] [fetch] Stream RECEIVE: 3609 bytes (total so far: 104287)
+[18:20:50.948] [fetch] Stream RECEIVE: 21645 bytes (total so far: 107896)
+[18:20:50.949] [fetch] Stream RECEIVE: 1203 bytes (total so far: 129541)
+[18:20:50.950] [fetch] Stream RECEIVE: 22839 bytes (total so far: 130744)
+[18:20:50.950] [fetch] Stream RECEIVE: 8421 bytes (total so far: 153583)
+[18:20:50.950] [fetch] Stream RECEIVE: 1203 bytes (total so far: 162004)
+[18:20:50.951] [fetch] Stream RECEIVE: 21645 bytes (total so far: 163207)
+[18:20:50.952] [fetch] Stream RECEIVE: 26457 bytes (total so far: 184852)
+[18:20:50.953] [fetch] Stream RECEIVE: 25263 bytes (total so far: 211309)
+[18:20:50.953] [fetch] Stream RECEIVE: 19239 bytes (total so far: 236572)
+[18:20:50.953] [fetch] Stream RECEIVE: 6375 bytes (total so far: 255811)
+[18:20:50.954] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.954] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.954] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:50.964] [fetch] Connected, sending CHUNK_QUERY
+[18:20:50.978] [fetch] Stream RECEIVE: 1206 bytes (total so far: 0)
+[18:20:50.979] [fetch] Stream RECEIVE: 5865 bytes (total so far: 1206)
+[18:20:50.980] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:50.982] [fetch] Stream RECEIVE: 7030 bytes (total so far: 14109)
+[18:20:50.985] [fetch] Stream RECEIVE: 40867 bytes (total so far: 21139)
+[18:20:50.985] [fetch] Stream RECEIVE: 2406 bytes (total so far: 62006)
+[18:20:50.987] [fetch] Stream RECEIVE: 19230 bytes (total so far: 64412)
+[18:20:50.988] [fetch] Stream RECEIVE: 6015 bytes (total so far: 83642)
+[18:20:50.990] [fetch] Stream RECEIVE: 16833 bytes (total so far: 89657)
+[18:20:50.990] [fetch] Stream RECEIVE: 15639 bytes (total so far: 106490)
+[18:20:50.991] [fetch] Stream RECEIVE: 2406 bytes (total so far: 122129)
+[18:20:50.993] [fetch] Stream RECEIVE: 40893 bytes (total so far: 124535)
+[18:20:50.993] [fetch] Stream RECEIVE: 19239 bytes (total so far: 165428)
+[18:20:50.995] [fetch] Stream RECEIVE: 18045 bytes (total so far: 184667)
+[18:20:50.997] [fetch] Stream RECEIVE: 19248 bytes (total so far: 202712)
+[18:20:50.997] [fetch] Stream RECEIVE: 1203 bytes (total so far: 221960)
+[18:20:50.997] [fetch] Stream RECEIVE: 30066 bytes (total so far: 223163)
+[18:20:50.997] [fetch] Stream RECEIVE: 7218 bytes (total so far: 253229)
+[18:20:50.998] [fetch] Stream RECEIVE: 1739 bytes (total so far: 260447)
+[18:20:50.998] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:50.998] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:50.999] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.008] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.023] [fetch] Stream RECEIVE: 3543 bytes (total so far: 0)
+[18:20:51.023] [fetch] Stream RECEIVE: 3519 bytes (total so far: 3543)
+[18:20:51.025] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.030] [fetch] Stream RECEIVE: 1196 bytes (total so far: 14100)
+[18:20:51.030] [fetch] Stream RECEIVE: 30062 bytes (total so far: 15296)
+[18:20:51.033] [fetch] Stream RECEIVE: 19230 bytes (total so far: 45358)
+[18:20:51.037] [fetch] Stream RECEIVE: 20442 bytes (total so far: 64588)
+[18:20:51.037] [fetch] Stream RECEIVE: 3609 bytes (total so far: 85030)
+[18:20:51.040] [fetch] Stream RECEIVE: 14436 bytes (total so far: 88639)
+[18:20:51.040] [fetch] Stream RECEIVE: 14427 bytes (total so far: 103075)
+[18:20:51.040] [fetch] Stream RECEIVE: 4812 bytes (total so far: 117502)
+[18:20:51.042] [fetch] Stream RECEIVE: 9624 bytes (total so far: 122314)
+[18:20:51.042] [fetch] Stream RECEIVE: 10818 bytes (total so far: 131938)
+[18:20:51.043] [fetch] Stream RECEIVE: 20451 bytes (total so far: 142756)
+[18:20:51.043] [fetch] Stream RECEIVE: 20442 bytes (total so far: 163207)
+[18:20:51.043] [fetch] Stream RECEIVE: 4812 bytes (total so far: 183649)
+[18:20:51.046] [fetch] Stream RECEIVE: 22857 bytes (total so far: 188461)
+[18:20:51.047] [fetch] Stream RECEIVE: 46899 bytes (total so far: 211318)
+[18:20:51.047] [fetch] Stream RECEIVE: 3969 bytes (total so far: 258217)
+[18:20:51.047] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.048] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.048] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.058] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.074] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.076] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.077] [fetch] Stream RECEIVE: 7030 bytes (total so far: 14100)
+[18:20:51.081] [fetch] Stream RECEIVE: 43273 bytes (total so far: 21130)
+[18:20:51.082] [fetch] Stream RECEIVE: 9615 bytes (total so far: 64403)
+[18:20:51.083] [fetch] Stream RECEIVE: 18036 bytes (total so far: 74018)
+[18:20:51.083] [fetch] Stream RECEIVE: 1203 bytes (total so far: 92054)
+[18:20:51.084] [fetch] Stream RECEIVE: 12021 bytes (total so far: 93257)
+[18:20:51.085] [fetch] Stream RECEIVE: 1203 bytes (total so far: 105278)
+[18:20:51.086] [fetch] Stream RECEIVE: 24051 bytes (total so far: 106481)
+[18:20:51.086] [fetch] Stream RECEIVE: 7218 bytes (total so far: 130532)
+[18:20:51.087] [fetch] Stream RECEIVE: 20442 bytes (total so far: 137750)
+[18:20:51.087] [fetch] Stream RECEIVE: 1203 bytes (total so far: 158192)
+[18:20:51.088] [fetch] Stream RECEIVE: 10827 bytes (total so far: 159395)
+[18:20:51.089] [fetch] Stream RECEIVE: 12021 bytes (total so far: 170222)
+[18:20:51.090] [fetch] Stream RECEIVE: 76974 bytes (total so far: 182243)
+[18:20:51.090] [fetch] Stream RECEIVE: 2969 bytes (total so far: 259217)
+[18:20:51.091] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.091] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.092] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.102] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.116] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.119] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.122] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14100)
+[18:20:51.122] [fetch] Stream RECEIVE: 3609 bytes (total so far: 32134)
+[18:20:51.124] [fetch] Stream RECEIVE: 12021 bytes (total so far: 35743)
+[18:20:51.124] [fetch] Stream RECEIVE: 3609 bytes (total so far: 47764)
+[18:20:51.127] [fetch] Stream RECEIVE: 9624 bytes (total so far: 51373)
+[18:20:51.127] [fetch] Stream RECEIVE: 10818 bytes (total so far: 60997)
+[18:20:51.128] [fetch] Stream RECEIVE: 1203 bytes (total so far: 71815)
+[18:20:51.129] [fetch] Stream RECEIVE: 12030 bytes (total so far: 73018)
+[18:20:51.130] [fetch] Stream RECEIVE: 8412 bytes (total so far: 85048)
+[18:20:51.130] [fetch] Stream RECEIVE: 7218 bytes (total so far: 93460)
+[18:20:51.133] [fetch] Stream RECEIVE: 21645 bytes (total so far: 100678)
+[18:20:51.133] [fetch] Stream RECEIVE: 9624 bytes (total so far: 122323)
+[18:20:51.133] [fetch] Stream RECEIVE: 1203 bytes (total so far: 131947)
+[18:20:51.134] [fetch] Stream RECEIVE: 19239 bytes (total so far: 133150)
+[18:20:51.135] [fetch] Stream RECEIVE: 13233 bytes (total so far: 152389)
+[18:20:51.135] [fetch] Stream RECEIVE: 18036 bytes (total so far: 165622)
+[18:20:51.136] [fetch] Stream RECEIVE: 8421 bytes (total so far: 183658)
+[18:20:51.136] [fetch] Stream RECEIVE: 6015 bytes (total so far: 192079)
+[18:20:51.137] [fetch] Stream RECEIVE: 32472 bytes (total so far: 198094)
+[18:20:51.138] [fetch] Stream RECEIVE: 28872 bytes (total so far: 230566)
+[18:20:51.138] [fetch] Stream RECEIVE: 2748 bytes (total so far: 259438)
+[18:20:51.138] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.138] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.139] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.149] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.164] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:51.167] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:51.170] [fetch] Stream RECEIVE: 19237 bytes (total so far: 14109)
+[18:20:51.172] [fetch] Stream RECEIVE: 7209 bytes (total so far: 33346)
+[18:20:51.176] [fetch] Stream RECEIVE: 10818 bytes (total so far: 40555)
+[18:20:51.176] [fetch] Stream RECEIVE: 4812 bytes (total so far: 51373)
+[18:20:51.179] [fetch] Stream RECEIVE: 13224 bytes (total so far: 56185)
+[18:20:51.179] [fetch] Stream RECEIVE: 7218 bytes (total so far: 69409)
+[18:20:51.181] [fetch] Stream RECEIVE: 19239 bytes (total so far: 76627)
+[18:20:51.181] [fetch] Stream RECEIVE: 6015 bytes (total so far: 95866)
+[18:20:51.184] [fetch] Stream RECEIVE: 28863 bytes (total so far: 101881)
+[18:20:51.185] [fetch] Stream RECEIVE: 2406 bytes (total so far: 130744)
+[18:20:51.188] [fetch] Stream RECEIVE: 30066 bytes (total so far: 133150)
+[18:20:51.189] [fetch] Stream RECEIVE: 7218 bytes (total so far: 163216)
+[18:20:51.190] [fetch] Stream RECEIVE: 10827 bytes (total so far: 170434)
+[18:20:51.191] [fetch] Stream RECEIVE: 12021 bytes (total so far: 181261)
+[18:20:51.191] [fetch] Stream RECEIVE: 16842 bytes (total so far: 193282)
+[18:20:51.192] [fetch] Stream RECEIVE: 13224 bytes (total so far: 210124)
+[18:20:51.192] [fetch] Stream RECEIVE: 7218 bytes (total so far: 223348)
+[18:20:51.193] [fetch] Stream RECEIVE: 28863 bytes (total so far: 230566)
+[18:20:51.193] [fetch] Stream RECEIVE: 2757 bytes (total so far: 259429)
+[18:20:51.193] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.194] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.194] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.204] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.217] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:51.220] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:51.223] [fetch] Stream RECEIVE: 32463 bytes (total so far: 14109)
+[18:20:51.224] [fetch] Stream RECEIVE: 7210 bytes (total so far: 46572)
+[18:20:51.225] [fetch] Stream RECEIVE: 8413 bytes (total so far: 53782)
+[18:20:51.227] [fetch] Stream RECEIVE: 10819 bytes (total so far: 62195)
+[18:20:51.227] [fetch] Stream RECEIVE: 2406 bytes (total so far: 73014)
+[18:20:51.228] [fetch] Stream RECEIVE: 6015 bytes (total so far: 75420)
+[18:20:51.229] [fetch] Stream RECEIVE: 10827 bytes (total so far: 81435)
+[18:20:51.229] [fetch] Stream RECEIVE: 9616 bytes (total so far: 92262)
+[18:20:51.230] [fetch] Stream RECEIVE: 2406 bytes (total so far: 101878)
+[18:20:51.230] [fetch] Stream RECEIVE: 24044 bytes (total so far: 104284)
+[18:20:51.231] [fetch] Stream RECEIVE: 7218 bytes (total so far: 128328)
+[18:20:51.231] [fetch] Stream RECEIVE: 12022 bytes (total so far: 135546)
+[18:20:51.232] [fetch] Stream RECEIVE: 9616 bytes (total so far: 147568)
+[18:20:51.233] [fetch] Stream RECEIVE: 10827 bytes (total so far: 157184)
+[18:20:51.233] [fetch] Stream RECEIVE: 12022 bytes (total so far: 168011)
+[18:20:51.233] [fetch] Stream RECEIVE: 44503 bytes (total so far: 180033)
+[18:20:51.235] [fetch] Stream RECEIVE: 10827 bytes (total so far: 224536)
+[18:20:51.235] [fetch] Stream RECEIVE: 9624 bytes (total so far: 235363)
+[18:20:51.235] [fetch] Stream RECEIVE: 10827 bytes (total so far: 244987)
+[18:20:51.236] [fetch] Stream RECEIVE: 6372 bytes (total so far: 255814)
+[18:20:51.236] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.236] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.237] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.246] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.261] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.264] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.266] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14100)
+[18:20:51.267] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32134)
+[18:20:51.269] [fetch] Stream RECEIVE: 8412 bytes (total so far: 33337)
+[18:20:51.273] [fetch] Stream RECEIVE: 12021 bytes (total so far: 41749)
+[18:20:51.273] [fetch] Stream RECEIVE: 4812 bytes (total so far: 53770)
+[18:20:51.275] [fetch] Stream RECEIVE: 18036 bytes (total so far: 58582)
+[18:20:51.275] [fetch] Stream RECEIVE: 2406 bytes (total so far: 76618)
+[18:20:51.275] [fetch] Stream RECEIVE: 1203 bytes (total so far: 79024)
+[18:20:51.280] [fetch] Stream RECEIVE: 21645 bytes (total so far: 80227)
+[18:20:51.280] [fetch] Stream RECEIVE: 6015 bytes (total so far: 101872)
+[18:20:51.283] [fetch] Stream RECEIVE: 7218 bytes (total so far: 107887)
+[18:20:51.283] [fetch] Stream RECEIVE: 21645 bytes (total so far: 115105)
+[18:20:51.284] [fetch] Stream RECEIVE: 3609 bytes (total so far: 136750)
+[18:20:51.285] [fetch] Stream RECEIVE: 30066 bytes (total so far: 140359)
+[18:20:51.286] [fetch] Stream RECEIVE: 19239 bytes (total so far: 170425)
+[18:20:51.286] [fetch] Stream RECEIVE: 8421 bytes (total so far: 189664)
+[18:20:51.288] [fetch] Stream RECEIVE: 26457 bytes (total so far: 198085)
+[18:20:51.288] [fetch] Stream RECEIVE: 24060 bytes (total so far: 224542)
+[18:20:51.290] [fetch] Stream RECEIVE: 10827 bytes (total so far: 248602)
+[18:20:51.291] [fetch] Stream RECEIVE: 2757 bytes (total so far: 259429)
+[18:20:51.291] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.291] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.292] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.301] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.314] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:51.316] [fetch] Stream RECEIVE: 3519 bytes (total so far: 7071)
+[18:20:51.318] [fetch] Stream RECEIVE: 3519 bytes (total so far: 10590)
+[18:20:51.320] [fetch] Stream RECEIVE: 1196 bytes (total so far: 14109)
+[18:20:51.321] [fetch] Stream RECEIVE: 18041 bytes (total so far: 15305)
+[18:20:51.323] [fetch] Stream RECEIVE: 12012 bytes (total so far: 33346)
+[18:20:51.324] [fetch] Stream RECEIVE: 1203 bytes (total so far: 45358)
+[18:20:51.326] [fetch] Stream RECEIVE: 12021 bytes (total so far: 46561)
+[18:20:51.326] [fetch] Stream RECEIVE: 4812 bytes (total so far: 58582)
+[18:20:51.329] [fetch] Stream RECEIVE: 20442 bytes (total so far: 63394)
+[18:20:51.329] [fetch] Stream RECEIVE: 1203 bytes (total so far: 83836)
+[18:20:51.331] [fetch] Stream RECEIVE: 12030 bytes (total so far: 85039)
+[18:20:51.331] [fetch] Stream RECEIVE: 18036 bytes (total so far: 97069)
+[18:20:51.332] [fetch] Stream RECEIVE: 15639 bytes (total so far: 115105)
+[18:20:51.333] [fetch] Stream RECEIVE: 2406 bytes (total so far: 130744)
+[18:20:51.334] [fetch] Stream RECEIVE: 21645 bytes (total so far: 133150)
+[18:20:51.334] [fetch] Stream RECEIVE: 9624 bytes (total so far: 154795)
+[18:20:51.334] [fetch] Stream RECEIVE: 24051 bytes (total so far: 164419)
+[18:20:51.334] [fetch] Stream RECEIVE: 3609 bytes (total so far: 188470)
+[18:20:51.337] [fetch] Stream RECEIVE: 40893 bytes (total so far: 192079)
+[18:20:51.337] [fetch] Stream RECEIVE: 29214 bytes (total so far: 232972)
+[18:20:51.337] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.337] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.339] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.348] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.365] [fetch] Stream RECEIVE: 7063 bytes (total so far: 0)
+[18:20:51.368] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7063)
+[18:20:51.371] [fetch] Stream RECEIVE: 1197 bytes (total so far: 14101)
+[18:20:51.371] [fetch] Stream RECEIVE: 18041 bytes (total so far: 15298)
+[18:20:51.374] [fetch] Stream RECEIVE: 8405 bytes (total so far: 33339)
+[18:20:51.374] [fetch] Stream RECEIVE: 4812 bytes (total so far: 41744)
+[18:20:51.377] [fetch] Stream RECEIVE: 10819 bytes (total so far: 46556)
+[18:20:51.377] [fetch] Stream RECEIVE: 6015 bytes (total so far: 57375)
+[18:20:51.380] [fetch] Stream RECEIVE: 20443 bytes (total so far: 63390)
+[18:20:51.382] [fetch] Stream RECEIVE: 13225 bytes (total so far: 83833)
+[18:20:51.384] [fetch] Stream RECEIVE: 19240 bytes (total so far: 97058)
+[18:20:51.384] [fetch] Stream RECEIVE: 10827 bytes (total so far: 116298)
+[18:20:51.386] [fetch] Stream RECEIVE: 20451 bytes (total so far: 127125)
+[18:20:51.386] [fetch] Stream RECEIVE: 22849 bytes (total so far: 147576)
+[18:20:51.387] [fetch] Stream RECEIVE: 4812 bytes (total so far: 170425)
+[18:20:51.390] [fetch] Stream RECEIVE: 31270 bytes (total so far: 175237)
+[18:20:51.390] [fetch] Stream RECEIVE: 50518 bytes (total so far: 206507)
+[18:20:51.391] [fetch] Stream RECEIVE: 5161 bytes (total so far: 257025)
+[18:20:51.391] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.391] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.392] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.401] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.417] [fetch] Stream RECEIVE: 7063 bytes (total so far: 0)
+[18:20:51.420] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7063)
+[18:20:51.424] [fetch] Stream RECEIVE: 19238 bytes (total so far: 14101)
+[18:20:51.424] [fetch] Stream RECEIVE: 2406 bytes (total so far: 33339)
+[18:20:51.425] [fetch] Stream RECEIVE: 10819 bytes (total so far: 35745)
+[18:20:51.426] [fetch] Stream RECEIVE: 4812 bytes (total so far: 46564)
+[18:20:51.427] [fetch] Stream RECEIVE: 9624 bytes (total so far: 51376)
+[18:20:51.429] [fetch] Stream RECEIVE: 10819 bytes (total so far: 61000)
+[18:20:51.429] [fetch] Stream RECEIVE: 19240 bytes (total so far: 71819)
+[18:20:51.430] [fetch] Stream RECEIVE: 6015 bytes (total so far: 91059)
+[18:20:51.433] [fetch] Stream RECEIVE: 4812 bytes (total so far: 97074)
+[18:20:51.433] [fetch] Stream RECEIVE: 39683 bytes (total so far: 101886)
+[18:20:51.433] [fetch] Stream RECEIVE: 10827 bytes (total so far: 141569)
+[18:20:51.434] [fetch] Stream RECEIVE: 3609 bytes (total so far: 152396)
+[18:20:51.435] [fetch] Stream RECEIVE: 18045 bytes (total so far: 156005)
+[18:20:51.435] [fetch] Stream RECEIVE: 3609 bytes (total so far: 174050)
+[18:20:51.435] [fetch] Stream RECEIVE: 18037 bytes (total so far: 177659)
+[18:20:51.435] [fetch] Stream RECEIVE: 12022 bytes (total so far: 195696)
+[18:20:51.436] [fetch] Stream RECEIVE: 22857 bytes (total so far: 207718)
+[18:20:51.436] [fetch] Stream RECEIVE: 24052 bytes (total so far: 230575)
+[18:20:51.436] [fetch] Stream RECEIVE: 7559 bytes (total so far: 254627)
+[18:20:51.437] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.437] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.438] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.451] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.466] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.468] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.472] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14100)
+[18:20:51.472] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32134)
+[18:20:51.475] [fetch] Stream RECEIVE: 3600 bytes (total so far: 33337)
+[18:20:51.475] [fetch] Stream RECEIVE: 2406 bytes (total so far: 36937)
+[18:20:51.479] [fetch] Stream RECEIVE: 12021 bytes (total so far: 39343)
+[18:20:51.479] [fetch] Stream RECEIVE: 2406 bytes (total so far: 51364)
+[18:20:51.482] [fetch] Stream RECEIVE: 20442 bytes (total so far: 53770)
+[18:20:51.485] [fetch] Stream RECEIVE: 20442 bytes (total so far: 74212)
+[18:20:51.485] [fetch] Stream RECEIVE: 4812 bytes (total so far: 94654)
+[18:20:51.488] [fetch] Stream RECEIVE: 30066 bytes (total so far: 99466)
+[18:20:51.488] [fetch] Stream RECEIVE: 1203 bytes (total so far: 129532)
+[18:20:51.490] [fetch] Stream RECEIVE: 18045 bytes (total so far: 130735)
+[18:20:51.491] [fetch] Stream RECEIVE: 16833 bytes (total so far: 148780)
+[18:20:51.491] [fetch] Stream RECEIVE: 4812 bytes (total so far: 165613)
+[18:20:51.492] [fetch] Stream RECEIVE: 18045 bytes (total so far: 170425)
+[18:20:51.492] [fetch] Stream RECEIVE: 22848 bytes (total so far: 188470)
+[18:20:51.493] [fetch] Stream RECEIVE: 9615 bytes (total so far: 211318)
+[18:20:51.493] [fetch] Stream RECEIVE: 18045 bytes (total so far: 220933)
+[18:20:51.493] [fetch] Stream RECEIVE: 2406 bytes (total so far: 238978)
+[18:20:51.496] [fetch] Stream RECEIVE: 10827 bytes (total so far: 241384)
+[18:20:51.496] [fetch] Stream RECEIVE: 9624 bytes (total so far: 252211)
+[18:20:51.496] [fetch] Stream RECEIVE: 351 bytes (total so far: 261835)
+[18:20:51.496] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.497] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.497] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.506] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.521] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:51.523] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:51.524] [fetch] Stream RECEIVE: 7030 bytes (total so far: 14109)
+[18:20:51.527] [fetch] Stream RECEIVE: 37269 bytes (total so far: 21139)
+[18:20:51.527] [fetch] Stream RECEIVE: 6015 bytes (total so far: 58408)
+[18:20:51.529] [fetch] Stream RECEIVE: 10819 bytes (total so far: 64423)
+[18:20:51.530] [fetch] Stream RECEIVE: 10819 bytes (total so far: 75242)
+[18:20:51.530] [fetch] Stream RECEIVE: 3609 bytes (total so far: 86061)
+[18:20:51.531] [fetch] Stream RECEIVE: 27661 bytes (total so far: 89670)
+[18:20:51.531] [fetch] Stream RECEIVE: 4812 bytes (total so far: 117331)
+[18:20:51.533] [fetch] Stream RECEIVE: 26458 bytes (total so far: 122143)
+[18:20:51.533] [fetch] Stream RECEIVE: 13233 bytes (total so far: 148601)
+[18:20:51.534] [fetch] Stream RECEIVE: 21646 bytes (total so far: 161834)
+[18:20:51.534] [fetch] Stream RECEIVE: 7218 bytes (total so far: 183480)
+[18:20:51.537] [fetch] Stream RECEIVE: 1203 bytes (total so far: 190698)
+[18:20:51.538] [fetch] Stream RECEIVE: 9624 bytes (total so far: 191901)
+[18:20:51.538] [fetch] Stream RECEIVE: 48110 bytes (total so far: 201525)
+[18:20:51.538] [fetch] Stream RECEIVE: 12551 bytes (total so far: 249635)
+[18:20:51.539] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.539] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.539] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.549] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.564] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:51.567] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:51.570] [fetch] Stream RECEIVE: 21643 bytes (total so far: 14109)
+[18:20:51.573] [fetch] Stream RECEIVE: 10809 bytes (total so far: 35752)
+[18:20:51.574] [fetch] Stream RECEIVE: 4812 bytes (total so far: 46561)
+[18:20:51.576] [fetch] Stream RECEIVE: 21645 bytes (total so far: 51373)
+[18:20:51.576] [fetch] Stream RECEIVE: 1203 bytes (total so far: 73018)
+[18:20:51.580] [fetch] Stream RECEIVE: 26457 bytes (total so far: 74221)
+[18:20:51.581] [fetch] Stream RECEIVE: 4812 bytes (total so far: 100678)
+[18:20:51.583] [fetch] Stream RECEIVE: 28863 bytes (total so far: 105490)
+[18:20:51.583] [fetch] Stream RECEIVE: 2406 bytes (total so far: 134353)
+[18:20:51.584] [fetch] Stream RECEIVE: 6015 bytes (total so far: 136759)
+[18:20:51.586] [fetch] Stream RECEIVE: 19248 bytes (total so far: 142774)
+[18:20:51.587] [fetch] Stream RECEIVE: 28863 bytes (total so far: 162022)
+[18:20:51.589] [fetch] Stream RECEIVE: 32472 bytes (total so far: 190885)
+[18:20:51.589] [fetch] Stream RECEIVE: 36081 bytes (total so far: 223357)
+[18:20:51.589] [fetch] Stream RECEIVE: 2406 bytes (total so far: 259438)
+[18:20:51.590] [fetch] Stream RECEIVE: 342 bytes (total so far: 261844)
+[18:20:51.590] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.590] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.591] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.601] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.616] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:51.618] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:51.619] [fetch] Stream RECEIVE: 7030 bytes (total so far: 14109)
+[18:20:51.622] [fetch] Stream RECEIVE: 36064 bytes (total so far: 21139)
+[18:20:51.624] [fetch] Stream RECEIVE: 10818 bytes (total so far: 57203)
+[18:20:51.624] [fetch] Stream RECEIVE: 3609 bytes (total so far: 68021)
+[18:20:51.625] [fetch] Stream RECEIVE: 10818 bytes (total so far: 71630)
+[18:20:51.625] [fetch] Stream RECEIVE: 1203 bytes (total so far: 82448)
+[18:20:51.627] [fetch] Stream RECEIVE: 15630 bytes (total so far: 83651)
+[18:20:51.627] [fetch] Stream RECEIVE: 4812 bytes (total so far: 99281)
+[18:20:51.627] [fetch] Stream RECEIVE: 18036 bytes (total so far: 104093)
+[18:20:51.629] [fetch] Stream RECEIVE: 7218 bytes (total so far: 122129)
+[18:20:51.630] [fetch] Stream RECEIVE: 16842 bytes (total so far: 129347)
+[18:20:51.631] [fetch] Stream RECEIVE: 44493 bytes (total so far: 146189)
+[18:20:51.631] [fetch] Stream RECEIVE: 7218 bytes (total so far: 190682)
+[18:20:51.632] [fetch] Stream RECEIVE: 9624 bytes (total so far: 197900)
+[18:20:51.632] [fetch] Stream RECEIVE: 22848 bytes (total so far: 207524)
+[18:20:51.633] [fetch] Stream RECEIVE: 14436 bytes (total so far: 230372)
+[18:20:51.634] [fetch] Stream RECEIVE: 12021 bytes (total so far: 244808)
+[18:20:51.634] [fetch] Stream RECEIVE: 5357 bytes (total so far: 256829)
+[18:20:51.634] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.635] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.635] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.643] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.659] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.663] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.667] [fetch] Stream RECEIVE: 19237 bytes (total so far: 14100)
+[18:20:51.669] [fetch] Stream RECEIVE: 3600 bytes (total so far: 33337)
+[18:20:51.669] [fetch] Stream RECEIVE: 4803 bytes (total so far: 36937)
+[18:20:51.671] [fetch] Stream RECEIVE: 9615 bytes (total so far: 41740)
+[18:20:51.671] [fetch] Stream RECEIVE: 1203 bytes (total so far: 51355)
+[18:20:51.671] [fetch] Stream RECEIVE: 7209 bytes (total so far: 52558)
+[18:20:51.673] [fetch] Stream RECEIVE: 9615 bytes (total so far: 59767)
+[18:20:51.674] [fetch] Stream RECEIVE: 6015 bytes (total so far: 69382)
+[18:20:51.674] [fetch] Stream RECEIVE: 20442 bytes (total so far: 75397)
+[18:20:51.676] [fetch] Stream RECEIVE: 20442 bytes (total so far: 95839)
+[18:20:51.676] [fetch] Stream RECEIVE: 1203 bytes (total so far: 116281)
+[18:20:51.677] [fetch] Stream RECEIVE: 10827 bytes (total so far: 117484)
+[18:20:51.677] [fetch] Stream RECEIVE: 2406 bytes (total so far: 128311)
+[18:20:51.678] [fetch] Stream RECEIVE: 3600 bytes (total so far: 130717)
+[18:20:51.678] [fetch] Stream RECEIVE: 7218 bytes (total so far: 134317)
+[18:20:51.678] [fetch] Stream RECEIVE: 12030 bytes (total so far: 141535)
+[18:20:51.680] [fetch] Stream RECEIVE: 9624 bytes (total so far: 153565)
+[18:20:51.680] [fetch] Stream RECEIVE: 10827 bytes (total so far: 163189)
+[18:20:51.680] [fetch] Stream RECEIVE: 18036 bytes (total so far: 174016)
+[18:20:51.680] [fetch] Stream RECEIVE: 21645 bytes (total so far: 192052)
+[18:20:51.682] [fetch] Stream RECEIVE: 27669 bytes (total so far: 213697)
+[18:20:51.682] [fetch] Stream RECEIVE: 16833 bytes (total so far: 241366)
+[18:20:51.682] [fetch] Stream RECEIVE: 3987 bytes (total so far: 258199)
+[18:20:51.682] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.683] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.683] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.691] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.706] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.709] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.712] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14100)
+[18:20:51.713] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32134)
+[18:20:51.715] [fetch] Stream RECEIVE: 8412 bytes (total so far: 33337)
+[18:20:51.720] [fetch] Stream RECEIVE: 10818 bytes (total so far: 41749)
+[18:20:51.720] [fetch] Stream RECEIVE: 6015 bytes (total so far: 52567)
+[18:20:51.723] [fetch] Stream RECEIVE: 21645 bytes (total so far: 58582)
+[18:20:51.726] [fetch] Stream RECEIVE: 18036 bytes (total so far: 80227)
+[18:20:51.726] [fetch] Stream RECEIVE: 4812 bytes (total so far: 98263)
+[18:20:51.726] [fetch] Stream RECEIVE: 1203 bytes (total so far: 103075)
+[18:20:51.728] [fetch] Stream RECEIVE: 9624 bytes (total so far: 104278)
+[18:20:51.728] [fetch] Stream RECEIVE: 2406 bytes (total so far: 113902)
+[18:20:51.729] [fetch] Stream RECEIVE: 10827 bytes (total so far: 116308)
+[18:20:51.729] [fetch] Stream RECEIVE: 20433 bytes (total so far: 127135)
+[18:20:51.729] [fetch] Stream RECEIVE: 4812 bytes (total so far: 147568)
+[18:20:51.730] [fetch] Stream RECEIVE: 19239 bytes (total so far: 152380)
+[18:20:51.732] [fetch] Stream RECEIVE: 18036 bytes (total so far: 171619)
+[18:20:51.732] [fetch] Stream RECEIVE: 13224 bytes (total so far: 189655)
+[18:20:51.733] [fetch] Stream RECEIVE: 10827 bytes (total so far: 202879)
+[18:20:51.733] [fetch] Stream RECEIVE: 2406 bytes (total so far: 213706)
+[18:20:51.733] [fetch] Stream RECEIVE: 20451 bytes (total so far: 216112)
+[18:20:51.734] [fetch] Stream RECEIVE: 15630 bytes (total so far: 236563)
+[18:20:51.734] [fetch] Stream RECEIVE: 6015 bytes (total so far: 252193)
+[18:20:51.734] [fetch] Stream RECEIVE: 3978 bytes (total so far: 258208)
+[18:20:51.735] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.735] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.735] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.744] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.758] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:51.760] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:51.762] [fetch] Stream RECEIVE: 7030 bytes (total so far: 14109)
+[18:20:51.765] [fetch] Stream RECEIVE: 38461 bytes (total so far: 21139)
+[18:20:51.765] [fetch] Stream RECEIVE: 6015 bytes (total so far: 59600)
+[18:20:51.769] [fetch] Stream RECEIVE: 12012 bytes (total so far: 65615)
+[18:20:51.769] [fetch] Stream RECEIVE: 8421 bytes (total so far: 77627)
+[18:20:51.771] [fetch] Stream RECEIVE: 10827 bytes (total so far: 86048)
+[18:20:51.772] [fetch] Stream RECEIVE: 19239 bytes (total so far: 96875)
+[18:20:51.774] [fetch] Stream RECEIVE: 10827 bytes (total so far: 116114)
+[18:20:51.775] [fetch] Stream RECEIVE: 32472 bytes (total so far: 126941)
+[18:20:51.776] [fetch] Stream RECEIVE: 7218 bytes (total so far: 159413)
+[18:20:51.776] [fetch] Stream RECEIVE: 12030 bytes (total so far: 166631)
+[18:20:51.777] [fetch] Stream RECEIVE: 6015 bytes (total so far: 178661)
+[18:20:51.777] [fetch] Stream RECEIVE: 20451 bytes (total so far: 184676)
+[18:20:51.777] [fetch] Stream RECEIVE: 12021 bytes (total so far: 205127)
+[18:20:51.778] [fetch] Stream RECEIVE: 16842 bytes (total so far: 217148)
+[18:20:51.778] [fetch] Stream RECEIVE: 12030 bytes (total so far: 233990)
+[18:20:51.779] [fetch] Stream RECEIVE: 16166 bytes (total so far: 246020)
+[18:20:51.779] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.780] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.780] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.788] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.803] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.806] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.809] [fetch] Stream RECEIVE: 27658 bytes (total so far: 14100)
+[18:20:51.814] [fetch] Stream RECEIVE: 8412 bytes (total so far: 41758)
+[18:20:51.817] [fetch] Stream RECEIVE: 12021 bytes (total so far: 50170)
+[18:20:51.817] [fetch] Stream RECEIVE: 7218 bytes (total so far: 62191)
+[18:20:51.820] [fetch] Stream RECEIVE: 20442 bytes (total so far: 69409)
+[18:20:51.821] [fetch] Stream RECEIVE: 4812 bytes (total so far: 89851)
+[18:20:51.823] [fetch] Stream RECEIVE: 12030 bytes (total so far: 94663)
+[18:20:51.823] [fetch] Stream RECEIVE: 19239 bytes (total so far: 106693)
+[18:20:51.826] [fetch] Stream RECEIVE: 28863 bytes (total so far: 125932)
+[18:20:51.826] [fetch] Stream RECEIVE: 8421 bytes (total so far: 154795)
+[18:20:51.829] [fetch] Stream RECEIVE: 49305 bytes (total so far: 163216)
+[18:20:51.830] [fetch] Stream RECEIVE: 16842 bytes (total so far: 212521)
+[18:20:51.832] [fetch] Stream RECEIVE: 31269 bytes (total so far: 229363)
+[18:20:51.833] [fetch] Stream RECEIVE: 1554 bytes (total so far: 260632)
+[18:20:51.833] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.833] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.834] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.843] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.857] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.860] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.863] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14100)
+[18:20:51.864] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32134)
+[18:20:51.866] [fetch] Stream RECEIVE: 8412 bytes (total so far: 33337)
+[18:20:51.869] [fetch] Stream RECEIVE: 10818 bytes (total so far: 41749)
+[18:20:51.869] [fetch] Stream RECEIVE: 6015 bytes (total so far: 52567)
+[18:20:51.870] [fetch] Stream RECEIVE: 9624 bytes (total so far: 58582)
+[18:20:51.871] [fetch] Stream RECEIVE: 12021 bytes (total so far: 68206)
+[18:20:51.872] [fetch] Stream RECEIVE: 8421 bytes (total so far: 80227)
+[18:20:51.873] [fetch] Stream RECEIVE: 10818 bytes (total so far: 88648)
+[18:20:51.873] [fetch] Stream RECEIVE: 3609 bytes (total so far: 99466)
+[18:20:51.874] [fetch] Stream RECEIVE: 25254 bytes (total so far: 103075)
+[18:20:51.874] [fetch] Stream RECEIVE: 4812 bytes (total so far: 128329)
+[18:20:51.876] [fetch] Stream RECEIVE: 21645 bytes (total so far: 133141)
+[18:20:51.876] [fetch] Stream RECEIVE: 10827 bytes (total so far: 154786)
+[18:20:51.877] [fetch] Stream RECEIVE: 26457 bytes (total so far: 165613)
+[18:20:51.877] [fetch] Stream RECEIVE: 2406 bytes (total so far: 192070)
+[18:20:51.877] [fetch] Stream RECEIVE: 1203 bytes (total so far: 194476)
+[18:20:51.880] [fetch] Stream RECEIVE: 19248 bytes (total so far: 195679)
+[18:20:51.881] [fetch] Stream RECEIVE: 42096 bytes (total so far: 214927)
+[18:20:51.881] [fetch] Stream RECEIVE: 5163 bytes (total so far: 257023)
+[18:20:51.882] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.882] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.883] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.891] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.906] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:51.909] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:51.912] [fetch] Stream RECEIVE: 19237 bytes (total so far: 14109)
+[18:20:51.915] [fetch] Stream RECEIVE: 8412 bytes (total so far: 33346)
+[18:20:51.918] [fetch] Stream RECEIVE: 7218 bytes (total so far: 41758)
+[18:20:51.919] [fetch] Stream RECEIVE: 10818 bytes (total so far: 48976)
+[18:20:51.920] [fetch] Stream RECEIVE: 6015 bytes (total so far: 59794)
+[18:20:51.921] [fetch] Stream RECEIVE: 12021 bytes (total so far: 65809)
+[18:20:51.921] [fetch] Stream RECEIVE: 8421 bytes (total so far: 77830)
+[18:20:51.922] [fetch] Stream RECEIVE: 12021 bytes (total so far: 86251)
+[18:20:51.922] [fetch] Stream RECEIVE: 2406 bytes (total so far: 98272)
+[18:20:51.923] [fetch] Stream RECEIVE: 14436 bytes (total so far: 100678)
+[18:20:51.923] [fetch] Stream RECEIVE: 16833 bytes (total so far: 115114)
+[18:20:51.924] [fetch] Stream RECEIVE: 2406 bytes (total so far: 131947)
+[18:20:51.925] [fetch] Stream RECEIVE: 28863 bytes (total so far: 134353)
+[18:20:51.925] [fetch] Stream RECEIVE: 10827 bytes (total so far: 163216)
+[18:20:51.925] [fetch] Stream RECEIVE: 12021 bytes (total so far: 174043)
+[18:20:51.926] [fetch] Stream RECEIVE: 15639 bytes (total so far: 186064)
+[18:20:51.926] [fetch] Stream RECEIVE: 4812 bytes (total so far: 201703)
+[18:20:51.927] [fetch] Stream RECEIVE: 20442 bytes (total so far: 206515)
+[18:20:51.927] [fetch] Stream RECEIVE: 10827 bytes (total so far: 226957)
+[18:20:51.927] [fetch] Stream RECEIVE: 2397 bytes (total so far: 237784)
+[18:20:51.928] [fetch] Stream RECEIVE: 21654 bytes (total so far: 240181)
+[18:20:51.929] [fetch] Stream RECEIVE: 351 bytes (total so far: 261835)
+[18:20:51.929] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.929] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.929] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.938] [fetch] Connected, sending CHUNK_QUERY
+[18:20:51.953] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:51.957] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:51.959] [fetch] Stream RECEIVE: 18034 bytes (total so far: 14100)
+[18:20:51.960] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32134)
+[18:20:51.963] [fetch] Stream RECEIVE: 8412 bytes (total so far: 33337)
+[18:20:51.966] [fetch] Stream RECEIVE: 16833 bytes (total so far: 41749)
+[18:20:51.969] [fetch] Stream RECEIVE: 20442 bytes (total so far: 58582)
+[18:20:51.972] [fetch] Stream RECEIVE: 20442 bytes (total so far: 79024)
+[18:20:51.973] [fetch] Stream RECEIVE: 7218 bytes (total so far: 99466)
+[18:20:51.975] [fetch] Stream RECEIVE: 14436 bytes (total so far: 106684)
+[18:20:51.975] [fetch] Stream RECEIVE: 18036 bytes (total so far: 121120)
+[18:20:51.977] [fetch] Stream RECEIVE: 1203 bytes (total so far: 139156)
+[18:20:51.979] [fetch] Stream RECEIVE: 19239 bytes (total so far: 140359)
+[18:20:51.979] [fetch] Stream RECEIVE: 16833 bytes (total so far: 159598)
+[18:20:51.979] [fetch] Stream RECEIVE: 10827 bytes (total so far: 176431)
+[18:20:51.979] [fetch] Stream RECEIVE: 7218 bytes (total so far: 187258)
+[18:20:51.981] [fetch] Stream RECEIVE: 20451 bytes (total so far: 194476)
+[18:20:51.982] [fetch] Stream RECEIVE: 22848 bytes (total so far: 214927)
+[18:20:51.982] [fetch] Stream RECEIVE: 24411 bytes (total so far: 237775)
+[18:20:51.982] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:51.983] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:51.983] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:51.992] [fetch] Connected, sending CHUNK_QUERY
+[18:20:52.006] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:52.009] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:52.012] [fetch] Stream RECEIVE: 1196 bytes (total so far: 14100)
+[18:20:52.013] [fetch] Stream RECEIVE: 20447 bytes (total so far: 15296)
+[18:20:52.015] [fetch] Stream RECEIVE: 10818 bytes (total so far: 35743)
+[18:20:52.015] [fetch] Stream RECEIVE: 4812 bytes (total so far: 46561)
+[18:20:52.017] [fetch] Stream RECEIVE: 12021 bytes (total so far: 51373)
+[18:20:52.018] [fetch] Stream RECEIVE: 18036 bytes (total so far: 63394)
+[18:20:52.018] [fetch] Stream RECEIVE: 3609 bytes (total so far: 81430)
+[18:20:52.020] [fetch] Stream RECEIVE: 21645 bytes (total so far: 85039)
+[18:20:52.021] [fetch] Stream RECEIVE: 20442 bytes (total so far: 106684)
+[18:20:52.021] [fetch] Stream RECEIVE: 3609 bytes (total so far: 127126)
+[18:20:52.024] [fetch] Stream RECEIVE: 20451 bytes (total so far: 130735)
+[18:20:52.024] [fetch] Stream RECEIVE: 44493 bytes (total so far: 151186)
+[18:20:52.025] [fetch] Stream RECEIVE: 14427 bytes (total so far: 195679)
+[18:20:52.025] [fetch] Stream RECEIVE: 3609 bytes (total so far: 210106)
+[18:20:52.025] [fetch] Stream RECEIVE: 25263 bytes (total so far: 213715)
+[18:20:52.026] [fetch] Stream RECEIVE: 13233 bytes (total so far: 238978)
+[18:20:52.026] [fetch] Stream RECEIVE: 6006 bytes (total so far: 252211)
+[18:20:52.027] [fetch] Stream RECEIVE: 3969 bytes (total so far: 258217)
+[18:20:52.027] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:52.027] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:52.028] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:52.038] [fetch] Connected, sending CHUNK_QUERY
+[18:20:52.050] [fetch] Stream RECEIVE: 7062 bytes (total so far: 0)
+[18:20:52.054] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7062)
+[18:20:52.058] [fetch] Stream RECEIVE: 19237 bytes (total so far: 14100)
+[18:20:52.061] [fetch] Stream RECEIVE: 7209 bytes (total so far: 33337)
+[18:20:52.063] [fetch] Stream RECEIVE: 10818 bytes (total so far: 40546)
+[18:20:52.063] [fetch] Stream RECEIVE: 4812 bytes (total so far: 51364)
+[18:20:52.066] [fetch] Stream RECEIVE: 14427 bytes (total so far: 56176)
+[18:20:52.066] [fetch] Stream RECEIVE: 6015 bytes (total so far: 70603)
+[18:20:52.068] [fetch] Stream RECEIVE: 19239 bytes (total so far: 76618)
+[18:20:52.069] [fetch] Stream RECEIVE: 6015 bytes (total so far: 95857)
+[18:20:52.071] [fetch] Stream RECEIVE: 31269 bytes (total so far: 101872)
+[18:20:52.071] [fetch] Stream RECEIVE: 1203 bytes (total so far: 133141)
+[18:20:52.074] [fetch] Stream RECEIVE: 22848 bytes (total so far: 134344)
+[18:20:52.074] [fetch] Stream RECEIVE: 18045 bytes (total so far: 157192)
+[18:20:52.075] [fetch] Stream RECEIVE: 6015 bytes (total so far: 175237)
+[18:20:52.076] [fetch] Stream RECEIVE: 19248 bytes (total so far: 181252)
+[18:20:52.077] [fetch] Stream RECEIVE: 42096 bytes (total so far: 200500)
+[18:20:52.077] [fetch] Stream RECEIVE: 19590 bytes (total so far: 242596)
+[18:20:52.078] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:52.078] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:52.078] [fetch] Connecting to fd7a:115c:a1e0::4f01:bd94:4567 for chunk fetch
+[18:20:52.087] [fetch] Connected, sending CHUNK_QUERY
+[18:20:52.101] [fetch] Stream RECEIVE: 7071 bytes (total so far: 0)
+[18:20:52.104] [fetch] Stream RECEIVE: 7038 bytes (total so far: 7071)
+[18:20:52.107] [fetch] Stream RECEIVE: 18035 bytes (total so far: 14109)
+[18:20:52.107] [fetch] Stream RECEIVE: 1203 bytes (total so far: 32144)
+[18:20:52.111] [fetch] Stream RECEIVE: 6007 bytes (total so far: 33347)
+[18:20:52.113] [fetch] Stream RECEIVE: 10819 bytes (total so far: 39354)
+[18:20:52.113] [fetch] Stream RECEIVE: 3609 bytes (total so far: 50173)
+[18:20:52.117] [fetch] Stream RECEIVE: 18037 bytes (total so far: 53782)
+[18:20:52.117] [fetch] Stream RECEIVE: 2406 bytes (total so far: 71819)
+[18:20:52.119] [fetch] Stream RECEIVE: 21646 bytes (total so far: 74225)
+[18:20:52.120] [fetch] Stream RECEIVE: 4812 bytes (total so far: 95871)
+[18:20:52.123] [fetch] Stream RECEIVE: 28864 bytes (total so far: 100683)
+[18:20:52.124] [fetch] Stream RECEIVE: 3609 bytes (total so far: 129547)
+[18:20:52.126] [fetch] Stream RECEIVE: 25255 bytes (total so far: 133156)
+[18:20:52.126] [fetch] Stream RECEIVE: 13233 bytes (total so far: 158411)
+[18:20:52.129] [fetch] Stream RECEIVE: 20451 bytes (total so far: 171644)
+[18:20:52.129] [fetch] Stream RECEIVE: 21646 bytes (total so far: 192095)
+[18:20:52.130] [fetch] Stream RECEIVE: 4812 bytes (total so far: 213741)
+[18:20:52.131] [fetch] Stream RECEIVE: 15639 bytes (total so far: 218553)
+[18:20:52.131] [fetch] Stream RECEIVE: 12022 bytes (total so far: 234192)
+[18:20:52.131] [fetch] Stream RECEIVE: 10827 bytes (total so far: 246214)
+[18:20:52.132] [fetch] Stream RECEIVE: 5145 bytes (total so far: 257041)
+[18:20:52.132] [fetch] PEER_SEND_SHUTDOWN, recv_size=262186
+[18:20:52.132] [fetch] Successfully fetched 262144 bytes from fd7a:115c:a1e0::4f01:bd94:4567
+[18:20:52.133] [daemon] FILE_GET: wrote 10485760 bytes to C:\Users\dylan\Desktop\thisinonlyatest
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[RelayClient] Sent FIND_PEERS (max 20)
+[RelayClient] PEERS_FOUND (1 peers)
+[18:21:12.103] [daemon] Peer discovery: found 1 active peers
+[18:21:12.103] [daemon]   Peer 0: 323d7189... (8 endpoints)
+[18:21:12.104] [daemon] Seeded DHT routing table with 1 peers from relay discovery
+[dht] Received msg type 0x23 from fd7a:115c:a1e0::4f01:bd94:4568
+[dht] FIND_NODE response: 1 nodes
+[dht] Received msg type 0x22 from 2600:1700:7d00:1390:ad8d:b2fe:a96e:9c8c:4568
+[dht] Received FIND_NODE, returning 1 nodes
+[18:21:27.041]
 [daemon] Shutdown requested, cleaning up...
-[15:45:01.973] [daemon] Shutting down...
-[15:45:01.973] [worker] Background worker thread exiting
-[15:45:01.974] [ipc] Stopping server...
-[15:45:01.974] [ipc] Client connected
-[15:45:01.974] [ipc] Server thread exiting
-[15:45:02.081] [ipc] Server stopped
-[15:45:02.083] [daemon] DHT node shut down
+[18:21:27.138] [daemon] Shutting down...
+[18:21:27.138] [worker] Background worker thread exiting
+[18:21:27.139] [ipc] Stopping server...
+[18:21:27.139] [ipc] Client connected
+[18:21:27.139] [ipc] Server thread exiting
+[18:21:27.247] [ipc] Server stopped
+[18:21:27.248] [daemon] DHT node shut down
 [RelayClient] Sent GOODBYE (reason: error)
-[15:45:02.084] [daemon] Relay disconnected
+[18:21:27.249] [daemon] Relay disconnected
 [RelayClient] Destroyed
-[15:45:02.085] [daemon] Listener stop complete
-[15:45:02.085] [daemon] QUIC listener stopped
-[15:45:02.090] [daemon] Shutdown complete
+[18:21:27.250] [daemon] Listener stop complete
+[18:21:27.250] [daemon] QUIC listener stopped
+[18:21:27.258] [daemon] Shutdown complete
 
 C:\Dev\Wormhole\src\build>
 
@@ -426,522 +1530,193 @@ C:\Dev\Wormhole\src\build>
 Machine 1 Terminal 2:
 
 C:\Dev\Wormhole\src\build>wormhole.exe status
-[15:43:32.598] === Wormhole - Secure P2P File Transfer ===
+[18:16:22.382] === Wormhole - Secure P2P File Transfer ===
 
-[15:43:32.599]
+[18:16:22.383]
 Wormhole Daemon Status
-[15:43:32.599] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
-[15:43:32.599]   Peers:         0
-[15:43:32.599]   Chunks:        0
-[15:43:32.599]   Storage Used:  0 bytes
-[15:43:32.599]   Relay:         connected
-[15:43:32.599]   Listener:      active
-[15:43:32.599]   DHT Nodes:     2
-[15:43:32.599]   DHT Values:    0
-[15:43:32.599]   DHT Sent:      4 msgs
-[15:43:32.600]   DHT Received:  3 msgs
-[15:43:32.600]   Stored Files:  1 (1 replicating)
-[15:43:32.600]
+[18:16:22.383] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+[18:16:22.383]   Peers:         0
+[18:16:22.383]   Chunks:        0
+[18:16:22.383]   Storage Used:  0 bytes
+[18:16:22.383]   Relay:         connected
+[18:16:22.383]   Listener:      active
+[18:16:22.383]   DHT Nodes:     1
+[18:16:22.383]   DHT Values:    0
+[18:16:22.384]   DHT Sent:      4 msgs
+[18:16:22.384]   DHT Received:  2 msgs
+[18:16:22.384]
 
 C:\Dev\Wormhole\src\build>wormhole.exe store C:\Users\dylan\Desktop\test_10mb.bin
-[15:44:12.881] === Wormhole - Secure P2P File Transfer ===
+[18:16:48.812] === Wormhole - Secure P2P File Transfer ===
 
 Stored test_10mb.bin (10.0 MB)
   File ID: d0d6b451
   Replicating to network...
 
 C:\Dev\Wormhole\src\build>wormhole.exe status
-[15:44:45.561] === Wormhole - Secure P2P File Transfer ===
+[18:17:26.915] === Wormhole - Secure P2P File Transfer ===
 
-[15:44:45.562]
+[18:17:26.916]
 Wormhole Daemon Status
-[15:44:45.562] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
-[15:44:45.562]   Peers:         0
-[15:44:45.562]   Chunks:        60
-[15:44:45.562]   Storage Used:  15728640 bytes
-[15:44:45.563]   Relay:         connected
-[15:44:45.563]   Listener:      active
-[15:44:45.563]   DHT Nodes:     2
-[15:44:45.563]   DHT Values:    0
-[15:44:45.563]   DHT Sent:      129 msgs
-[15:44:45.563]   DHT Received:  128 msgs
-[15:44:45.564]   Stored Files:  1 (1 replicating)
-[15:44:45.564]
+[18:17:26.916] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+[18:17:26.916]   Peers:         0
+[18:17:26.916]   Chunks:        60
+[18:17:26.917]   Storage Used:  15728640 bytes
+[18:17:26.917]   Relay:         connected
+[18:17:26.917]   Listener:      active
+[18:17:26.918]   DHT Nodes:     1
+[18:17:26.918]   DHT Values:    60
+[18:17:26.918]   DHT Sent:      129 msgs
+[18:17:26.918]   DHT Received:  127 msgs
+[18:17:26.918]   Stored Files:  1 (1 replicating)
+[18:17:26.919]
+
+C:\Dev\Wormhole\src\build>wormhole.exe get d0d6b451 -o C:\Users\dylan\Desktop\thisinonlyatest
+[18:18:31.898] === Wormhole - Secure P2P File Transfer ===
+
+Retrieving test_10mb.bin (10.0 MB)...
+Downloaded 10.0 MB
+Saved to C:\Users\dylan\Desktop\thisinonlyatest
+
+C:\Dev\Wormhole\src\build>wormhole.exe
+[18:19:13.978] === Wormhole - Secure P2P File Transfer ===
+
+[18:19:13.978]
+Wormhole - Secure P2P File Transfer & Storage
+
+[18:19:13.978] Usage:
+[18:19:13.978]   wormhole send <file|directory>      Send a file or directory
+[18:19:13.978]   wormhole receive <ticket>           Receive a file using a ticket
+[18:19:13.978]   wormhole store <file>               Store file via daemon
+[18:19:13.979]   wormhole get <id> [-o <file>]       Retrieve a stored file by ID
+[18:19:13.979]   wormhole files                      List stored files
+[18:19:13.979]   wormhole status                     Show daemon status
+[18:19:13.979]   wormhole config list                Show all settings
+[18:19:13.979]   wormhole config get <key>           Get a config value
+[18:19:13.979]   wormhole config set <key> <val>     Set a config value
+[18:19:13.979]   wormhole --help                     Show this help message
+
+[18:19:13.979] Global options:
+[18:19:13.979]   --daemon <port>   Connect to daemon on specified port (default: 4567)
+
+[18:19:13.979] Examples:
+[18:19:13.979]   wormhole send document.pdf
+[18:19:13.980]   wormhole send ./my-project/
+[18:19:13.980]   wormhole receive 7-guitar-battery
+[18:19:13.980]   wormhole store myfile.bin
+[18:19:13.980]   wormhole get a1b2c3d4 -o recovered.bin
+
+
+C:\Dev\Wormhole\src\build>wormhole.exe files
+[18:19:23.501] === Wormhole - Secure P2P File Transfer ===
+
+
+ID         NAME                     SIZE       STATUS
+--------   ------------------------ --------   ----------
+d0d6b451   test_10mb.bin            10.0 MB    REPLICATING (0%)
+
+
+C:\Dev\Wormhole\src\build>wormhole.exe get d0d6b451 -o C:\Users\dylan\Desktop\thisinonlyatest
+[18:20:50.147] === Wormhole - Secure P2P File Transfer ===
+
+Retrieving test_10mb.bin (10.0 MB)...
+Downloaded 10.0 MB
+Saved to C:\Users\dylan\Desktop\thisinonlyatest
+
+C:\Dev\Wormhole\src\build>h
 
 C:\Dev\Wormhole\src\build>
 
 
-Machine 2 Terminal 1:
-
-C:\Users\dylan\Desktop\Wormhole>wormholed.exe --port 4567
-[15:42:45.857] [config] No config file at C:\Users\dylan\.wormhole\config, using defaults
-[15:42:45.857] [daemon] Storage quota: 10 GB
-[15:42:45.857] [daemon] Replication target: 3
-[PeerID] No existing keypair found, generating new one...
-[PeerID] Generated new keypair
-[PeerID] Saved keypair to C:\Users\dylan\.wormhole\identity
-[15:42:45.857] [daemon] PeerID: 273b269548789640496831bd0216bd4036dc9d9ab415b21b9d82dc7512c21ebd
-[15:42:45.857] === wormholed - Wormhole Persistent Node Daemon ===
-[15:42:45.857]   Port:  4567
-[15:42:45.857]   Relay: enabled
-[15:42:45.857] ================================================
-[15:42:45.857] [daemon] Initializing chunk store...
-[15:42:45.864] [daemon] Chunk store ready
-[15:42:45.864] [daemon] Opening MsQuic library...
-[15:42:45.878] [daemon] MsQuic initialized
-[15:42:45.878] [daemon] Loading server configuration...
-[15:42:45.878] Checking for existing Wormhole-Dev certificate...
-[15:42:46.396] Found existing certificate: 0576AA94D8CAB0FDFB3960EC45CC051C9AEA18CB
-[15:42:46.396] [daemon] Certificate thumbprint: 0576AA94D8CAB0FDFB3960EC45CC051C9AEA18CB
-[15:42:46.407] [daemon] Server configuration loaded
-[15:42:46.407] [daemon] Client configuration loaded
-[15:42:46.407] [daemon] QUIC listener started on port 4567
-[15:42:46.407] [ipc] Server listening on \\.\pipe\wormhole_4567
-[15:42:46.407] [worker] Background worker thread started
-[Discovery] Found LAN address (priority 0)
-[Discovery] Found LAN address (priority 0)
-[Discovery] Found LAN address (priority 0)
-[Discovery] Found LAN address (priority 0)
-[Discovery] Found IPv6 address (priority 75)
-[Discovery] Found IPv6 address (priority 75)
-[Discovery] Found IPv6 address (priority 75)
-[Discovery] Found IPv6 address (priority 75)
-[Discovery] Found 8 total endpoints
-[15:42:46.423] [daemon] Discovered 8 endpoints
-[RelayClient] Created client for wormholerelay.com:443 (IPv4)
-[RelayClient] Sent REGISTER (8 endpoints)
-[15:42:46.423] [daemon] Relay registration sent
-[15:42:46.441] [daemon] DHT node initialized on port 4568
-[dht] Bootstrap: sending FIND_NODE(self) to 2604:a880:800:14:0:2:7dad:f000:443
-[15:42:46.441] [daemon] Starting with fresh ledger
-[15:42:46.441] [daemon] Daemon is running. Press Ctrl+C to stop.
-[RelayClient] REGISTERED (session 12741439608864559730)
-[15:42:46.460] [daemon] Relay connected (session 12741439608864559730)
-[RelayClient] Sent FIND_PEERS (max 20)
-[RelayClient] PEERS_FOUND (1 peers)
-[15:42:51.062] [daemon] Peer discovery: found 1 active peers
-[15:42:51.062] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
-[15:42:51.064] [daemon] Seeded DHT routing table with 1 peers from relay discovery
-[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
-[dht] FIND_NODE response: 2 nodes
-[dht] Received msg type 0x22 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received FIND_NODE, returning 2 nodes
-[RelayClient] Sent FIND_PEERS (max 20)
-[RelayClient] PEERS_FOUND (1 peers)
-[15:43:21.066] [daemon] Peer discovery: found 1 active peers
-[15:43:21.066] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
-[15:43:21.066] [daemon] Seeded DHT routing table with 1 peers from relay discovery
-[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
-[dht] FIND_NODE response: 2 nodes
-[dht] Received msg type 0x22 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received FIND_NODE, returning 2 nodes
-[15:43:42.020] [ipc] Client connected
-[RelayClient] Sent FIND_PEERS (max 20)
-[RelayClient] PEERS_FOUND (1 peers)
-[15:43:51.065] [daemon] Peer discovery: found 1 active peers
-[15:43:51.065] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
-[15:43:51.078] [daemon] Seeded DHT routing table with 1 peers from relay discovery
-[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
-[dht] FIND_NODE response: 2 nodes
-[dht] Received msg type 0x22 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received FIND_NODE, returning 2 nodes
-[15:44:13.561] [daemon] Incoming QUIC connection
-[15:44:13.592] [punch] Opened connection to 107.204.80.156:4567 (NAT mapping)
-[15:44:13.612] [daemon] Peer connected
-[15:44:13.612] [daemon] Peer initiated shutdown (error: 0x0)
-[15:44:13.637] [daemon] Peer disconnected (active peers: 0)
-[15:44:14.681] [daemon] Incoming QUIC connection
-[15:44:14.695] [daemon] Peer connected
-[15:44:14.695] [daemon] Peer opened stream
-[15:44:14.727] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.749] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.764] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.780] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.786] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.803] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.819] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.819] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.850] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.869] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.880] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.891] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.913] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.921] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.935] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.945] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.962] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.974] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:14.996] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.006] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.022] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.046] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.068] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.082] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.095] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.113] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.135] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.151] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.174] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.186] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.198] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.208] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.224] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.236] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.256] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.266] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.275] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.286] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.295] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.311] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:15.321] [daemon] PEER_SEND_SHUTDOWN: closing send direction
-[15:44:15.325] [daemon] Peer initiated shutdown (error: 0x0)
-[15:44:15.387] [daemon] Peer disconnected (active peers: 0)
-[15:44:16.027] [daemon] Incoming QUIC connection
-[15:44:16.033] [daemon] Peer connected
-[15:44:16.033] [daemon] Peer initiated shutdown (error: 0x0)
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[15:44:16.058] [daemon] Peer disconnected (active peers: 0)
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[15:44:16.087] [punch] Opened connection to 107.204.80.156:4567 (NAT mapping)
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[15:44:17.158] [daemon] Incoming QUIC connection
-[15:44:17.179] [daemon] Peer connected
-[15:44:17.181] [daemon] Peer opened stream
-[15:44:17.207] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.233] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.249] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.261] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.273] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.287] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.304] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.315] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.330] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.351] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.366] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.377] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.392] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.414] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.414] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.435] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.446] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.461] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.461] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.477] [daemon] CHUNK_STORE_REQUEST: 262144 bytes
-[15:44:17.483] [daemon] PEER_SEND_SHUTDOWN: closing send direction
-[15:44:17.493] [daemon] Peer initiated shutdown (error: 0x0)
-[15:44:17.525] [daemon] Peer disconnected (active peers: 0)
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[dht] Received msg type 0x26 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received STORE: 1 locations for key
-[RelayClient] Sent FIND_PEERS (max 20)
-[RelayClient] PEERS_FOUND (1 peers)
-[15:44:21.093] [daemon] Peer discovery: found 1 active peers
-[15:44:21.093] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
-[15:44:21.093] [daemon] Seeded DHT routing table with 1 peers from relay discovery
-[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
-[dht] FIND_NODE response: 2 nodes
-[dht] Received msg type 0x22 from fd7a:115c:a1e0::3437:2229:4568
-[dht] Received FIND_NODE, returning 2 nodes
-[RelayClient] Sent FIND_PEERS (max 20)
-[RelayClient] PEERS_FOUND (1 peers)
-[15:44:51.093] [daemon] Peer discovery: found 1 active peers
-[15:44:51.093] [daemon]   Peer 0: 1f498cc3... (4 endpoints)
-[15:44:51.093] [daemon] Seeded DHT routing table with 1 peers from relay discovery
-[dht] Received msg type 0x23 from 2600:1700:7d00:1390:191d:585d:7ee6:596c:4568
-[dht] FIND_NODE response: 2 nodes
-[15:44:51.494] [ipc] Client connected
-[15:45:06.042]
-[daemon] Shutdown requested, cleaning up...
-[15:45:06.074] [daemon] Shutting down...
-[15:45:06.074] [worker] Background worker thread exiting
-[15:45:06.075] [ipc] Stopping server...
-[15:45:06.075] [ipc] Client connected
-[15:45:06.075] [ipc] Server thread exiting
-[15:45:06.186] [ipc] Server stopped
-[15:45:06.190] [daemon] DHT node shut down
-[RelayClient] Sent GOODBYE (reason: error)
-[15:45:06.199] [daemon] Relay disconnected
-[RelayClient] Destroyed
-[15:45:06.202] [daemon] Listener stop complete
-[15:45:06.204] [daemon] QUIC listener stopped
-[15:45:06.222] [daemon] Shutdown complete
-
-C:\Users\dylan\Desktop\Wormhole>
-
-
-Machine 2 Terminal 2:
-
-C:\Users\dylan\Desktop\Wormhole>wormhole.exe status
-[15:43:42.020] === Wormhole - Secure P2P File Transfer ===
-
-[15:43:42.024]
-Wormhole Daemon Status
-[15:43:42.024] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
-[15:43:42.024]   Peers:         0
-[15:43:42.024]   Chunks:        0
-[15:43:42.024]   Storage Used:  0 bytes
-[15:43:42.024]   Relay:         connected
-[15:43:42.024]   Listener:      active
-[15:43:42.024]   DHT Nodes:     2
-[15:43:42.024]   DHT Values:    0
-[15:43:42.024]   DHT Sent:      5 msgs
-[15:43:42.024]   DHT Received:  4 msgs
-[15:43:42.024]
-
-C:\Users\dylan\Desktop\Wormhole>wormhole.exe status
-[15:44:51.494] === Wormhole - Secure P2P File Transfer ===
-
-[15:44:51.494]
-Wormhole Daemon Status
-[15:44:51.494] ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
-[15:44:51.494]   Peers:         0
-[15:44:51.494]   Chunks:        60
-[15:44:51.494]   Storage Used:  15728640 bytes
-[15:44:51.494]   Relay:         connected
-[15:44:51.494]   Listener:      active
-[15:44:51.494]   DHT Nodes:     2
-[15:44:51.494]   DHT Values:    60
-[15:44:51.494]   DHT Sent:      130 msgs
-[15:44:51.494]   DHT Received:  129 msgs
-[15:44:51.494]
-
-C:\Users\dylan\Desktop\Wormhole>
-
-
 Relay Server:
 
-nothing in the relay logs
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: 11d7 (4567), priority=0
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[2]: type=0x06, port=0x11d7 (4567), priority=0
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[3]: type=0x04, port=0x11d7 (4567), priority=0
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[4]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[5]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[6]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] Registered new peer (session 15041665809430219585, total peers: 2)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] REGISTERED sent (session 15041665809430219585)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FORWARD: 33 bytes to peer
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FORWARD: 33 bytes to peer
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FORWARD: 33 bytes to peer
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FORWARD: 33 bytes to peer
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] GOODBYE from client (reason: error)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] Removed peer (session 11840551076299034722, total peers: 1)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] Removed peer (session 11840551076299034722) on GOODBYE
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] GOODBYE from client (reason: error)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] Removed peer (session 15041665809430219585, total peers: 0)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] Removed peer (session 15041665809430219585) on GOODBYE
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] REGISTER from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Crypto] Ed25519 signature verified successfully
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG] Storing 3 endpoints:
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[0]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[1]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[2]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] Registered new peer (session 16460316184209412078, total peers: 1)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] REGISTERED sent (session 16460316184209412078)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (0 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] REGISTER from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Crypto] Ed25519 signature verified successfully
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG] Storing 7 endpoints:
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[0]: type=0x06, port=0x11d7 (4567), priority=0
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[1]: type=0x06, port=0x11d7 (4567), priority=0
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[2]: type=0x06, port=0x11d7 (4567), priority=0
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[3]: type=0x04, port=0x11d7 (4567), priority=0
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[4]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[5]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] [DEBUG]   EP[6]: type=0x06, port=0x11d7 (4567), priority=75
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [PeerRegistry] Registered new peer (session 12660627996083892158, total peers: 2)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] REGISTERED sent (session 12660627996083892158)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FIND_PEERS from client
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] PEERS_FOUND sent (1 peers)
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FORWARD: 33 bytes to peer
+Feb 18 18:16:52 WormholeRelayUSEast relay-server[142327]: [Server] FORWARD: 33 bytes to peer

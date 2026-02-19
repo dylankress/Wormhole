@@ -5,6 +5,8 @@
 
 #include "crypto.h"
 
+#ifdef _WIN32
+
 // Helper: Validate that a string contains exactly 40 hexadecimal characters
 static BOOLEAN IsValidThumbprint(const char *str)
 {
@@ -21,8 +23,8 @@ static BOOLEAN IsValidThumbprint(const char *str)
 	// Every character must be 0-9, A-F, or a-f
 	for (size_t i = 0; i < 40; i++) {
 		char c = str[i];
-		if (!((c >= '0' && c <= '9') || 
-			  (c >= 'A' && c <= 'F') || 
+		if (!((c >= '0' && c <= '9') ||
+			  (c >= 'A' && c <= 'F') ||
 			  (c >= 'a' && c <= 'f'))) {
 			return FALSE;
 		}
@@ -54,7 +56,7 @@ static BOOLEAN ExecutePowerShellCommand(const char *command, char *output_buffer
 
 	// Read all output into buffer
 	size_t total_read = 0;
-	while (fgets(output_buffer + total_read, 
+	while (fgets(output_buffer + total_read,
 				 (int)(buffer_size - total_read), pipe) != NULL) {
 		total_read = strlen(output_buffer);
 		if (total_read >= buffer_size - 1) {
@@ -93,7 +95,7 @@ static BOOLEAN ParseThumbprintFromOutput(const char *output, char *thumbprint_ou
 		while (*line == ' ' || *line == '\t') {
 			line++;
 		}
-		
+
 		// Try to read 40 characters
 		if (sscanf(line, "%40s", candidate) == 1) {
 			// Check if it's a valid thumbprint (40 hex chars)
@@ -104,7 +106,7 @@ static BOOLEAN ParseThumbprintFromOutput(const char *output, char *thumbprint_ou
 				return TRUE;
 			}
 		}
-		
+
 		// Move to next line
 		while (*line != '\0' && *line != '\n') {
 			line++;
@@ -118,7 +120,7 @@ static BOOLEAN ParseThumbprintFromOutput(const char *output, char *thumbprint_ou
 	return FALSE;
 }
 
-// Main function: Generate or find self-signed certificate
+// Main function: Generate or find self-signed certificate (Windows — cert store)
 BOOLEAN GenerateSelfSignedCert(char *thumbprint_out, size_t thumbprint_size)
 {
 	// Validate parameters
@@ -135,7 +137,7 @@ BOOLEAN GenerateSelfSignedCert(char *thumbprint_out, size_t thumbprint_size)
 	//
 	LOG("Checking for existing Wormhole-Dev certificate...\n");
 
-	const char *find_command = 
+	const char *find_command =
 		"Get-ChildItem -Path Cert:\\CurrentUser\\My | "
 		"Where-Object {$_.FriendlyName -eq 'Wormhole-Dev'} | "
 		"Select-Object -ExpandProperty Thumbprint";
@@ -155,7 +157,7 @@ BOOLEAN GenerateSelfSignedCert(char *thumbprint_out, size_t thumbprint_size)
 
 	memset(output, 0, sizeof(output));
 
-	const char *generate_command = 
+	const char *generate_command =
 		"New-SelfSignedCertificate "
 		"-DnsName localhost "
 		"-FriendlyName 'Wormhole-Dev' "
@@ -181,3 +183,97 @@ BOOLEAN GenerateSelfSignedCert(char *thumbprint_out, size_t thumbprint_size)
 	LOG_ERROR("Make sure PowerShell is available and you have permissions to create certificates\n");
 	return FALSE;
 }
+
+#else // Linux / POSIX
+
+// Build the paths for PEM cert/key files in ~/.wormhole/
+static BOOLEAN GetCertPaths(char *cert_path, size_t cert_len,
+                             char *key_path, size_t key_len)
+{
+	const char *home = getenv("HOME");
+	if (!home) return FALSE;
+
+	snprintf(cert_path, cert_len, "%s/.wormhole/cert.pem", home);
+	snprintf(key_path, key_len, "%s/.wormhole/key.pem", home);
+	return TRUE;
+}
+
+// Public helper for other files to get cert/key paths
+BOOLEAN Crypto_GetCertPaths(char *cert_path, size_t cert_len,
+                              char *key_path, size_t key_len)
+{
+	return GetCertPaths(cert_path, cert_len, key_path, key_len);
+}
+
+BOOLEAN GenerateSelfSignedCert(char *cert_path_out, size_t path_size)
+{
+	if (!cert_path_out || path_size < 2) {
+		LOG_ERROR("Invalid parameters for GenerateSelfSignedCert\n");
+		return FALSE;
+	}
+
+	char cert_path[MAX_PATH];
+	char key_path[MAX_PATH];
+	if (!GetCertPaths(cert_path, sizeof(cert_path), key_path, sizeof(key_path))) {
+		LOG_ERROR("Failed to determine cert paths\n");
+		return FALSE;
+	}
+
+	// Ensure ~/.wormhole/ exists
+	const char *home = getenv("HOME");
+	if (home) {
+		char dir[MAX_PATH];
+		snprintf(dir, sizeof(dir), "%s/.wormhole", home);
+		mkdir(dir, 0700);
+	}
+
+	// Check if cert and key already exist
+	FILE *f = fopen(cert_path, "r");
+	if (f) {
+		fclose(f);
+		f = fopen(key_path, "r");
+		if (f) {
+			fclose(f);
+			LOG("Using existing TLS certificate: %s\n", cert_path);
+			snprintf(cert_path_out, path_size, "%s", cert_path);
+			return TRUE;
+		}
+	}
+
+	// Generate self-signed cert via openssl CLI
+	LOG("Generating self-signed TLS certificate...\n");
+
+	char cmd[1024];
+	snprintf(cmd, sizeof(cmd),
+		"openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 "
+		"-keyout '%s' -out '%s' -days 365 -nodes "
+		"-subj '/CN=wormhole' 2>/dev/null",
+		key_path, cert_path);
+
+	int rc = system(cmd);
+	if (rc != 0) {
+		LOG_ERROR("openssl command failed (exit code %d). Is openssl installed?\n", rc);
+		return FALSE;
+	}
+
+	// Verify files were created
+	f = fopen(cert_path, "r");
+	if (!f) {
+		LOG_ERROR("Certificate file not created: %s\n", cert_path);
+		return FALSE;
+	}
+	fclose(f);
+
+	f = fopen(key_path, "r");
+	if (!f) {
+		LOG_ERROR("Key file not created: %s\n", key_path);
+		return FALSE;
+	}
+	fclose(f);
+
+	LOG("Certificate generated: %s\n", cert_path);
+	snprintf(cert_path_out, path_size, "%s", cert_path);
+	return TRUE;
+}
+
+#endif // _WIN32

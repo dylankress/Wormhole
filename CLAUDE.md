@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wormhole is a decentralized P2P file storage platform written in C — a privacy-respecting alternative to Dropbox/Google Drive. Peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without centralized cloud providers. Built on QUIC (via MsQuic) with a Kademlia DHT for decentralized discovery and a UDP relay server for NAT traversal. Also supports direct peer-to-peer file transfer via ticket codes like "3-guitar-battery".
 
-**Current focus:** Phases 1–4.5 complete. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(4,2)), proof-of-storage verification, and storage incentive tracking — all wired together and tested (15 unit test suites + E2E daemon tests). Direct file transfer with progress bar, resume, and directory support is also production-ready.
+**Current focus:** Phases 1–5 progressing. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(4,2)), proof-of-storage verification, and storage incentive tracking — all wired together and tested (16 unit test suites + E2E daemon tests). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
 
 Design decisions should keep the decentralized storage trajectory in mind.
 
@@ -20,6 +20,16 @@ build_with_env.bat          # Sets up VS environment + builds
 build.bat                   # Builds both wormhole.exe and wormholed.exe
 ```
 Output: `src/build/wormhole.exe`, `src/build/wormholed.exe` (plus `msquic.dll` and `libsodium.dll`)
+
+### Linux Client
+```bash
+cd src
+make                        # Builds both wormhole and wormholed
+make clean                  # Remove build artifacts
+```
+Output: `src/build/wormhole`, `src/build/wormholed` (plus `libmsquic.so`)
+
+Requires MsQuic built from source (`git submodule update --init --recursive`, then cmake build with OpenSSL TLS backend). See [BUILD_LINUX.md](BUILD_LINUX.md) for full prerequisites and step-by-step instructions, including Docker builds.
 
 ### Linux Relay Server
 ```bash
@@ -37,24 +47,26 @@ Output: `relay-server/build/relay-server`
 
 ## Usage
 ```
-wormhole.exe send <file|directory>      # Creates ticket, waits for receiver
-wormhole.exe receive <ticket>           # Downloads to ~/Downloads (resumable)
-wormhole.exe store <file>               # Store file chunks via daemon
-wormhole.exe get <hash> [-o <file>]     # Retrieve a chunk by hash
-wormhole.exe status                     # Show daemon status
-wormhole.exe config list                # Show all settings
-wormhole.exe config get <key>           # Get a config value
-wormhole.exe config set <key> <val>     # Set a config value
+wormhole send <file|directory>         # Creates ticket, waits for receiver
+wormhole receive <ticket>              # Downloads to ~/Downloads (resumable)
+wormhole store <file>                  # Store file chunks via daemon
+wormhole get <hash> [-o <file>]        # Retrieve a chunk by hash
+wormhole files                         # List stored files
+wormhole status                        # Show daemon status
+wormhole config list                   # Show all settings
+wormhole config get <key>              # Get a config value
+wormhole config set <key> <val>        # Set a config value
 
 Global flags:
   --daemon <port>                        # Connect to daemon on specified port (default 4567)
 ```
+On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 
 ## Architecture
 
 ### Three Components
 
-**Client** (`src/`) — Windows QUIC-based file transfer app
+**Client** (`src/`) — Cross-platform QUIC-based file transfer app (Windows + Linux)
 - `wormhole.c` — Entry point, CLI (`send`/`receive`/`store`/`get`/`status`/`config`), MsQuic lifecycle, QUIC listener/connection setup, UDP hole-punch probes (WHPK), parallel connection racing, Ctrl+C cleanup
 - `wormholed.c` — Persistent daemon process: QUIC listener, chunk store, relay connection with auto-reconnect, peer discovery, chunk replication (3x target), DHT node bootstrap/polling, health checks, proof-of-storage challenge/response, storage ledger, named pipe IPC server
 - `stream.c` — Chunk-based two-stream transfer protocol: control stream (manifest request/response, chunk request, transfer complete) and data stream (chunk frames). Progress bar with speed/ETA. Resumable transfers via `transfer_state.c`. Multi-file receive support.
@@ -65,11 +77,12 @@ Global flags:
 - `chunk_store.c` — Dedup chunk store (`ChunkStore_Has/Get/Put`), content-addressed by Blake3 hash. Replica metadata tracking (`ChunkStore_PutWithMeta`, `GetReplicaCount`, `SetReplicaLocation`). Storage quota enforcement with LRU eviction (`ChunkStore_Evict`) preferring highly-replicated chunks.
 - `transfer_state.c` — Resumable transfer state: saves/loads received-chunks bitfield to `~/.wormhole/transfers/<hash>.state`
 - `config.c` — Configuration management: INI-style `~/.wormhole/config` file with defaults (12 keys — see Key Configuration section)
-- `ipc.c` — Named pipe IPC (`\\.\pipe\wormhole`): server API for daemon, client API for CLI. Message framing: `[4B length][1B command][payload]`. Commands: STORE, GET, STATUS, SHUTDOWN, DHT_STATUS.
+- `ipc.c` — IPC transport: named pipes on Windows (`\\.\pipe\wormhole`), Unix domain sockets on Linux (`~/.wormhole/wormhole.sock`). Server API for daemon, client API for CLI. Message framing: `[4B length][1B command][payload]`. Commands: STORE, GET, STATUS, SHUTDOWN, DHT_STATUS.
 - `erasure.c` — RS(4,2) erasure coding integration: stripe-based encoding (`ErasureCoding_Encode`), chunk reconstruction from parity (`ErasureCoding_ReconstructChunk`), EC_GROUP serialization for manifest v3
 - `proof.c` — Proof-of-storage: `Proof_Compute` (Blake3(seed || chunk_data)), pre-cached proofs per chunk (`~/.wormhole/proofs/`), challenge/response verification
 - `health.c` — Chunk health monitoring: periodic DHT queries for chunk locations, proof-of-storage challenges to holders, recovery orchestration for under-replicated chunks
 - `incentives.c` — Storage ratio tracking: per-peer balance ledger (`STORAGE_LEDGER`), accept/reject storage based on reciprocity ratio (threshold 0.5), persisted to `~/.wormhole/storage_ledger.bin`
+- `file_registry.c` — File-level metadata tracking (`~/.wormhole/files/`): maps stored files to their chunks, tracks status (storing → replicating → safe → offloaded), supports lookup by hex prefix. Powers the `wormhole files` command.
 - `relay_forwarder.c` — Loopback UDP proxy for QUIC-over-relay fallback (when direct connections fail)
 - `dht/` — Kademlia DHT subsystem (UDP port 4568):
   - `dht_protocol.h` — Wire format: 102-byte header `[1B type][1B version][4B txn_id][32B sender_id][64B ed25519_sig]`, messages 0x20-0x27
@@ -135,13 +148,24 @@ Configurable settings in `~/.wormhole/config` (INI format, managed by `config.c`
 ## Testing
 
 ### Unit tests (greatest.h framework)
+
+**Windows:**
 ```bat
 cd src
 build.bat                               # Build main binaries first (generates .obj files)
 cd test
-test.bat                                # Build and run all 15 test executables
+test.bat                                # Build and run all 16 test executables
 ```
-Test suite (`src/test/`), 15 executables:
+
+**Linux:**
+```bash
+cd src
+make                                    # Build main binaries first
+cd test
+./test_linux.sh                         # Build and run all 16 test executables
+```
+
+Test suite (`src/test/`), 16 executables:
 - `test_wire_format.c` — LE encoding/decoding (header-only, no link deps)
 - `test_manifest.c` — Manifest v1 create/serialize/validate + v2 multi-file (chunk ranges, roundtrip, empty file)
 - `test_chunk_store.c` — Chunk put/get/has/dedup + replica metadata (set/get/dedup/max) + LRU eviction (total size, prefers replicated)
@@ -157,6 +181,7 @@ Test suite (`src/test/`), 15 executables:
 - `test_proof.c` — Proof computation determinism, wrong seed detection, pre-compute cache hit/miss
 - `test_incentives.c` — Balanced/unbalanced ledger, ratio enforcement, save/load roundtrip
 - `test_health.c` — EC-based chunk recovery, health check stats, degraded chunk detection, replication needs
+- `test_file_registry.c` — File registry save/load/update/list, hex prefix lookup
 
 All tests use `greatest.h` (single-header test framework). Tests needing filesystem use `setup_test_home()`/`cleanup_test_home()` to redirect HOME to a temp directory.
 
@@ -175,15 +200,31 @@ md5sum ~/Downloads/test_10mb.bin        # after
 ```
 There is also a standalone test file at `src/relay/test_relay_client.c` (not integrated into the build).
 
+### Multi-node integration tests
+```bash
+# Docker (Linux) — 5-node cluster
+cd docker
+docker compose up -d
+./test_multi_node.sh                    # Automated: store, replicate, retrieve, failover
+docker compose down -v
+```
+```bat
+REM Windows — 3-node localhost cluster (requires relay connectivity)
+cd src\test
+test_multi_node.bat
+```
+Tests peer discovery, chunk replication across nodes, cross-node retrieval, and node failure handling.
+
 ## Deployment
 - Relay runs on a DigitalOcean droplet at `wormholerelay.com:443`
 - `--public-addr` flag required for relay fallback endpoint injection
-- No systemd/Docker config in repo (manual deployment)
+- Docker multi-node setup in `docker/`: `Dockerfile` (node), `Dockerfile.relay` (relay), `docker-compose.yml` (5-node cluster). See [BUILD_LINUX.md](BUILD_LINUX.md) for Docker usage.
 
 ## Platform Notes
-- Client targets Windows (uses Win32 APIs, MSVC compiler, Windows Certificate Store)
+- Client is cross-platform: Windows (MSVC, Win32 APIs, named pipe IPC) and Linux (GCC, POSIX, Unix domain socket IPC)
 - Relay server targets Linux (POSIX sockets, pthreads, dual-stack IPv4/IPv6)
-- Both use libsodium for Ed25519 cryptography
+- All components use libsodium for Ed25519 cryptography
+- Docker multi-node setup available for testing distributed scenarios on Linux
 
 ## Roadmap
 
@@ -220,5 +261,10 @@ There is also a standalone test file at `src/relay/test_relay_client.c` (not int
 - EC metadata save/load roundtrip unit tests ✅
 - End-to-end daemon smoke tests (`test_e2e.bat`) ✅
 
-### Phase 5: Next Steps
-- Multi-platform support (Linux client)
+### Phase 5: Multi-Platform (In Progress)
+- Linux client build system (Makefile) ✅
+- Linux unit tests (`test_linux.sh`, 16 test suites) ✅
+- Cross-platform IPC (Unix domain sockets on Linux) ✅
+- File registry (`wormhole files` command) ✅
+- Docker multi-node testing (5-node cluster, `docker/test_multi_node.sh`) ✅
+- Multi-node replication test (`test_multi_node.bat` for Windows) ✅

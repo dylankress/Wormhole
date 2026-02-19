@@ -375,6 +375,81 @@ TEST test_replica_max(void)
     PASS();
 }
 
+TEST test_remove_replica_location(void)
+{
+    uint8_t hash[WH_HASH_SIZE];
+    make_hash(hash, 0x27);
+
+    uint8_t data[] = "remove replica test";
+    ASSERT(ChunkStore_Put(hash, (const uint8_t *)data, (uint32_t)(sizeof(data) - 1)));
+
+    uint8_t peer1[32], peer2[32], peer3[32];
+    memset(peer1, 0x01, 32);
+    memset(peer2, 0x02, 32);
+    memset(peer3, 0x03, 32);
+
+    ASSERT(ChunkStore_SetReplicaLocation(hash, peer1));
+    ASSERT(ChunkStore_SetReplicaLocation(hash, peer2));
+    ASSERT(ChunkStore_SetReplicaLocation(hash, peer3));
+    ASSERT_EQ(ChunkStore_GetReplicaCount(hash), 3u);
+
+    // Remove peer2
+    ASSERT(ChunkStore_RemoveReplicaLocation(hash, peer2));
+    ASSERT_EQ(ChunkStore_GetReplicaCount(hash), 2u);
+
+    // Verify remaining peers
+    uint8_t out[MAX_REPLICAS][32];
+    uint32_t count = ChunkStore_GetReplicaLocations(hash, out, MAX_REPLICAS);
+    ASSERT_EQ(count, 2u);
+    ASSERT_MEM_EQ(out[0], peer1, 32);
+    ASSERT_MEM_EQ(out[1], peer3, 32);
+
+    PASS();
+}
+
+TEST test_remove_replica_nonexistent_peer(void)
+{
+    uint8_t hash[WH_HASH_SIZE];
+    make_hash(hash, 0x28);
+
+    uint8_t data[] = "remove nonexistent test";
+    ASSERT(ChunkStore_Put(hash, (const uint8_t *)data, (uint32_t)(sizeof(data) - 1)));
+
+    uint8_t peer1[32], fake[32];
+    memset(peer1, 0x01, 32);
+    memset(fake, 0xEE, 32);
+
+    ASSERT(ChunkStore_SetReplicaLocation(hash, peer1));
+    ASSERT_EQ(ChunkStore_GetReplicaCount(hash), 1u);
+
+    // Remove non-existent peer — should return FALSE
+    ASSERT_FALSE(ChunkStore_RemoveReplicaLocation(hash, fake));
+    ASSERT_EQ(ChunkStore_GetReplicaCount(hash), 1u);
+
+    PASS();
+}
+
+TEST test_remove_last_replica(void)
+{
+    uint8_t hash[WH_HASH_SIZE];
+    make_hash(hash, 0x29);
+
+    uint8_t data[] = "remove last replica test";
+    ASSERT(ChunkStore_Put(hash, (const uint8_t *)data, (uint32_t)(sizeof(data) - 1)));
+
+    uint8_t peer1[32];
+    memset(peer1, 0x01, 32);
+
+    ASSERT(ChunkStore_SetReplicaLocation(hash, peer1));
+    ASSERT_EQ(ChunkStore_GetReplicaCount(hash), 1u);
+
+    // Remove the only peer
+    ASSERT(ChunkStore_RemoveReplicaLocation(hash, peer1));
+    ASSERT_EQ(ChunkStore_GetReplicaCount(hash), 0u);
+
+    PASS();
+}
+
 SUITE(replica_suite)
 {
     RUN_TEST(test_put_with_meta);
@@ -384,6 +459,9 @@ SUITE(replica_suite)
     RUN_TEST(test_replica_dedup);
     RUN_TEST(test_get_replica_locations);
     RUN_TEST(test_replica_max);
+    RUN_TEST(test_remove_replica_location);
+    RUN_TEST(test_remove_replica_nonexistent_peer);
+    RUN_TEST(test_remove_last_replica);
 }
 
 // ============================================================================

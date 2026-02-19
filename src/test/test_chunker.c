@@ -7,12 +7,14 @@
 #include "../chunker.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #ifdef _WIN32
 #include <direct.h>
 #else
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 #endif
 
 GREATEST_MAIN_DEFS();
@@ -67,10 +69,10 @@ static void make_path(char *out, size_t out_len, const char *name)
 }
 
 // Helper: create a file filled with a repeating byte pattern.
-static BOOLEAN create_test_file(const char *path, size_t size, uint8_t fill)
+static bool create_test_file(const char *path, size_t size, uint8_t fill)
 {
     FILE *fh = fopen(path, "wb");
-    if (!fh) return FALSE;
+    if (!fh) return false;
 
     uint8_t buf[4096];
     memset(buf, fill, sizeof(buf));
@@ -82,17 +84,17 @@ static BOOLEAN create_test_file(const char *path, size_t size, uint8_t fill)
         if (fwrite(buf, 1, to_write, fh) != to_write)
         {
             fclose(fh);
-            return FALSE;
+            return false;
         }
         remaining -= to_write;
     }
 
     fclose(fh);
-    return TRUE;
+    return true;
 }
 
 // Helper: create a directory.
-static BOOLEAN create_dir(const char *path)
+static bool create_dir(const char *path)
 {
 #ifdef _WIN32
     return CreateDirectoryA(path, NULL) || GetLastError() == ERROR_ALREADY_EXISTS;

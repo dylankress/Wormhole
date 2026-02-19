@@ -55,7 +55,7 @@ static BOOLEAN FileList_Add(FILE_LIST *fl, const char *path, uint64_t size)
         fl->capacity = new_cap;
     }
 
-    fl->paths[fl->count] = _strdup(path);
+    fl->paths[fl->count] = strdup(path);
     if (!fl->paths[fl->count]) return FALSE;
     fl->sizes[fl->count] = size;
     fl->count++;

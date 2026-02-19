@@ -21,10 +21,17 @@
 // ============================================================================
 
 // Compare two nodes by their XOR distance to target (ascending)
-// Uses qsort_s context parameter for thread safety
+#ifdef _WIN32
+// Windows qsort_s: comparator receives context as first parameter
 static int CompareXorDistance(void *context, const void *a, const void *b)
 {
     const uint8_t *target = (const uint8_t *)context;
+#else
+// glibc qsort_r: comparator receives context as third parameter
+static int CompareXorDistance(const void *a, const void *b, void *context)
+{
+    const uint8_t *target = (const uint8_t *)context;
+#endif
     const ROUTING_NODE *na = (const ROUTING_NODE *)a;
     const ROUTING_NODE *nb = (const ROUTING_NODE *)b;
     for (int i = 0; i < 32; i++) {
@@ -145,8 +152,12 @@ uint32_t RoutingTable_FindClosest(const ROUTING_TABLE *rt, const uint8_t target[
         }
     }
 
-    // Sort by XOR distance to target (qsort_s for thread safety)
+    // Sort by XOR distance to target
+#ifdef _WIN32
     qsort_s(all, idx, sizeof(ROUTING_NODE), CompareXorDistance, (void *)target);
+#else
+    qsort_r(all, idx, sizeof(ROUTING_NODE), CompareXorDistance, (void *)target);
+#endif
 
     // Copy result
     uint32_t result = (idx < max) ? idx : max;
