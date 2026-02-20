@@ -228,6 +228,62 @@ TEST test_store_expire_keeps_fresh(void)
     PASS();
 }
 
+TEST test_store_remove(void)
+{
+    static DHT_VALUE_STORE store;
+    DhtStore_Init(&store);
+
+    uint8_t key[32];
+    fill_key(key, 0xAB);
+
+    DHT_LOCATION loc;
+    make_location(&loc, 0x01, 4568);
+
+    ASSERT(DhtStore_Put(&store, key, &loc, 1));
+    ASSERT_EQ(DhtStore_GetCount(&store), 1u);
+    ASSERT(DhtStore_Has(&store, key));
+
+    // Remove it
+    ASSERT(DhtStore_Remove(&store, key));
+    ASSERT_EQ(DhtStore_GetCount(&store), 0u);
+    ASSERT_FALSE(DhtStore_Has(&store, key));
+
+    // Removing again should return FALSE
+    ASSERT_FALSE(DhtStore_Remove(&store, key));
+
+    PASS();
+}
+
+TEST test_store_remove_middle(void)
+{
+    static DHT_VALUE_STORE store;
+    DhtStore_Init(&store);
+
+    uint8_t key1[32], key2[32], key3[32];
+    fill_key(key1, 0x01);
+    fill_key(key2, 0x02);
+    fill_key(key3, 0x03);
+
+    DHT_LOCATION loc1, loc2, loc3;
+    make_location(&loc1, 0x01, 4568);
+    make_location(&loc2, 0x02, 4569);
+    make_location(&loc3, 0x03, 4570);
+
+    DhtStore_Put(&store, key1, &loc1, 1);
+    DhtStore_Put(&store, key2, &loc2, 1);
+    DhtStore_Put(&store, key3, &loc3, 1);
+    ASSERT_EQ(DhtStore_GetCount(&store), 3u);
+
+    // Remove middle entry
+    ASSERT(DhtStore_Remove(&store, key2));
+    ASSERT_EQ(DhtStore_GetCount(&store), 2u);
+    ASSERT(DhtStore_Has(&store, key1));
+    ASSERT_FALSE(DhtStore_Has(&store, key2));
+    ASSERT(DhtStore_Has(&store, key3));
+
+    PASS();
+}
+
 TEST test_store_save_load(void)
 {
     setup_test_dir();
@@ -298,6 +354,8 @@ SUITE(dht_store_suite)
     RUN_TEST(test_store_multiple_keys);
     RUN_TEST(test_store_expire_old);
     RUN_TEST(test_store_expire_keeps_fresh);
+    RUN_TEST(test_store_remove);
+    RUN_TEST(test_store_remove_middle);
     RUN_TEST(test_store_save_load);
 }
 

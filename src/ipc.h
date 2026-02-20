@@ -33,6 +33,10 @@
 #define IPC_CMD_DHT_STATUS 0x05  // Client->Daemon: request DHT stats
 #define IPC_CMD_LIST_FILES 0x06  // Client->Daemon: list stored files
 #define IPC_CMD_FILE_GET   0x07  // Client->Daemon: retrieve file by manifest hash
+#define IPC_CMD_FILE_DELETE 0x08 // Client->Daemon: delete a stored file
+#define IPC_CMD_EXPORT_KEY  0x09 // Client->Daemon: export file encryption key
+#define IPC_CMD_IMPORT_KEY  0x0A // Client->Daemon: import file encryption key
+#define IPC_CMD_PEER_LIST   0x0B // Client->Daemon: list known peers
 
 // IPC response status codes
 #define IPC_STATUS_OK        0x00

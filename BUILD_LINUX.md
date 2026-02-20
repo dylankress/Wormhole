@@ -75,7 +75,7 @@ cd /path/to/Wormhole/src/test
 ./test_linux.sh
 ```
 
-This compiles and runs all 16 test suites. Each test links only what it needs (no MsQuic required for most tests).
+This compiles and runs all 17 test suites. Each test links only what it needs (no MsQuic required for most tests).
 
 ## Step 4: Smoke test the daemon
 

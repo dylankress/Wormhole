@@ -34,7 +34,7 @@
 #define CTRL_MSG_PROOF_RESPONSE        0x0A  // "Here's the proof" [32B hash][32B proof]
 
 // Target replication factor for P2P storage
-#define REPLICATION_TARGET 3
+#define REPLICATION_TARGET 4
 
 // Control message framing: [1B type][4B payload_length][payload]
 #define CTRL_HEADER_SIZE 5

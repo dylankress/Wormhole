@@ -53,6 +53,7 @@ cl /Zi /Od /W4 /MD ^
 	..\incentives.c ^
 	..\health.c ^
 	..\file_registry.c ^
+	..\file_crypto.c ^
 	..\relay_forwarder.c ^
 	"%BLAKE3_ROOT%\blake3.c" ^
 	"%BLAKE3_ROOT%\blake3_dispatch.c" ^
@@ -62,7 +63,7 @@ cl /Zi /Od /W4 /MD ^
 	%RELAY_SOURCES% ^
 	"%MSQUIC_LIB%" ^
 	"%LIBSODIUM_LIB%" ^
-	ws2_32.lib bcrypt.lib advapi32.lib iphlpapi.lib ole32.lib ^
+	ws2_32.lib bcrypt.lib advapi32.lib iphlpapi.lib ole32.lib crypt32.lib ^
 	/Fe:wormhole.exe
 
 if %ERRORLEVEL% NEQ 0 (
@@ -93,6 +94,7 @@ cl /Zi /Od /W4 /MD ^
 	..\incentives.c ^
 	..\health.c ^
 	..\file_registry.c ^
+	..\file_crypto.c ^
 	..\relay_forwarder.c ^
 	"%BLAKE3_ROOT%\blake3.c" ^
 	"%BLAKE3_ROOT%\blake3_dispatch.c" ^
@@ -102,7 +104,7 @@ cl /Zi /Od /W4 /MD ^
 	%RELAY_SOURCES% ^
 	"%MSQUIC_LIB%" ^
 	"%LIBSODIUM_LIB%" ^
-	ws2_32.lib bcrypt.lib advapi32.lib iphlpapi.lib ole32.lib ^
+	ws2_32.lib bcrypt.lib advapi32.lib iphlpapi.lib ole32.lib crypt32.lib ^
 	/Fe:wormholed.exe
 
 if %ERRORLEVEL% NEQ 0 (

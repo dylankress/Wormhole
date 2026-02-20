@@ -17,7 +17,7 @@ CFLAGS  = -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu11 \
           -D_GNU_SOURCE \
           -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 \
           -DQUIC_API_ENABLE_PREVIEW_FEATURES
-LDFLAGS = -lmsquic -lsodium -lpthread -lm
+LDFLAGS = -lmsquic -lsodium -lcrypto -lpthread -lm
 
 # Paths — adjust MSQUIC_BUILD if your build directory differs
 MSQUIC_ROOT  = ../msquic
@@ -51,6 +51,7 @@ SHARED_SOURCES = \
 	incentives.c \
 	health.c \
 	file_registry.c \
+	file_crypto.c \
 	relay_forwarder.c \
 	relay/peer_id.c \
 	relay/relay_client.c \

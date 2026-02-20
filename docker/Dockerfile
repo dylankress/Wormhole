@@ -60,7 +60,7 @@ RUN make CC=gcc \
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsodium23 openssl ca-certificates && \
+    libsodium23 openssl ca-certificates procps && \
     rm -rf /var/lib/apt/lists/*
 
 # MsQuic shared library

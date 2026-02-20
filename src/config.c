@@ -61,11 +61,15 @@ static void Config_SetDefaults(WORMHOLE_CONFIG *config)
     // DHT settings
     Config_SetUint64(config, "dht_port", CONFIG_DEFAULT_DHT_PORT);
     Config_SetUint64(config, "dht_enabled", CONFIG_DEFAULT_DHT_ENABLED);
+    Config_Set(config, "dht_bootstrap_nodes", CONFIG_DEFAULT_DHT_BOOTSTRAP);
 
     // Erasure coding settings
     Config_SetUint64(config, "ec_enabled", CONFIG_DEFAULT_EC_ENABLED);
     Config_SetUint64(config, "ec_data_shards", CONFIG_DEFAULT_EC_DATA_SHARDS);
     Config_SetUint64(config, "ec_parity_shards", CONFIG_DEFAULT_EC_PARITY_SHARDS);
+
+    // Auto-eviction
+    Config_SetUint64(config, "auto_evict_enabled", CONFIG_DEFAULT_AUTO_EVICT);
 
     // Health and verification settings
     Config_SetUint64(config, "min_storage_ratio", CONFIG_DEFAULT_MIN_STORAGE_RATIO);

@@ -81,7 +81,7 @@ static BOOLEAN GetFilePath(const uint8_t manifest_hash[WH_HASH_SIZE],
 }
 
 //=============================================================================
-// File format:
+// File format v1 (FREG):
 //   [4B magic 0x46524547 "FREG"]
 //   [1B status]
 //   [8B store_time LE]
@@ -90,9 +90,22 @@ static BOOLEAN GetFilePath(const uint8_t manifest_hash[WH_HASH_SIZE],
 //   [filename bytes]
 //   [4B manifest_data_size LE]
 //   [manifest_data]
+//
+// File format v2 (FRG2) — adds encryption key:
+//   [4B magic 0x46524732 "FRG2"]
+//   [1B status]
+//   [8B store_time LE]
+//   [4B replicated_count LE]
+//   [1B encrypted flag]
+//   [32B encryption_key]
+//   [2B filename_len LE]
+//   [filename bytes]
+//   [4B manifest_data_size LE]
+//   [manifest_data]
 //=============================================================================
 
-#define FILE_REG_MAGIC 0x46524547  // "FREG"
+#define FILE_REG_MAGIC   0x46524547  // "FREG" — v1
+#define FILE_REG_MAGIC_V2 0x46524732  // "FRG2" — v2 with encryption
 
 static void WriteLE16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
 static void WriteLE32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
@@ -127,8 +140,10 @@ BOOLEAN FileRegistry_Init(void)
     return EnsureDirExists(base);
 }
 
-BOOLEAN FileRegistry_Save(const FILE_MANIFEST *manifest, const char *filename,
-                           FILE_STATUS status)
+// Internal: save with optional encryption key
+static BOOLEAN FileRegistry_SaveInternal(const FILE_MANIFEST *manifest, const char *filename,
+                                           FILE_STATUS status,
+                                           const uint8_t *encryption_key)
 {
     if (!manifest || !filename) return FALSE;
 
@@ -146,8 +161,13 @@ BOOLEAN FileRegistry_Save(const FILE_MANIFEST *manifest, const char *filename,
     uint16_t name_len = (uint16_t)strlen(filename);
     if (name_len > 259) name_len = 259;
 
-    // Header: 4 + 1 + 8 + 4 + 2 = 19 bytes
-    uint32_t header_size = 4 + 1 + 8 + 4 + 2 + name_len + 4;
+    BOOLEAN use_v2 = (encryption_key != NULL);
+
+    // v2 header: 4 + 1 + 8 + 4 + 1 + 32 + 2 = 52 bytes + name_len + 4
+    // v1 header: 4 + 1 + 8 + 4 + 2 = 19 bytes + name_len + 4
+    uint32_t header_size = use_v2
+        ? (4 + 1 + 8 + 4 + 1 + 32 + 2 + name_len + 4)
+        : (4 + 1 + 8 + 4 + 2 + name_len + 4);
     uint8_t *header = (uint8_t *)malloc(header_size);
     if (!header)
     {
@@ -156,10 +176,17 @@ BOOLEAN FileRegistry_Save(const FILE_MANIFEST *manifest, const char *filename,
     }
 
     uint32_t off = 0;
-    WriteLE32(header + off, FILE_REG_MAGIC); off += 4;
+    WriteLE32(header + off, use_v2 ? FILE_REG_MAGIC_V2 : FILE_REG_MAGIC); off += 4;
     header[off] = (uint8_t)status; off += 1;
     WriteLE64(header + off, (uint64_t)time(NULL)); off += 8;
     WriteLE32(header + off, 0); off += 4;  // replicated_count = 0
+
+    if (use_v2)
+    {
+        header[off] = 1; off += 1;  // encrypted = true
+        memcpy(header + off, encryption_key, 32); off += 32;
+    }
+
     WriteLE16(header + off, name_len); off += 2;
     memcpy(header + off, filename, name_len); off += name_len;
     WriteLE32(header + off, (uint32_t)manifest_size); off += 4;
@@ -181,11 +208,25 @@ BOOLEAN FileRegistry_Save(const FILE_MANIFEST *manifest, const char *filename,
     return TRUE;
 }
 
+BOOLEAN FileRegistry_Save(const FILE_MANIFEST *manifest, const char *filename,
+                           FILE_STATUS status)
+{
+    return FileRegistry_SaveInternal(manifest, filename, status, NULL);
+}
+
+BOOLEAN FileRegistry_SaveEncrypted(const FILE_MANIFEST *manifest, const char *filename,
+                                     FILE_STATUS status,
+                                     const uint8_t encryption_key[32])
+{
+    return FileRegistry_SaveInternal(manifest, filename, status, encryption_key);
+}
+
 BOOLEAN FileRegistry_Load(const uint8_t manifest_hash[WH_HASH_SIZE],
                            FILE_REG_ENTRY *entry_out,
                            FILE_MANIFEST **manifest_out)
 {
     if (!entry_out) return FALSE;
+    memset(entry_out, 0, sizeof(FILE_REG_ENTRY));
 
     char path[MAX_PATH];
     if (!GetFilePath(manifest_hash, path, sizeof(path))) return FALSE;
@@ -193,16 +234,16 @@ BOOLEAN FileRegistry_Load(const uint8_t manifest_hash[WH_HASH_SIZE],
     FILE *fh = fopen(path, "rb");
     if (!fh) return FALSE;
 
-    // Read header
-    uint8_t hdr[19];  // magic(4) + status(1) + time(8) + repl_count(4) + name_len(2)
-    if (fread(hdr, 1, 19, fh) != 19)
+    // Read common header prefix: magic(4) + status(1) + time(8) + repl_count(4) = 17 bytes
+    uint8_t hdr[17];
+    if (fread(hdr, 1, 17, fh) != 17)
     {
         fclose(fh);
         return FALSE;
     }
 
     uint32_t magic = ReadLE32(hdr);
-    if (magic != FILE_REG_MAGIC)
+    if (magic != FILE_REG_MAGIC && magic != FILE_REG_MAGIC_V2)
     {
         fclose(fh);
         return FALSE;
@@ -212,7 +253,20 @@ BOOLEAN FileRegistry_Load(const uint8_t manifest_hash[WH_HASH_SIZE],
     entry_out->status = (FILE_STATUS)hdr[4];
     entry_out->store_time = ReadLE64(hdr + 5);
     entry_out->replicated_count = ReadLE32(hdr + 13);
-    uint16_t name_len = ReadLE16(hdr + 17);
+
+    // v2 format has encryption key after replicated_count
+    if (magic == FILE_REG_MAGIC_V2)
+    {
+        uint8_t enc_flag;
+        if (fread(&enc_flag, 1, 1, fh) != 1) { fclose(fh); return FALSE; }
+        entry_out->encrypted = enc_flag ? TRUE : FALSE;
+        if (fread(entry_out->encryption_key, 1, 32, fh) != 32) { fclose(fh); return FALSE; }
+    }
+
+    // Read name_len (both v1 and v2)
+    uint8_t nl_buf[2];
+    if (fread(nl_buf, 1, 2, fh) != 2) { fclose(fh); return FALSE; }
+    uint16_t name_len = ReadLE16(nl_buf);
 
     // Read filename
     if (name_len > 259) name_len = 259;
@@ -271,6 +325,14 @@ BOOLEAN FileRegistry_Load(const uint8_t manifest_hash[WH_HASH_SIZE],
     return TRUE;
 }
 
+BOOLEAN FileRegistry_Delete(const uint8_t manifest_hash[WH_HASH_SIZE])
+{
+    char path[MAX_PATH];
+    if (!GetFilePath(manifest_hash, path, sizeof(path))) return FALSE;
+    remove(path);
+    return TRUE;
+}
+
 BOOLEAN FileRegistry_UpdateStatus(const uint8_t manifest_hash[WH_HASH_SIZE],
                                     FILE_STATUS status, uint32_t replicated_count)
 {
@@ -281,20 +343,26 @@ BOOLEAN FileRegistry_UpdateStatus(const uint8_t manifest_hash[WH_HASH_SIZE],
     FILE *fh = fopen(path, "r+b");
     if (!fh) return FALSE;
 
-    // Verify magic
+    // Read magic to determine format version
     uint8_t magic_buf[4];
-    if (fread(magic_buf, 1, 4, fh) != 4 || ReadLE32(magic_buf) != FILE_REG_MAGIC)
+    if (fread(magic_buf, 1, 4, fh) != 4)
+    {
+        fclose(fh);
+        return FALSE;
+    }
+    uint32_t magic = ReadLE32(magic_buf);
+    if (magic != FILE_REG_MAGIC && magic != FILE_REG_MAGIC_V2)
     {
         fclose(fh);
         return FALSE;
     }
 
-    // Write status at offset 4
+    // Status is at offset 4 in both v1 and v2
     fseek(fh, 4, SEEK_SET);
     uint8_t status_byte = (uint8_t)status;
     fwrite(&status_byte, 1, 1, fh);
 
-    // Write replicated_count at offset 13
+    // replicated_count is at offset 13 in both v1 and v2
     fseek(fh, 13, SEEK_SET);
     uint8_t rc_buf[4];
     WriteLE32(rc_buf, replicated_count);

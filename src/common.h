@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <strings.h>
 #ifndef MAX_PATH
 #define MAX_PATH 4096
 #endif

@@ -339,3 +339,52 @@ uint32_t Health_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
 
     return needed;
 }
+
+// ============================================================================
+// Visitor: Health_GetChunksOnPeer
+// ============================================================================
+
+typedef struct {
+    const uint8_t *peer_id;
+    uint8_t (*out_hashes)[WH_HASH_SIZE];
+    uint32_t max_count;
+    uint32_t found;
+} PEER_CHUNKS_CTX;
+
+static BOOLEAN PeerChunksVisitor(const uint8_t hash[WH_HASH_SIZE], void *ctx)
+{
+    PEER_CHUNKS_CTX *pc = (PEER_CHUNKS_CTX *)ctx;
+
+    // Check if this chunk has a replica on the target peer
+    uint8_t peer_ids[16][32];
+    uint32_t peer_count = ChunkStore_GetReplicaLocations(hash, peer_ids, 16);
+
+    for (uint32_t i = 0; i < peer_count; i++)
+    {
+        if (memcmp(peer_ids[i], pc->peer_id, 32) == 0)
+        {
+            memcpy(pc->out_hashes[pc->found], hash, WH_HASH_SIZE);
+            pc->found++;
+            if (pc->found >= pc->max_count)
+                return FALSE;  // stop scanning
+            break;
+        }
+    }
+    return TRUE;
+}
+
+uint32_t Health_GetChunksOnPeer(const uint8_t peer_id[32],
+                                  uint8_t (*out_hashes)[WH_HASH_SIZE],
+                                  uint32_t max_count)
+{
+    if (!peer_id || !out_hashes || max_count == 0) return 0;
+
+    PEER_CHUNKS_CTX ctx;
+    ctx.peer_id = peer_id;
+    ctx.out_hashes = out_hashes;
+    ctx.max_count = max_count;
+    ctx.found = 0;
+
+    ScanStoreChunks(0, PeerChunksVisitor, &ctx);  // 0 = scan all
+    return ctx.found;
+}

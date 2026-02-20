@@ -18,6 +18,11 @@
 #include "relay/ticket.h"
 #include "relay_forwarder.h"
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <arpa/inet.h>
+#endif
+
 // Global MsQuic state - accessible via extern in other files
 const QUIC_API_TABLE *MsQuic = NULL;
 HQUIC Registration = NULL;
@@ -129,9 +134,14 @@ static int cmd_send(const char *filepath);
 static int cmd_receive(const char *ticket);
 static int cmd_store(const char *filepath);
 static int cmd_get(int argc, char *argv[]);
-static int cmd_files(void);
+static int cmd_delete(const char *file_id);
+static int cmd_export_key(const char *file_id);
+static int cmd_import_key(const char *file_id, const char *hex_key);
+static int cmd_files(int argc, char *argv[]);
 static int cmd_status(void);
 static int cmd_config(int argc, char *argv[]);
+static int cmd_daemon(int argc, char *argv[]);
+static int cmd_peers(void);
 static void PrintUsage(void);
 
 //=============================================================================
@@ -2535,7 +2545,11 @@ static int cmd_get(int argc, char *argv[])
 			sprintf(hex + hi * 2, "%02x", hash[hi]);
 		hex[64] = '\0';
 
+		#ifdef _WIN32
 		if (_strnicmp(hex, file_id, id_len) == 0)
+		#else
+		if (strncasecmp(hex, file_id, id_len) == 0)
+		#endif
 		{
 			memcpy(matched_hash, hash, WH_HASH_SIZE);
 			strncpy(matched_filename, fname, sizeof(matched_filename) - 1);
@@ -2636,6 +2650,413 @@ static int cmd_get(int argc, char *argv[])
 	return 0;
 }
 
+static int cmd_delete(const char *file_id)
+{
+	size_t id_len = strlen(file_id);
+	if (id_len < 8)
+	{
+		LOG_ERROR("Error: File ID must be at least 8 hex characters\n");
+		return 1;
+	}
+
+	for (size_t i = 0; i < id_len; i++)
+	{
+		char c = file_id[i];
+		if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+		{
+			LOG_ERROR("Error: Invalid hex character in file ID\n");
+			return 1;
+		}
+	}
+
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		return 1;
+	}
+
+	uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+	if (!response)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	uint32_t response_size = 0;
+
+	// List files to find matching manifest hash
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_LIST_FILES,
+		NULL, 0, response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 5 || response[0] != IPC_STATUS_OK)
+	{
+		LOG_ERROR("Error: Failed to list files\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t file_count = ReadUint32LE(response + 1);
+	uint32_t off = 5;
+
+	uint8_t matched_hash[WH_HASH_SIZE] = {0};
+	char matched_filename[260] = {0};
+	uint64_t matched_size = 0;
+	uint32_t matches = 0;
+
+	for (uint32_t i = 0; i < file_count; i++)
+	{
+		if (off + WH_HASH_SIZE + 1 + 8 + 4 + 4 + 8 + 2 > response_size) break;
+
+		uint8_t *hash = response + off; off += WH_HASH_SIZE;
+		off += 1;  // status
+		uint64_t fsize = ReadUint64LE(response + off); off += 8;
+		off += 4;  // chunk_count
+		off += 4;  // replicated_count
+		off += 8;  // store_time
+		uint16_t name_len = ReadUint16LE(response + off); off += 2;
+
+		char fname[260] = {0};
+		if (name_len > 0 && name_len < 260 && off + name_len <= response_size)
+		{
+			memcpy(fname, response + off, name_len);
+			fname[name_len] = '\0';
+		}
+		off += name_len;
+
+		char hex[65];
+		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+			sprintf(hex + hi * 2, "%02x", hash[hi]);
+		hex[64] = '\0';
+
+		#ifdef _WIN32
+		if (_strnicmp(hex, file_id, id_len) == 0)
+		#else
+		if (strncasecmp(hex, file_id, id_len) == 0)
+		#endif
+		{
+			memcpy(matched_hash, hash, WH_HASH_SIZE);
+			strncpy(matched_filename, fname, sizeof(matched_filename) - 1);
+			matched_size = fsize;
+			matches++;
+		}
+	}
+
+	if (matches == 0)
+	{
+		LOG_ERROR("Error: No file found with ID prefix: %s\n", file_id);
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	if (matches > 1)
+	{
+		LOG_ERROR("Error: Ambiguous file ID: %s (matches %u files)\n", file_id, matches);
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	// Send FILE_DELETE with the full manifest hash
+	response_size = 0;
+	ok = IpcClient_SendCommand(client, IPC_CMD_FILE_DELETE,
+		matched_hash, WH_HASH_SIZE,
+		response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 1 || response[0] != IPC_STATUS_OK)
+	{
+		LOG_ERROR("Error: Delete command failed\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	char size_str[32];
+	FormatSize(matched_size, size_str, sizeof(size_str));
+	printf("Deleted %s (%s)\n", matched_filename, size_str);
+
+	free(response);
+	IpcClient_Disconnect(client);
+	return 0;
+}
+
+static int cmd_export_key(const char *file_id)
+{
+	size_t id_len = strlen(file_id);
+	if (id_len < 8)
+	{
+		LOG_ERROR("Error: File ID must be at least 8 hex characters\n");
+		return 1;
+	}
+
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		return 1;
+	}
+
+	uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+	if (!response)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	uint32_t response_size = 0;
+
+	// List files to find matching manifest hash
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_LIST_FILES,
+		NULL, 0, response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 5 || response[0] != IPC_STATUS_OK)
+	{
+		LOG_ERROR("Error: Failed to list files\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t file_count = ReadUint32LE(response + 1);
+	uint32_t off = 5;
+
+	uint8_t matched_hash[WH_HASH_SIZE] = {0};
+	char matched_filename[260] = {0};
+	uint32_t matches = 0;
+
+	for (uint32_t i = 0; i < file_count; i++)
+	{
+		if (off + WH_HASH_SIZE + 1 + 8 + 4 + 4 + 8 + 2 > response_size) break;
+
+		uint8_t *hash = response + off; off += WH_HASH_SIZE;
+		off += 1;  // status
+		off += 8;  // file_size
+		off += 4;  // chunk_count
+		off += 4;  // replicated_count
+		off += 8;  // store_time
+		uint16_t name_len = ReadUint16LE(response + off); off += 2;
+
+		char fname[260] = {0};
+		if (name_len > 0 && name_len < 260 && off + name_len <= response_size)
+		{
+			memcpy(fname, response + off, name_len);
+			fname[name_len] = '\0';
+		}
+		off += name_len;
+
+		char hex[65];
+		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+			sprintf(hex + hi * 2, "%02x", hash[hi]);
+		hex[64] = '\0';
+
+		#ifdef _WIN32
+		if (_strnicmp(hex, file_id, id_len) == 0)
+		#else
+		if (strncasecmp(hex, file_id, id_len) == 0)
+		#endif
+		{
+			memcpy(matched_hash, hash, WH_HASH_SIZE);
+			strncpy(matched_filename, fname, sizeof(matched_filename) - 1);
+			matches++;
+		}
+	}
+
+	if (matches == 0)
+	{
+		LOG_ERROR("Error: No file found with ID prefix: %s\n", file_id);
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	if (matches > 1)
+	{
+		LOG_ERROR("Error: Ambiguous file ID: %s (matches %u files)\n", file_id, matches);
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	// Send EXPORT_KEY
+	response_size = 0;
+	ok = IpcClient_SendCommand(client, IPC_CMD_EXPORT_KEY,
+		matched_hash, WH_HASH_SIZE,
+		response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 1 || response[0] != IPC_STATUS_OK)
+	{
+		if (response_size >= 1 && response[0] == IPC_STATUS_NOT_FOUND)
+			LOG_ERROR("Error: File not found\n");
+		else
+			LOG_ERROR("Error: File is not encrypted or export failed\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	if (response_size < 33)
+	{
+		LOG_ERROR("Error: Invalid response from daemon\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	// Print key as hex
+	printf("Encryption key for %s:\n  ", matched_filename);
+	for (int i = 0; i < 32; i++)
+		printf("%02x", response[1 + i]);
+	printf("\n\nStore this key safely. Without it, your file cannot be decrypted.\n");
+
+	free(response);
+	IpcClient_Disconnect(client);
+	return 0;
+}
+
+static int cmd_import_key(const char *file_id, const char *hex_key)
+{
+	size_t id_len = strlen(file_id);
+	if (id_len < 8)
+	{
+		LOG_ERROR("Error: File ID must be at least 8 hex characters\n");
+		return 1;
+	}
+
+	// Parse hex key (must be exactly 64 chars = 32 bytes)
+	size_t key_len = strlen(hex_key);
+	if (key_len != 64)
+	{
+		LOG_ERROR("Error: Encryption key must be exactly 64 hex characters (32 bytes)\n");
+		return 1;
+	}
+
+	uint8_t key_bytes[32];
+	for (int i = 0; i < 32; i++)
+	{
+		unsigned int byte_val;
+		if (sscanf(hex_key + i * 2, "%2x", &byte_val) != 1)
+		{
+			LOG_ERROR("Error: Invalid hex character in key at position %d\n", i * 2);
+			return 1;
+		}
+		key_bytes[i] = (uint8_t)byte_val;
+	}
+
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		return 1;
+	}
+
+	uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+	if (!response)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	uint32_t response_size = 0;
+
+	// List files to find matching manifest hash
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_LIST_FILES,
+		NULL, 0, response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 5 || response[0] != IPC_STATUS_OK)
+	{
+		LOG_ERROR("Error: Failed to list files\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t file_count = ReadUint32LE(response + 1);
+	uint32_t off = 5;
+
+	uint8_t matched_hash[WH_HASH_SIZE] = {0};
+	char matched_filename[260] = {0};
+	uint32_t matches = 0;
+
+	for (uint32_t i = 0; i < file_count; i++)
+	{
+		if (off + WH_HASH_SIZE + 1 + 8 + 4 + 4 + 8 + 2 > response_size) break;
+
+		uint8_t *hash = response + off; off += WH_HASH_SIZE;
+		off += 1;  // status
+		off += 8;  // file_size
+		off += 4;  // chunk_count
+		off += 4;  // replicated_count
+		off += 8;  // store_time
+		uint16_t name_len = ReadUint16LE(response + off); off += 2;
+
+		char fname[260] = {0};
+		if (name_len > 0 && name_len < 260 && off + name_len <= response_size)
+		{
+			memcpy(fname, response + off, name_len);
+			fname[name_len] = '\0';
+		}
+		off += name_len;
+
+		char hex[65];
+		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+			sprintf(hex + hi * 2, "%02x", hash[hi]);
+		hex[64] = '\0';
+
+		#ifdef _WIN32
+		if (_strnicmp(hex, file_id, id_len) == 0)
+		#else
+		if (strncasecmp(hex, file_id, id_len) == 0)
+		#endif
+		{
+			memcpy(matched_hash, hash, WH_HASH_SIZE);
+			strncpy(matched_filename, fname, sizeof(matched_filename) - 1);
+			matches++;
+		}
+	}
+
+	if (matches == 0)
+	{
+		LOG_ERROR("Error: No file found with ID prefix: %s\n", file_id);
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	if (matches > 1)
+	{
+		LOG_ERROR("Error: Ambiguous file ID: %s (matches %u files)\n", file_id, matches);
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	// Send IMPORT_KEY: [32B manifest_hash][32B key]
+	uint8_t ik_payload[WH_HASH_SIZE + 32];
+	memcpy(ik_payload, matched_hash, WH_HASH_SIZE);
+	memcpy(ik_payload + WH_HASH_SIZE, key_bytes, 32);
+
+	response_size = 0;
+	ok = IpcClient_SendCommand(client, IPC_CMD_IMPORT_KEY,
+		ik_payload, sizeof(ik_payload),
+		response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 1 || response[0] != IPC_STATUS_OK)
+	{
+		if (response_size >= 1 && response[0] == IPC_STATUS_NOT_FOUND)
+			LOG_ERROR("Error: File not found in registry\n");
+		else
+			LOG_ERROR("Error: Import key failed\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	printf("Encryption key imported for %s\n", matched_filename);
+
+	free(response);
+	IpcClient_Disconnect(client);
+	return 0;
+}
+
 static const char *StatusString(uint8_t status)
 {
 	switch (status)
@@ -2648,8 +3069,15 @@ static const char *StatusString(uint8_t status)
 	}
 }
 
-static int cmd_files(void)
+static int cmd_files(int argc, char *argv[])
 {
+	BOOLEAN verbose = FALSE;
+	for (int i = 0; i < argc; i++)
+	{
+		if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0)
+			verbose = TRUE;
+	}
+
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
@@ -2744,12 +3172,22 @@ static int cmd_files(void)
 			else
 				snprintf(status_detail, sizeof(status_detail), "REPLICATING");
 		}
+		else if (status == 0x03 && verbose)  // SAFE with replica info
+		{
+			snprintf(status_detail, sizeof(status_detail), "SAFE (%u/%u replicas)",
+				repl_count, chunk_count);
+		}
 		else
 		{
 			snprintf(status_detail, sizeof(status_detail), "%s", StatusString(status));
 		}
 
 		printf("%-10s %-24s %-10s %s\n", id_str, display_name, size_str, status_detail);
+
+		if (verbose)
+		{
+			printf("  > Chunks: %u\n", chunk_count);
+		}
 	}
 	printf("\n");
 
@@ -2973,6 +3411,287 @@ static int cmd_config(int argc, char *argv[])
 	return result;
 }
 
+static int cmd_peers(void)
+{
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		return 1;
+	}
+
+	uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+	if (!response)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	uint32_t response_size = 0;
+
+	BOOLEAN ok = IpcClient_SendCommand(client, IPC_CMD_PEER_LIST,
+		NULL, 0, response, IPC_MAX_MESSAGE_SIZE, &response_size);
+
+	if (!ok || response_size < 5 || response[0] != IPC_STATUS_OK)
+	{
+		LOG_ERROR("Error: Failed to get peer list\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t peer_count = ReadUint32LE(response + 1);
+
+	if (peer_count == 0)
+	{
+		printf("\nNo known peers.\n\n");
+		free(response);
+		IpcClient_Disconnect(client);
+		return 0;
+	}
+
+	printf("\n%-10s %-20s %-7s %s\n", "NODE ID", "ADDRESS", "PORT", "LAST SEEN");
+	printf("%-10s %-20s %-7s %s\n", "--------", "-------------------", "------", "----------");
+
+	uint32_t off = 5;
+	time_t now = time(NULL);
+	for (uint32_t i = 0; i < peer_count; i++)
+	{
+		uint32_t per_peer_size = 32 + 1 + 16 + 2 + 8;
+		if (off + per_peer_size > response_size) break;
+
+		uint8_t *node_id = response + off; off += 32;
+		uint8_t addr_type = response[off]; off += 1;
+		uint8_t *addr = response + off; off += 16;
+		uint16_t port = ReadUint16LE(response + off); off += 2;
+		uint64_t last_seen = ReadUint64LE(response + off); off += 8;
+
+		// Format node ID (8-char hex prefix)
+		char id_str[9];
+		for (int hi = 0; hi < 4; hi++)
+			sprintf(id_str + hi * 2, "%02x", node_id[hi]);
+		id_str[8] = '\0';
+
+		// Format address
+		char addr_str[INET6_ADDRSTRLEN];
+		if (addr_type == 0x04)  // IPv4
+		{
+			snprintf(addr_str, sizeof(addr_str), "%u.%u.%u.%u",
+				addr[0], addr[1], addr[2], addr[3]);
+		}
+		else  // IPv6
+		{
+			inet_ntop(AF_INET6, addr, addr_str, sizeof(addr_str));
+		}
+
+		// Format last seen as relative time
+		char seen_str[32];
+		if (last_seen == 0)
+		{
+			snprintf(seen_str, sizeof(seen_str), "never");
+		}
+		else
+		{
+			int64_t elapsed = (int64_t)(now - (time_t)last_seen);
+			if (elapsed < 0) elapsed = 0;
+			if (elapsed < 60)
+				snprintf(seen_str, sizeof(seen_str), "%ds ago", (int)elapsed);
+			else if (elapsed < 3600)
+				snprintf(seen_str, sizeof(seen_str), "%dm ago", (int)(elapsed / 60));
+			else if (elapsed < 86400)
+				snprintf(seen_str, sizeof(seen_str), "%dh ago", (int)(elapsed / 3600));
+			else
+				snprintf(seen_str, sizeof(seen_str), "%dd ago", (int)(elapsed / 86400));
+		}
+
+		printf("%-10s %-20s %-7u %s\n", id_str, addr_str, port, seen_str);
+	}
+	printf("\n%u peer(s) known\n\n", peer_count);
+
+	free(response);
+	IpcClient_Disconnect(client);
+	return 0;
+}
+
+static int cmd_daemon(int argc, char *argv[])
+{
+	if (argc < 2)
+	{
+		LOG_ERROR("Usage: wormhole daemon <start|stop|restart|status>\n");
+		return 1;
+	}
+
+	const char *subcmd = argv[1];
+
+	if (strcmp(subcmd, "status") == 0)
+	{
+		return cmd_status();
+	}
+	else if (strcmp(subcmd, "stop") == 0)
+	{
+		IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+		if (!client)
+		{
+			printf("Daemon is not running.\n");
+			return 0;
+		}
+
+		uint8_t response[64];
+		uint32_t response_size = 0;
+		IpcClient_SendCommand(client, IPC_CMD_SHUTDOWN,
+			NULL, 0, response, sizeof(response), &response_size);
+		IpcClient_Disconnect(client);
+
+		// Wait for daemon to exit (poll IPC up to 10s)
+		for (int i = 0; i < 20; i++)
+		{
+			WH_SLEEP_MS(500);
+			IPC_CLIENT *check = IpcClient_ConnectTo(g_ipc_pipe);
+			if (!check)
+			{
+				printf("Daemon stopped\n");
+
+				// Clean up PID file
+				char pid_path[MAX_PATH];
+#ifdef _WIN32
+				const char *home = getenv("USERPROFILE");
+				if (home) snprintf(pid_path, sizeof(pid_path), "%s\\.wormhole\\wormholed.pid", home);
+#else
+				const char *home = getenv("HOME");
+				if (home) snprintf(pid_path, sizeof(pid_path), "%s/.wormhole/wormholed.pid", home);
+#endif
+				if (home) remove(pid_path);
+				return 0;
+			}
+			IpcClient_Disconnect(check);
+		}
+
+		LOG_ERROR("Warning: Daemon did not stop within 10 seconds\n");
+		return 1;
+	}
+	else if (strcmp(subcmd, "start") == 0)
+	{
+		// Check if daemon already running
+		IPC_CLIENT *check = IpcClient_ConnectTo(g_ipc_pipe);
+		if (check)
+		{
+			IpcClient_Disconnect(check);
+			printf("Daemon is already running.\n");
+			return 0;
+		}
+
+		// Spawn wormholed as a detached background process
+		char pid_path[MAX_PATH];
+#ifdef _WIN32
+		const char *home = getenv("USERPROFILE");
+		if (!home) { LOG_ERROR("Error: Cannot determine home directory\n"); return 1; }
+		snprintf(pid_path, sizeof(pid_path), "%s\\.wormhole\\wormholed.pid", home);
+
+		// Build command line for wormholed
+		char cmd_line[MAX_PATH];
+		char exe_path[MAX_PATH];
+		// Look for wormholed.exe in same directory as wormhole.exe
+		GetModuleFileNameA(NULL, exe_path, sizeof(exe_path));
+		char *last_slash = strrchr(exe_path, '\\');
+		if (last_slash) *(last_slash + 1) = '\0';
+		snprintf(cmd_line, sizeof(cmd_line), "%swormholed.exe", exe_path);
+
+		STARTUPINFOA si = { sizeof(si) };
+		PROCESS_INFORMATION pi;
+		if (!CreateProcessA(cmd_line, NULL, NULL, NULL, FALSE,
+			DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+			NULL, NULL, &si, &pi))
+		{
+			LOG_ERROR("Error: Failed to start daemon\n");
+			return 1;
+		}
+
+		// Write PID file
+		FILE *pf = fopen(pid_path, "w");
+		if (pf) { fprintf(pf, "%lu", (unsigned long)pi.dwProcessId); fclose(pf); }
+
+		printf("Daemon started (PID: %lu)\n", (unsigned long)pi.dwProcessId);
+		CloseHandle(pi.hThread);
+		CloseHandle(pi.hProcess);
+#else
+		const char *home = getenv("HOME");
+		if (!home) { LOG_ERROR("Error: Cannot determine home directory\n"); return 1; }
+		snprintf(pid_path, sizeof(pid_path), "%s/.wormhole/wormholed.pid", home);
+
+		// Find wormholed in same directory as wormhole
+		char exe_dir[MAX_PATH];
+		ssize_t len = readlink("/proc/self/exe", exe_dir, sizeof(exe_dir) - 1);
+		if (len <= 0)
+		{
+			// Fallback: try PATH
+			strncpy(exe_dir, "wormholed", sizeof(exe_dir));
+		}
+		else
+		{
+			exe_dir[len] = '\0';
+			char *last_slash = strrchr(exe_dir, '/');
+			if (last_slash) *(last_slash + 1) = '\0';
+			strncat(exe_dir, "wormholed", sizeof(exe_dir) - strlen(exe_dir) - 1);
+		}
+
+		char log_path[MAX_PATH];
+		snprintf(log_path, sizeof(log_path), "%s/.wormhole/wormholed.log", home);
+
+		pid_t pid = fork();
+		if (pid < 0)
+		{
+			LOG_ERROR("Error: fork() failed\n");
+			return 1;
+		}
+		else if (pid == 0)
+		{
+			// Child: become session leader, redirect output to log
+			setsid();
+			int fd = open(log_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+			if (fd >= 0) { dup2(fd, STDOUT_FILENO); dup2(fd, STDERR_FILENO); close(fd); }
+			close(STDIN_FILENO);
+			execl(exe_dir, "wormholed", (char *)NULL);
+			_exit(127);
+		}
+
+		// Parent: write PID file and wait briefly for startup
+		FILE *pf = fopen(pid_path, "w");
+		if (pf) { fprintf(pf, "%d", pid); fclose(pf); }
+
+		// Wait briefly then verify daemon started
+		WH_SLEEP_MS(1000);
+		IPC_CLIENT *verify = IpcClient_ConnectTo(g_ipc_pipe);
+		if (verify)
+		{
+			IpcClient_Disconnect(verify);
+			printf("Daemon started (PID: %d)\n", pid);
+		}
+		else
+		{
+			printf("Daemon spawned (PID: %d), waiting for startup...\n", pid);
+		}
+#endif
+		return 0;
+	}
+	else if (strcmp(subcmd, "restart") == 0)
+	{
+		// Build fake argv for stop and start
+		char *stop_args[] = { argv[0], "stop" };
+		int rc = cmd_daemon(2, stop_args);
+		if (rc != 0) return rc;
+
+		WH_SLEEP_MS(500);
+
+		char *start_args[] = { argv[0], "start" };
+		return cmd_daemon(2, start_args);
+	}
+	else
+	{
+		LOG_ERROR("Usage: wormhole daemon <start|stop|restart|status>\n");
+		return 1;
+	}
+}
+
 //=============================================================================
 // Command-Line Parsing & Usage
 //=============================================================================
@@ -2985,8 +3704,13 @@ static void PrintUsage(void)
 	LOG("  wormhole receive <ticket>           Receive a file using a ticket\n");
 	LOG("  wormhole store <file>               Store file via daemon\n");
 	LOG("  wormhole get <id> [-o <file>]       Retrieve a stored file by ID\n");
-	LOG("  wormhole files                      List stored files\n");
+	LOG("  wormhole delete <id>                Delete a stored file\n");
+	LOG("  wormhole files [-v]                 List stored files\n");
 	LOG("  wormhole status                     Show daemon status\n");
+	LOG("  wormhole peers                      List known peers\n");
+	LOG("  wormhole export-key <id>            Export file encryption key\n");
+	LOG("  wormhole import-key <id> <key>      Import file encryption key\n");
+	LOG("  wormhole daemon <start|stop|restart> Manage daemon process\n");
 	LOG("  wormhole config list                Show all settings\n");
 	LOG("  wormhole config get <key>           Get a config value\n");
 	LOG("  wormhole config set <key> <val>     Set a config value\n");
@@ -3078,13 +3802,51 @@ int main(int argc, char *argv[])
 		// Pass remaining args after "get" to cmd_get for -o parsing
 		return cmd_get(argc - cmd_start - 1, argv + cmd_start + 1);
 	}
+	else if (strcmp(cmd, "delete") == 0)
+	{
+		if (cmd_start + 1 >= argc)
+		{
+			LOG_ERROR("ERROR: Missing file ID\n");
+			PrintUsage();
+			return 1;
+		}
+		return cmd_delete(argv[cmd_start + 1]);
+	}
+	else if (strcmp(cmd, "export-key") == 0)
+	{
+		if (cmd_start + 1 >= argc)
+		{
+			LOG_ERROR("ERROR: Missing file ID\n");
+			LOG_ERROR("Usage: wormhole export-key <file_id>\n");
+			return 1;
+		}
+		return cmd_export_key(argv[cmd_start + 1]);
+	}
+	else if (strcmp(cmd, "import-key") == 0)
+	{
+		if (cmd_start + 2 >= argc)
+		{
+			LOG_ERROR("ERROR: Missing file ID or key\n");
+			LOG_ERROR("Usage: wormhole import-key <file_id> <hex_key>\n");
+			return 1;
+		}
+		return cmd_import_key(argv[cmd_start + 1], argv[cmd_start + 2]);
+	}
 	else if (strcmp(cmd, "files") == 0)
 	{
-		return cmd_files();
+		return cmd_files(argc - cmd_start - 1, argv + cmd_start + 1);
 	}
 	else if (strcmp(cmd, "status") == 0)
 	{
 		return cmd_status();
+	}
+	else if (strcmp(cmd, "peers") == 0)
+	{
+		return cmd_peers();
+	}
+	else if (strcmp(cmd, "daemon") == 0)
+	{
+		return cmd_daemon(argc - cmd_start, argv + cmd_start);
 	}
 	else if (strcmp(cmd, "config") == 0)
 	{

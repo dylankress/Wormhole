@@ -149,7 +149,7 @@ TEST test_ec_encode_basic(void)
     ASSERT(m != NULL);
     ASSERT_EQ(m->chunk_count, 8u);
 
-    // Encode with RS(4,2)
+    // Encode with RS(4,2) — legacy parameters
     EC_GROUP *group = ErasureCoding_Encode(m, 4, 2);
     ASSERT(group != NULL);
     ASSERT_EQ(group->k, 4);
@@ -453,6 +453,257 @@ SUITE(metadata_suite)
     RUN_TEST(test_ec_load_metadata_bad_file);
 }
 
+// ============================================================================
+// RS(8,4) tests — new default parameters for Phase 6A durability upgrade
+// ============================================================================
+
+TEST test_ec_rs84_encode_single_stripe(void)
+{
+    // 8 chunks = exactly 1 full stripe with RS(8,4)
+    uint8_t *chunk_data[8];
+    FILE_MANIFEST *m = create_test_manifest(8, chunk_data);
+    ASSERT(m != NULL);
+    ASSERT_EQ(m->chunk_count, 8u);
+
+    EC_GROUP *group = ErasureCoding_Encode(m, 8, 4);
+    ASSERT(group != NULL);
+    ASSERT_EQ(group->k, 8);
+    ASSERT_EQ(group->m, 4);
+    ASSERT_EQ(group->stripe_count, 1u);  // 8 chunks / 8 = 1 stripe
+
+    ASSERT_EQ(group->stripes[0].data_chunk_start, 0u);
+    ASSERT_EQ(group->stripes[0].data_chunk_count, 8u);
+
+    // Verify all 4 parity chunks exist
+    for (uint8_t p = 0; p < 4; p++)
+    {
+        ASSERT(ChunkStore_Has(group->stripes[0].parity_hashes[p]));
+        ASSERT_EQ(group->stripes[0].parity_sizes[p], (uint32_t)WH_CHUNK_SIZE);
+    }
+
+    for (int i = 0; i < 8; i++) free(chunk_data[i]);
+    ErasureCoding_DestroyGroup(group);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+TEST test_ec_rs84_encode_multi_stripe(void)
+{
+    // 20 chunks = 2 full stripes (8+8) + 1 partial stripe (4)
+    uint8_t *chunk_data[20];
+    FILE_MANIFEST *m = create_test_manifest(20, chunk_data);
+    ASSERT(m != NULL);
+    ASSERT_EQ(m->chunk_count, 20u);
+
+    EC_GROUP *group = ErasureCoding_Encode(m, 8, 4);
+    ASSERT(group != NULL);
+    ASSERT_EQ(group->k, 8);
+    ASSERT_EQ(group->m, 4);
+    ASSERT_EQ(group->stripe_count, 3u);  // ceil(20/8) = 3 stripes
+
+    // Stripe 0: full
+    ASSERT_EQ(group->stripes[0].data_chunk_start, 0u);
+    ASSERT_EQ(group->stripes[0].data_chunk_count, 8u);
+
+    // Stripe 1: full
+    ASSERT_EQ(group->stripes[1].data_chunk_start, 8u);
+    ASSERT_EQ(group->stripes[1].data_chunk_count, 8u);
+
+    // Stripe 2: partial (4 data chunks, 4 zero-padded)
+    ASSERT_EQ(group->stripes[2].data_chunk_start, 16u);
+    ASSERT_EQ(group->stripes[2].data_chunk_count, 4u);
+
+    // All parity chunks exist for all stripes
+    for (uint32_t s = 0; s < group->stripe_count; s++)
+    {
+        for (uint8_t p = 0; p < 4; p++)
+        {
+            ASSERT(ChunkStore_Has(group->stripes[s].parity_hashes[p]));
+        }
+    }
+
+    for (int i = 0; i < 20; i++) free(chunk_data[i]);
+    ErasureCoding_DestroyGroup(group);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+TEST test_ec_rs84_reconstruct_one_missing(void)
+{
+    uint8_t *chunk_data[8];
+    FILE_MANIFEST *m = create_test_manifest(8, chunk_data);
+    ASSERT(m != NULL);
+
+    EC_GROUP *group = ErasureCoding_Encode(m, 8, 4);
+    ASSERT(group != NULL);
+
+    // Save original for verification
+    uint8_t *original = (uint8_t *)malloc(WH_CHUNK_SIZE);
+    ASSERT(original != NULL);
+    memcpy(original, chunk_data[3], WH_CHUNK_SIZE);
+
+    // Delete chunk 3
+    delete_chunk_from_store(m->chunks[3].hash);
+    ASSERT_FALSE(ChunkStore_Has(m->chunks[3].hash));
+
+    // Reconstruct with RS(8,4) — 1 missing is well within tolerance
+    ASSERT(ErasureCoding_ReconstructChunk(3, group, m));
+    ASSERT(ChunkStore_Has(m->chunks[3].hash));
+
+    // Verify data matches
+    uint8_t *recovered = (uint8_t *)malloc(WH_CHUNK_SIZE);
+    uint32_t recovered_size = 0;
+    ASSERT(ChunkStore_Get(m->chunks[3].hash, recovered, &recovered_size));
+    ASSERT_EQ(recovered_size, (uint32_t)WH_CHUNK_SIZE);
+    ASSERT_MEM_EQ(recovered, original, WH_CHUNK_SIZE);
+
+    free(original);
+    free(recovered);
+    for (int i = 0; i < 8; i++) free(chunk_data[i]);
+    ErasureCoding_DestroyGroup(group);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+TEST test_ec_rs84_reconstruct_max_missing(void)
+{
+    // RS(8,4) can tolerate up to 4 missing shards per stripe
+    uint8_t *chunk_data[8];
+    FILE_MANIFEST *m = create_test_manifest(8, chunk_data);
+    ASSERT(m != NULL);
+
+    EC_GROUP *group = ErasureCoding_Encode(m, 8, 4);
+    ASSERT(group != NULL);
+
+    // Save originals for chunks 0,2,5,7 (4 chunks = max recoverable)
+    uint8_t *originals[4];
+    int missing_indices[] = {0, 2, 5, 7};
+    for (int i = 0; i < 4; i++)
+    {
+        originals[i] = (uint8_t *)malloc(WH_CHUNK_SIZE);
+        ASSERT(originals[i] != NULL);
+        memcpy(originals[i], chunk_data[missing_indices[i]], WH_CHUNK_SIZE);
+        delete_chunk_from_store(m->chunks[missing_indices[i]].hash);
+        ASSERT_FALSE(ChunkStore_Has(m->chunks[missing_indices[i]].hash));
+    }
+
+    // Reconstruct each missing chunk
+    for (int i = 0; i < 4; i++)
+    {
+        ASSERT(ErasureCoding_ReconstructChunk(missing_indices[i], group, m));
+        ASSERT(ChunkStore_Has(m->chunks[missing_indices[i]].hash));
+
+        // Verify data matches
+        uint8_t *recovered = (uint8_t *)malloc(WH_CHUNK_SIZE);
+        uint32_t recovered_size = 0;
+        ASSERT(ChunkStore_Get(m->chunks[missing_indices[i]].hash, recovered, &recovered_size));
+        ASSERT_EQ(recovered_size, (uint32_t)WH_CHUNK_SIZE);
+        ASSERT_MEM_EQ(recovered, originals[i], WH_CHUNK_SIZE);
+        free(recovered);
+    }
+
+    for (int i = 0; i < 4; i++) free(originals[i]);
+    for (int i = 0; i < 8; i++) free(chunk_data[i]);
+    ErasureCoding_DestroyGroup(group);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+TEST test_ec_rs84_partial_stripe_small_file(void)
+{
+    // 3 chunks — much less than k=8 — partial stripe with heavy zero-padding
+    uint8_t *chunk_data[3];
+    FILE_MANIFEST *m = create_test_manifest(3, chunk_data);
+    ASSERT(m != NULL);
+    ASSERT_EQ(m->chunk_count, 3u);
+
+    EC_GROUP *group = ErasureCoding_Encode(m, 8, 4);
+    ASSERT(group != NULL);
+    ASSERT_EQ(group->stripe_count, 1u);
+    ASSERT_EQ(group->stripes[0].data_chunk_start, 0u);
+    ASSERT_EQ(group->stripes[0].data_chunk_count, 3u);
+
+    // 4 parity chunks should still be generated
+    for (uint8_t p = 0; p < 4; p++)
+    {
+        ASSERT(ChunkStore_Has(group->stripes[0].parity_hashes[p]));
+    }
+
+    // Verify we can reconstruct a missing chunk from the partial stripe
+    uint8_t *original = (uint8_t *)malloc(WH_CHUNK_SIZE);
+    memcpy(original, chunk_data[1], WH_CHUNK_SIZE);
+    delete_chunk_from_store(m->chunks[1].hash);
+    ASSERT_FALSE(ChunkStore_Has(m->chunks[1].hash));
+
+    ASSERT(ErasureCoding_ReconstructChunk(1, group, m));
+    ASSERT(ChunkStore_Has(m->chunks[1].hash));
+
+    uint8_t *recovered = (uint8_t *)malloc(WH_CHUNK_SIZE);
+    uint32_t recovered_size = 0;
+    ASSERT(ChunkStore_Get(m->chunks[1].hash, recovered, &recovered_size));
+    ASSERT_EQ(recovered_size, (uint32_t)WH_CHUNK_SIZE);
+    ASSERT_MEM_EQ(recovered, original, WH_CHUNK_SIZE);
+
+    free(original);
+    free(recovered);
+    for (int i = 0; i < 3; i++) free(chunk_data[i]);
+    ErasureCoding_DestroyGroup(group);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+TEST test_ec_rs84_serialize_roundtrip(void)
+{
+    uint8_t *chunk_data[16];
+    FILE_MANIFEST *m = create_test_manifest(16, chunk_data);
+    ASSERT(m != NULL);
+
+    EC_GROUP *group = ErasureCoding_Encode(m, 8, 4);
+    ASSERT(group != NULL);
+    ASSERT_EQ(group->stripe_count, 2u);
+
+    // Serialize
+    size_t sz = 0;
+    uint8_t *buf = ErasureCoding_SerializeGroup(group, &sz);
+    ASSERT(buf != NULL);
+    ASSERT(sz > 0);
+
+    // Deserialize
+    EC_GROUP *group2 = ErasureCoding_DeserializeGroup(buf, sz);
+    ASSERT(group2 != NULL);
+    ASSERT_EQ(group2->k, 8);
+    ASSERT_EQ(group2->m, 4);
+    ASSERT_EQ(group2->stripe_count, 2u);
+
+    for (uint32_t s = 0; s < group->stripe_count; s++)
+    {
+        ASSERT_EQ(group2->stripes[s].data_chunk_start, group->stripes[s].data_chunk_start);
+        ASSERT_EQ(group2->stripes[s].data_chunk_count, group->stripes[s].data_chunk_count);
+        for (uint8_t p = 0; p < 4; p++)
+        {
+            ASSERT_MEM_EQ(group2->stripes[s].parity_hashes[p],
+                           group->stripes[s].parity_hashes[p], WH_HASH_SIZE);
+        }
+    }
+
+    free(buf);
+    for (int i = 0; i < 16; i++) free(chunk_data[i]);
+    ErasureCoding_DestroyGroup(group);
+    ErasureCoding_DestroyGroup(group2);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+SUITE(rs84_suite)
+{
+    RUN_TEST(test_ec_rs84_encode_single_stripe);
+    RUN_TEST(test_ec_rs84_encode_multi_stripe);
+    RUN_TEST(test_ec_rs84_reconstruct_one_missing);
+    RUN_TEST(test_ec_rs84_reconstruct_max_missing);
+    RUN_TEST(test_ec_rs84_partial_stripe_small_file);
+    RUN_TEST(test_ec_rs84_serialize_roundtrip);
+}
+
 int main(void)
 {
     setup_test_home();
@@ -461,5 +712,6 @@ int main(void)
     GREATEST_MAIN_BEGIN();
     RUN_SUITE(erasure_suite);
     RUN_SUITE(metadata_suite);
+    RUN_SUITE(rs84_suite);
     GREATEST_MAIN_END();
 }

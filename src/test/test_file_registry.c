@@ -230,6 +230,32 @@ TEST test_find_by_prefix_no_match(void)
     PASS();
 }
 
+TEST test_delete(void)
+{
+    FileRegistry_Init();
+
+    FILE_MANIFEST *m = make_test_manifest(2048, "deleteme.bin");
+    ASSERT(m != NULL);
+    ASSERT(FileRegistry_Save(m, "deleteme.bin", FILE_STATUS_SAFE));
+
+    // Verify it exists
+    FILE_REG_ENTRY entry;
+    ASSERT(FileRegistry_Load(m->manifest_hash, &entry, NULL));
+    ASSERT(strcmp(entry.filename, "deleteme.bin") == 0);
+
+    // Delete it
+    ASSERT(FileRegistry_Delete(m->manifest_hash));
+
+    // Verify it's gone
+    ASSERT_FALSE(FileRegistry_Load(m->manifest_hash, &entry, NULL));
+
+    // Deleting again should still return TRUE (file doesn't exist)
+    ASSERT(FileRegistry_Delete(m->manifest_hash));
+
+    Manifest_Destroy(m);
+    PASS();
+}
+
 TEST test_save_load_with_manifest_roundtrip(void)
 {
     FileRegistry_Init();
@@ -266,6 +292,7 @@ SUITE(registry_suite)
     RUN_TEST(test_save_and_load);
     RUN_TEST(test_load_nonexistent);
     RUN_TEST(test_update_status);
+    RUN_TEST(test_delete);
 }
 
 SUITE(listing_suite)

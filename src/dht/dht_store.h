@@ -90,6 +90,9 @@ uint32_t DhtStore_Get(const DHT_VALUE_STORE *store, const uint8_t key[32],
 // Check if a key exists in the store
 BOOLEAN DhtStore_Has(const DHT_VALUE_STORE *store, const uint8_t key[32]);
 
+// Remove a specific key from the store. Returns TRUE if found and removed.
+BOOLEAN DhtStore_Remove(DHT_VALUE_STORE *store, const uint8_t key[32]);
+
 // Remove entries older than DHT_STORE_EXPIRY_SEC
 void DhtStore_ExpireOld(DHT_VALUE_STORE *store);
 

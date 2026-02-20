@@ -59,3 +59,11 @@ uint32_t Health_GetReplicatedChunks(uint8_t (*out_hashes)[WH_HASH_SIZE], uint32_
 // Returns the number of new replications initiated.
 uint32_t Health_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
                                 uint32_t current_replicas, uint32_t target);
+
+// Get hashes of chunks replicated to a specific peer.
+// peer_id: Ed25519 public key of the peer to check
+// out_hashes: caller-allocated array of [max_count][WH_HASH_SIZE]
+// Returns number of chunk hashes written.
+uint32_t Health_GetChunksOnPeer(const uint8_t peer_id[32],
+                                  uint8_t (*out_hashes)[WH_HASH_SIZE],
+                                  uint32_t max_count);

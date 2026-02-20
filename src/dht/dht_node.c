@@ -10,6 +10,7 @@
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
 typedef int ssize_t;
+#define strtok_r strtok_s
 #else
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -796,31 +797,71 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
         }
     }
 
-    // Resolve bootstrap node
+    // Resolve bootstrap node(s)
+    node->bootstrap_count = 0;
+
+    // Store raw bootstrap config for DNS re-resolution on retry
     if (bootstrap_host && bootstrap_port > 0) {
-        struct addrinfo hints, *result;
-        memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_UNSPEC;  // Accept both IPv4 and IPv6
-        hints.ai_socktype = SOCK_DGRAM;
+        snprintf(node->bootstrap_host_str, sizeof(node->bootstrap_host_str),
+                 "%s", bootstrap_host);
+        node->bootstrap_default_port = bootstrap_port;
+    } else {
+        node->bootstrap_host_str[0] = '\0';
+        node->bootstrap_default_port = 0;
+    }
 
-        char port_str[16];
-        snprintf(port_str, sizeof(port_str), "%u", bootstrap_port);
+    if (bootstrap_host && bootstrap_port > 0) {
+        // Parse comma-separated list of bootstrap hosts
+        char host_buf[512];
+        snprintf(host_buf, sizeof(host_buf), "%s", bootstrap_host);
 
-        if (getaddrinfo(bootstrap_host, port_str, &hints, &result) == 0) {
-            if (result->ai_family == AF_INET) {
-                struct sockaddr_in *sin = (struct sockaddr_in *)result->ai_addr;
-                node->bootstrap_addr_type = DHT_ADDR_IPV4;
-                memcpy(node->bootstrap_addr, &sin->sin_addr, 4);
-                node->bootstrap_port = bootstrap_port;
-            } else if (result->ai_family == AF_INET6) {
-                struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)result->ai_addr;
-                node->bootstrap_addr_type = DHT_ADDR_IPV6;
-                memcpy(node->bootstrap_addr, &sin6->sin6_addr, 16);
-                node->bootstrap_port = bootstrap_port;
+        char *saveptr = NULL;
+        char *token = strtok_r(host_buf, ",", &saveptr);
+        while (token && node->bootstrap_count < DHT_MAX_BOOTSTRAP_NODES)
+        {
+            // Trim whitespace
+            while (*token == ' ') token++;
+            char *end = token + strlen(token) - 1;
+            while (end > token && *end == ' ') { *end = '\0'; end--; }
+
+            // Check for host:port format
+            uint16_t this_port = bootstrap_port;
+            char *colon = strrchr(token, ':');
+            if (colon && colon != token) {
+                *colon = '\0';
+                this_port = (uint16_t)atoi(colon + 1);
+                if (this_port == 0) this_port = bootstrap_port;
             }
-            freeaddrinfo(result);
-        } else {
-            fprintf(stderr, "[DHT] Failed to resolve bootstrap host: %s\n", bootstrap_host);
+
+            struct addrinfo hints, *result;
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_DGRAM;
+
+            char port_str[16];
+            snprintf(port_str, sizeof(port_str), "%u", this_port);
+
+            if (getaddrinfo(token, port_str, &hints, &result) == 0) {
+                uint32_t idx = node->bootstrap_count;
+                if (result->ai_family == AF_INET) {
+                    struct sockaddr_in *sin = (struct sockaddr_in *)result->ai_addr;
+                    node->bootstrap_nodes[idx].addr_type = DHT_ADDR_IPV4;
+                    memcpy(node->bootstrap_nodes[idx].addr, &sin->sin_addr, 4);
+                    node->bootstrap_nodes[idx].port = this_port;
+                    node->bootstrap_count++;
+                } else if (result->ai_family == AF_INET6) {
+                    struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)result->ai_addr;
+                    node->bootstrap_nodes[idx].addr_type = DHT_ADDR_IPV6;
+                    memcpy(node->bootstrap_nodes[idx].addr, &sin6->sin6_addr, 16);
+                    node->bootstrap_nodes[idx].port = this_port;
+                    node->bootstrap_count++;
+                }
+                freeaddrinfo(result);
+            } else {
+                fprintf(stderr, "[DHT] Failed to resolve bootstrap host: %s\n", token);
+            }
+
+            token = strtok_r(NULL, ",", &saveptr);
         }
     }
 
@@ -883,14 +924,19 @@ void DhtNode_Poll(DHT_NODE *node, int timeout_ms)
 
 BOOLEAN DhtNode_Bootstrap(DHT_NODE *node)
 {
-    if (node->bootstrap_addr_type == 0) return FALSE;
+    if (node->bootstrap_count == 0) return FALSE;
 
+    BOOLEAN any_sent = FALSE;
+
+    // Try all bootstrap nodes — send FIND_NODE(self) to each
+    for (uint32_t i = 0; i < node->bootstrap_count; i++)
     {
         char addr_str[64] = {0};
         struct sockaddr_storage sa;
         socklen_t sa_len;
-        if (NodeInfoToSockaddr(node->bootstrap_addr_type, node->bootstrap_addr,
-                                node->bootstrap_port, &sa, &sa_len)) {
+        if (NodeInfoToSockaddr(node->bootstrap_nodes[i].addr_type,
+                                node->bootstrap_nodes[i].addr,
+                                node->bootstrap_nodes[i].port, &sa, &sa_len)) {
             if (sa.ss_family == AF_INET) {
                 struct sockaddr_in *sin = (struct sockaddr_in *)&sa;
                 inet_ntop(AF_INET, &sin->sin_addr, addr_str, sizeof(addr_str));
@@ -900,12 +946,84 @@ BOOLEAN DhtNode_Bootstrap(DHT_NODE *node)
             }
         }
         printf("[dht] Bootstrap: sending FIND_NODE(self) to %s:%u\n",
-               addr_str, node->bootstrap_port);
+               addr_str, node->bootstrap_nodes[i].port);
+
+        if (DhtNode_SendFindNode(node, node->bootstrap_nodes[i].addr,
+                                  node->bootstrap_nodes[i].addr_type,
+                                  node->bootstrap_nodes[i].port,
+                                  node->keypair->public_key))
+        {
+            any_sent = TRUE;
+        }
     }
 
-    // Standard Kademlia bootstrap: FIND_NODE for our own ID
-    return DhtNode_SendFindNode(node, node->bootstrap_addr, node->bootstrap_addr_type,
-                                 node->bootstrap_port, node->keypair->public_key);
+    return any_sent;
+}
+
+BOOLEAN DhtNode_ReResolveBootstrap(DHT_NODE *node)
+{
+    // Already resolved — nothing to do
+    if (node->bootstrap_count > 0) return TRUE;
+
+    // No bootstrap config stored — can't resolve
+    if (node->bootstrap_host_str[0] == '\0' || node->bootstrap_default_port == 0)
+        return FALSE;
+
+    // Re-parse and resolve (same logic as DhtNode_Init)
+    char host_buf[512];
+    snprintf(host_buf, sizeof(host_buf), "%s", node->bootstrap_host_str);
+
+    char *saveptr = NULL;
+    char *token = strtok_r(host_buf, ",", &saveptr);
+    while (token && node->bootstrap_count < DHT_MAX_BOOTSTRAP_NODES)
+    {
+        while (*token == ' ') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && *end == ' ') { *end = '\0'; end--; }
+
+        uint16_t this_port = node->bootstrap_default_port;
+        char *colon = strrchr(token, ':');
+        if (colon && colon != token) {
+            *colon = '\0';
+            this_port = (uint16_t)atoi(colon + 1);
+            if (this_port == 0) this_port = node->bootstrap_default_port;
+        }
+
+        struct addrinfo hints, *result;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_DGRAM;
+
+        char port_str[16];
+        snprintf(port_str, sizeof(port_str), "%u", this_port);
+
+        if (getaddrinfo(token, port_str, &hints, &result) == 0) {
+            uint32_t idx = node->bootstrap_count;
+            if (result->ai_family == AF_INET) {
+                struct sockaddr_in *sin = (struct sockaddr_in *)result->ai_addr;
+                node->bootstrap_nodes[idx].addr_type = DHT_ADDR_IPV4;
+                memcpy(node->bootstrap_nodes[idx].addr, &sin->sin_addr, 4);
+                node->bootstrap_nodes[idx].port = this_port;
+                node->bootstrap_count++;
+            } else if (result->ai_family == AF_INET6) {
+                struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)result->ai_addr;
+                node->bootstrap_nodes[idx].addr_type = DHT_ADDR_IPV6;
+                memcpy(node->bootstrap_nodes[idx].addr, &sin6->sin6_addr, 16);
+                node->bootstrap_nodes[idx].port = this_port;
+                node->bootstrap_count++;
+            }
+            freeaddrinfo(result);
+        }
+
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+
+    if (node->bootstrap_count > 0) {
+        printf("[dht] Re-resolved %u bootstrap node(s) from '%s'\n",
+               node->bootstrap_count, node->bootstrap_host_str);
+        return TRUE;
+    }
+    return FALSE;
 }
 
 BOOLEAN DhtNode_SendPing(DHT_NODE *node, const uint8_t addr[16],

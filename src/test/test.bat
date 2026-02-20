@@ -253,9 +253,22 @@ if errorlevel 1 (
     echo   COMPILE FAILED
     set /a FAIL_COUNT+=1
     set /a TOTAL+=1
-    goto :summary
+    goto :test_file_crypto
 )
 call :run_test test_file_registry.exe
+
+:test_file_crypto
+REM ===================================================================
+echo.
+echo --- test_file_crypto ---
+cl %CFLAGS% %INCLUDES% /I "%LIBSODIUM_INC%" test_file_crypto.c %BUILD%\file_crypto.obj "%LIBSODIUM_LIB%" /Fe:test_file_crypto.exe /link ole32.lib
+if errorlevel 1 (
+    echo   COMPILE FAILED
+    set /a FAIL_COUNT+=1
+    set /a TOTAL+=1
+    goto :summary
+)
+call :run_test test_file_crypto.exe
 
 :summary
 REM ===================================================================

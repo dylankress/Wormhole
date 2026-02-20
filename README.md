@@ -57,13 +57,16 @@ Ticket: 5-ocean-maple
 
 ### Decentralized Storage
 - **Persistent daemon** — `wormholed` runs in the background with QUIC listener, relay connectivity, and DHT node
-- **Kademlia DHT** — decentralized peer and chunk discovery (UDP port 4568), relay bootstrap
-- **Erasure coding** — RS(4,2) Reed-Solomon for fault-tolerant storage (4 data + 2 parity shards per stripe)
+- **Kademlia DHT** — decentralized peer and chunk discovery (UDP port 4568), relay bootstrap, multi-bootstrap resilience
+- **Erasure coding** — RS(8,4) Reed-Solomon for fault-tolerant storage (8 data + 4 parity shards per stripe)
+- **Client-side encryption** — XChaCha20-Poly1305 (libsodium) encrypt-before-chunk, so storage nodes never see plaintext
+- **TLS peer identity** — Ed25519 node ID embedded in TLS certificate CN, verified on replication connections
 - **Proof-of-storage** — Blake3-based challenge/response verification that peers actually hold chunks
-- **Chunk replication** — 3x replication target across peers for durability
+- **Chunk replication** — 4x replication target across peers for durability
 - **Storage incentives** — per-peer reciprocity tracking, reject freeloading peers (ratio < 0.5)
 - **Storage quota** — configurable disk limit with LRU eviction (prefers evicting highly-replicated chunks)
-- **Configuration** — `~/.wormhole/config` INI file with 12 tunable settings
+- **File management** — delete stored files, export/import encryption keys, daemon lifecycle control, peer visibility
+- **Configuration** — `~/.wormhole/config` INI file with 14 tunable settings
 
 ### Direct Transfer
 - **Direct P2P transfer** — files go straight between machines, not through the cloud
@@ -81,7 +84,7 @@ Ticket: 5-ocean-maple
 
 ## Project Status
 
-**Phases 1–4.5 complete.** The core platform is built and tested:
+**Phases 1–7 complete.** The core platform is built and tested:
 
 | Phase | Status | Description |
 |-------|--------|-------------|
@@ -90,9 +93,11 @@ Ticket: 5-ocean-maple
 | 3 | Done | P2P storage foundation — persistent daemon, peer discovery, chunk replication, storage quota |
 | 4 | Done | Decentralized network — Kademlia DHT, erasure coding, proof-of-storage, storage incentives |
 | 4.5 | Done | Integration — wire EC into daemon, enforce ledger, connect health checks, E2E tests |
-| 5 | In Progress | Multi-platform — Linux client (Makefile + Docker), file registry, multi-node testing |
+| 5 | Done | Multi-platform — Linux client (Makefile + Docker), file registry, multi-node testing |
+| 6 | Done | Production readiness — RS(8,4), R=4, encryption, TLS identity, DHT persistence, multi-bootstrap |
+| 7 | Done | Usability & management — file deletion, key export/import, daemon lifecycle, peer visibility |
 
-16 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests. See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
+17 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests (17 tests). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
 
 ## Building
 
@@ -176,9 +181,36 @@ Retrieves a chunk by its Blake3 hash from the daemon's store or the network.
 
 ### List stored files
 ```
-wormhole files
+wormhole files [-v]
 ```
-Lists all files stored via the daemon, showing filename, size, chunk count, replication status, and file ID.
+Lists all files stored via the daemon, showing filename, size, chunk count, replication status, and file ID. Use `-v` for verbose output with chunk details and replica peer info.
+
+### Delete a stored file
+```
+wormhole delete <id>
+```
+Removes a stored file: deletes chunks from local store, cleans up EC metadata, removes DHT announcements, and deletes the file registry entry. Accepts full or prefix file IDs.
+
+### Export/import encryption keys
+```
+wormhole export-key <id>       # Print the file's encryption key (hex)
+wormhole import-key <id> <key> # Import a key for a file (hex)
+```
+Back up encryption keys for safekeeping or transfer to another device. Without the key, encrypted files cannot be decrypted.
+
+### Manage the daemon
+```
+wormhole daemon start           # Start wormholed in the background
+wormhole daemon stop            # Stop the running daemon
+wormhole daemon restart         # Stop then start
+wormhole daemon status          # Alias for 'wormhole status'
+```
+
+### List peers
+```
+wormhole peers
+```
+Shows all known DHT peers with node ID, address, port, and last-seen time.
 
 ### Daemon status
 ```
@@ -245,12 +277,15 @@ The project has three components:
 - Content-addressed chunk store with dedup and LRU eviction
 - Relay connection with auto-reconnect for peer coordination
 - Kademlia DHT node (UDP port 4568) for decentralized discovery
-- RS(4,2) erasure coding for fault-tolerant storage
+- RS(8,4) erasure coding for fault-tolerant storage
+- Client-side encryption (XChaCha20-Poly1305) before chunking
+- TLS peer identity verification (Ed25519 node ID in cert CN)
 - Health monitoring with proof-of-storage challenges
 - Storage incentive ledger for reciprocity enforcement
+- File deletion, key export/import, and daemon lifecycle management
 - IPC server for CLI communication (named pipes on Windows, Unix domain sockets on Linux)
 
-**Client** (`src/wormhole.c`) — Cross-platform CLI (Windows + Linux) for storage commands (`store`/`get`/`files`/`status`/`config`) and direct file transfer (`send`/`receive`). Uses MsQuic for QUIC transport, libsodium for Ed25519 identity, and Blake3 for content-addressed chunking.
+**Client** (`src/wormhole.c`) — Cross-platform CLI (Windows + Linux) for storage commands (`store`/`get`/`delete`/`files`/`status`/`peers`/`export-key`/`import-key`/`daemon`/`config`) and direct file transfer (`send`/`receive`). Uses MsQuic for QUIC transport, libsodium for Ed25519 identity, and Blake3 for content-addressed chunking.
 
 **Relay Server** (`relay-server/`) — Lightweight Linux UDP server for:
 - Peer registration and NAT reflection
@@ -266,7 +301,7 @@ The project has three components:
 | Transport | QUIC (MsQuic) | 4567/UDP | Encrypted file/chunk transfer between peers |
 | Discovery | Kademlia DHT | 4568/UDP | Decentralized peer and chunk lookup |
 | Coordination | Relay protocol | 443/UDP | Peer registration, tickets, NAT traversal, forwarding |
-| Data | Content-addressed chunks | — | 256KB Blake3-hashed chunks, RS(4,2) erasure coding |
+| Data | Content-addressed chunks | — | 256KB Blake3-hashed chunks, RS(8,4) erasure coding |
 
 See [CLAUDE.md](CLAUDE.md) for detailed protocol wire formats and implementation notes.
 
@@ -279,15 +314,17 @@ All settings are stored in `~/.wormhole/config` (INI format). Manage with `wormh
 | `relay_host` | `wormholerelay.com` | Relay server hostname |
 | `relay_port` | `443` | Relay server port |
 | `max_storage_gb` | `10` | Maximum disk space for chunk storage (GB) |
-| `replication_target` | `3` | Target number of copies per chunk across peers |
+| `replication_target` | `4` | Target number of copies per chunk across peers |
 | `dht_enabled` | `1` | Enable Kademlia DHT node (0 = disabled) |
 | `dht_port` | `4568` | UDP port for DHT protocol |
+| `dht_bootstrap_nodes` | *(empty)* | Comma-separated bootstrap host:port list (default: use relay) |
 | `ec_enabled` | `1` | Enable erasure coding on store (0 = disabled) |
-| `ec_data_shards` | `4` | RS data shards per stripe |
-| `ec_parity_shards` | `2` | RS parity shards per stripe |
+| `ec_data_shards` | `8` | RS data shards per stripe |
+| `ec_parity_shards` | `4` | RS parity shards per stripe |
 | `health_check_interval_sec` | `1800` | Seconds between health check cycles (30 min) |
 | `min_storage_ratio` | `50` | Minimum reciprocity ratio to accept storage (50 = 0.50) |
 | `proof_cache_count` | `8` | Number of pre-computed proofs cached per chunk |
+| `auto_evict_enabled` | `0` | Auto-evict local chunks after replication (0 = keep local copies) |
 
 ## License
 

@@ -5,7 +5,27 @@
 
 #include "crypto.h"
 
+// Helper: parse 64-hex-char CN and compare to expected node_id
+static BOOLEAN VerifyCN(const char *cn, const uint8_t expected_node_id[32])
+{
+	if (!cn) return FALSE;
+	if (strlen(cn) < 64) return FALSE;  // 64 hex chars
+
+	uint8_t parsed[32];
+	for (int i = 0; i < 32; i++)
+	{
+		char hb[3] = { cn[i * 2], cn[i * 2 + 1], 0 };
+		char *ep;
+		unsigned long val = strtoul(hb, &ep, 16);
+		if (*ep != '\0') return FALSE;
+		parsed[i] = (uint8_t)val;
+	}
+	return memcmp(parsed, expected_node_id, 32) == 0;
+}
+
 #ifdef _WIN32
+
+#include <wincrypt.h>
 
 // Helper: Validate that a string contains exactly 40 hexadecimal characters
 static BOOLEAN IsValidThumbprint(const char *str)
@@ -184,6 +204,73 @@ BOOLEAN GenerateSelfSignedCert(char *thumbprint_out, size_t thumbprint_size)
 	return FALSE;
 }
 
+BOOLEAN GenerateSelfSignedCertWithNodeId(char *thumbprint_out, size_t thumbprint_size,
+                                          const uint8_t node_id[32])
+{
+	if (!thumbprint_out || thumbprint_size < 41 || !node_id) return FALSE;
+
+	char hex[65];
+	for (int i = 0; i < 32; i++)
+		snprintf(hex + i * 2, 3, "%02x", node_id[i]);
+
+	char output[4096];
+	memset(output, 0, sizeof(output));
+
+	// Check for existing cert with matching node ID Subject
+	char find_cmd[512];
+	snprintf(find_cmd, sizeof(find_cmd),
+		"Get-ChildItem -Path Cert:\\CurrentUser\\My | "
+		"Where-Object {$_.Subject -eq 'CN=%s'} | "
+		"Select-Object -ExpandProperty Thumbprint", hex);
+
+	if (ExecutePowerShellCommand(find_cmd, output, sizeof(output)))
+	{
+		if (ParseThumbprintFromOutput(output, thumbprint_out))
+		{
+			LOG("Found existing certificate with node ID\n");
+			return TRUE;
+		}
+	}
+
+	// Generate new cert with node ID in Subject
+	memset(output, 0, sizeof(output));
+	char gen_cmd[512];
+	snprintf(gen_cmd, sizeof(gen_cmd),
+		"New-SelfSignedCertificate "
+		"-Subject 'CN=%s' "
+		"-FriendlyName 'Wormhole-Dev' "
+		"-KeyUsageProperty Sign "
+		"-KeyUsage DigitalSignature "
+		"-CertStoreLocation cert:\\CurrentUser\\My "
+		"-HashAlgorithm SHA256 "
+		"-Provider 'Microsoft Software Key Storage Provider' "
+		"-KeyExportPolicy Exportable | "
+		"Select-Object -ExpandProperty Thumbprint", hex);
+
+	if (ExecutePowerShellCommand(gen_cmd, output, sizeof(output)))
+	{
+		if (ParseThumbprintFromOutput(output, thumbprint_out))
+		{
+			LOG("Generated certificate with node ID\n");
+			return TRUE;
+		}
+	}
+
+	LOG_ERROR("Failed to generate certificate with node ID\n");
+	return FALSE;
+}
+
+BOOLEAN Crypto_VerifyPeerCert(void *certificate, const uint8_t expected_node_id[32])
+{
+	if (!certificate || !expected_node_id) return FALSE;
+
+	PCCERT_CONTEXT cert = (PCCERT_CONTEXT)certificate;
+	char cn[128] = {0};
+	CertGetNameStringA(cert, CERT_NAME_ATTR_TYPE, 0,
+	                   (void *)szOID_COMMON_NAME, cn, sizeof(cn));
+	return VerifyCN(cn, expected_node_id);
+}
+
 #else // Linux / POSIX
 
 // Build the paths for PEM cert/key files in ~/.wormhole/
@@ -244,16 +331,27 @@ BOOLEAN GenerateSelfSignedCert(char *cert_path_out, size_t path_size)
 	LOG("Generating self-signed TLS certificate...\n");
 
 	char cmd[1024];
+	// Try -noenc first (OpenSSL 3.0+), fall back to -nodes (OpenSSL 1.x)
 	snprintf(cmd, sizeof(cmd),
 		"openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 "
-		"-keyout '%s' -out '%s' -days 365 -nodes "
-		"-subj '/CN=wormhole' 2>/dev/null",
+		"-keyout '%s' -out '%s' -days 365 -noenc "
+		"-subj '/CN=wormhole' 2>&1",
 		key_path, cert_path);
 
 	int rc = system(cmd);
 	if (rc != 0) {
-		LOG_ERROR("openssl command failed (exit code %d). Is openssl installed?\n", rc);
-		return FALSE;
+		// Fallback for OpenSSL 1.x which doesn't have -noenc
+		snprintf(cmd, sizeof(cmd),
+			"openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 "
+			"-keyout '%s' -out '%s' -days 365 -nodes "
+			"-subj '/CN=wormhole' 2>&1",
+			key_path, cert_path);
+
+		rc = system(cmd);
+		if (rc != 0) {
+			LOG_ERROR("openssl command failed (exit code %d). Is openssl installed?\n", rc);
+			return FALSE;
+		}
 	}
 
 	// Verify files were created
@@ -274,6 +372,75 @@ BOOLEAN GenerateSelfSignedCert(char *cert_path_out, size_t path_size)
 	LOG("Certificate generated: %s\n", cert_path);
 	snprintf(cert_path_out, path_size, "%s", cert_path);
 	return TRUE;
+}
+
+BOOLEAN GenerateSelfSignedCertWithNodeId(char *cert_path_out, size_t path_size,
+                                          const uint8_t node_id[32])
+{
+	if (!cert_path_out || path_size < 2 || !node_id) return FALSE;
+
+	char hex[65];
+	for (int i = 0; i < 32; i++)
+		snprintf(hex + i * 2, 3, "%02x", node_id[i]);
+
+	char cert_path[MAX_PATH], key_path[MAX_PATH];
+	if (!GetCertPaths(cert_path, sizeof(cert_path), key_path, sizeof(key_path)))
+		return FALSE;
+
+	const char *home = getenv("HOME");
+	if (home) {
+		char dir[MAX_PATH];
+		snprintf(dir, sizeof(dir), "%s/.wormhole", home);
+		mkdir(dir, 0700);
+	}
+
+	// Remove existing cert to regenerate with correct node ID CN
+	unlink(cert_path);
+	unlink(key_path);
+
+	LOG("Generating TLS certificate with node ID...\n");
+
+	char cmd[1024];
+	// Try -noenc first (OpenSSL 3.0+), fall back to -nodes (OpenSSL 1.x)
+	snprintf(cmd, sizeof(cmd),
+		"openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 "
+		"-keyout '%s' -out '%s' -days 365 -noenc "
+		"-subj '/CN=%s' 2>&1",
+		key_path, cert_path, hex);
+
+	if (system(cmd) != 0) {
+		// Fallback for OpenSSL 1.x which doesn't have -noenc
+		snprintf(cmd, sizeof(cmd),
+			"openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 "
+			"-keyout '%s' -out '%s' -days 365 -nodes "
+			"-subj '/CN=%s' 2>&1",
+			key_path, cert_path, hex);
+
+		if (system(cmd) != 0) {
+			LOG_ERROR("openssl command failed. Is openssl installed?\n");
+			return FALSE;
+		}
+	}
+
+	snprintf(cert_path_out, path_size, "%s", cert_path);
+	return TRUE;
+}
+
+#include <openssl/x509.h>
+
+BOOLEAN Crypto_VerifyPeerCert(void *certificate, const uint8_t expected_node_id[32])
+{
+	if (!certificate || !expected_node_id) return FALSE;
+
+	X509 *cert = (X509 *)certificate;
+	X509_NAME *subject = X509_get_subject_name(cert);
+	if (!subject) return FALSE;
+
+	char cn[128] = {0};
+	if (X509_NAME_get_text_by_NID(subject, NID_commonName, cn, sizeof(cn)) < 64)
+		return FALSE;
+
+	return VerifyCN(cn, expected_node_id);
 }
 
 #endif // _WIN32

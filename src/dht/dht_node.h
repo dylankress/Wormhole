@@ -36,11 +36,19 @@ typedef struct DHT_NODE {
     uint32_t        pending_count;
     uint32_t        next_txn_id;
 
-    // Bootstrap node
-    uint8_t         bootstrap_addr_type;
-    uint8_t         bootstrap_addr[16];
-    uint16_t        bootstrap_port;
+    // Bootstrap nodes (up to 4)
+#define DHT_MAX_BOOTSTRAP_NODES 4
+    struct {
+        uint8_t  addr_type;
+        uint8_t  addr[16];
+        uint16_t port;
+    } bootstrap_nodes[DHT_MAX_BOOTSTRAP_NODES];
+    uint32_t        bootstrap_count;
     BOOLEAN         bootstrapped;
+
+    // Bootstrap config (stored for DNS re-resolution on retry)
+    char            bootstrap_host_str[512];
+    uint16_t        bootstrap_default_port;
 
     // Stats
     uint64_t        msgs_sent;
@@ -63,6 +71,10 @@ void DhtNode_Poll(DHT_NODE *node, int timeout_ms);
 
 // Bootstrap: send FIND_NODE(self_id) to the bootstrap node
 BOOLEAN DhtNode_Bootstrap(DHT_NODE *node);
+
+// Re-resolve bootstrap DNS (for containers where DNS fails at startup)
+// Returns TRUE if bootstrap_count > 0 after resolution attempt
+BOOLEAN DhtNode_ReResolveBootstrap(DHT_NODE *node);
 
 // Send a PING to a specific node
 BOOLEAN DhtNode_SendPing(DHT_NODE *node, const uint8_t addr[16],

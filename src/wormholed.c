@@ -31,6 +31,7 @@
 #include "health.h"
 #include "erasure.h"
 #include "file_registry.h"
+#include "file_crypto.h"
 #include "../deps/blake3/blake3.h"
 
 // POSIX includes for Linux EC recovery directory scan
@@ -580,9 +581,9 @@ static BOOLEAN Daemon_LoadServerConfig(void)
     LOG("[daemon] Loading server configuration...\n");
 
 #ifdef _WIN32
-    // Generate or retrieve self-signed certificate
+    // Generate or retrieve self-signed certificate (with node ID in CN for peer verification)
     char thumbprint[41];
-    if (!GenerateSelfSignedCert(thumbprint, sizeof(thumbprint)))
+    if (!GenerateSelfSignedCertWithNodeId(thumbprint, sizeof(thumbprint), g_daemon.keypair.public_key))
     {
         LOG_ERROR("[daemon] Failed to generate/retrieve certificate\n");
         return FALSE;
@@ -612,7 +613,7 @@ static BOOLEAN Daemon_LoadServerConfig(void)
     cred_config.Flags = QUIC_CREDENTIAL_FLAG_NONE;
 #else
     char cert_path_buf[MAX_PATH];
-    if (!GenerateSelfSignedCert(cert_path_buf, sizeof(cert_path_buf)))
+    if (!GenerateSelfSignedCertWithNodeId(cert_path_buf, sizeof(cert_path_buf), g_daemon.keypair.public_key))
     {
         LOG_ERROR("[daemon] Failed to generate/retrieve certificate\n");
         return FALSE;
@@ -1312,7 +1313,8 @@ static BOOLEAN Daemon_LoadClientConfig(void)
     QUIC_CREDENTIAL_CONFIG cred_config;
     memset(&cred_config, 0, sizeof(cred_config));
     cred_config.Type = QUIC_CREDENTIAL_TYPE_NONE;
-    cred_config.Flags = QUIC_CREDENTIAL_FLAG_CLIENT | QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
+    cred_config.Flags = QUIC_CREDENTIAL_FLAG_CLIENT | QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION
+                      | QUIC_CREDENTIAL_FLAG_INDICATE_CERTIFICATE_RECEIVED;
 
     QUIC_SETTINGS settings = { 0 };
     settings.IdleTimeoutMs = 30000;   // 30s idle timeout for replication connections
@@ -1493,6 +1495,22 @@ static QUIC_STATUS QUIC_API Daemon_ReplicaConnectionCallback(
         uint32_t ticket_len = Event->RESUMPTION_TICKET_RECEIVED.ResumptionTicketLength;
         Daemon_SaveSessionTicket(ticket, ticket_len);
         LOG("[replicate] Session ticket saved (%u bytes) for 0-RTT\n", ticket_len);
+        break;
+    }
+
+    case QUIC_CONNECTION_EVENT_PEER_CERTIFICATE_RECEIVED:
+    {
+        // Verify the peer's TLS certificate contains the expected node ID
+        if (conn_ctx && Event->PEER_CERTIFICATE_RECEIVED.Certificate)
+        {
+            if (!Crypto_VerifyPeerCert(Event->PEER_CERTIFICATE_RECEIVED.Certificate,
+                                        conn_ctx->peer_id))
+            {
+                LOG_ERROR("[replicate] Peer TLS certificate does not match expected node ID — rejecting\n");
+                return QUIC_STATUS_BAD_CERTIFICATE;
+            }
+            LOG("[replicate] Peer TLS identity verified\n");
+        }
         break;
     }
 
@@ -3498,26 +3516,37 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
             {
                 LOG("[worker] File %s safely replicated to network\n", entry.filename);
 
-                // Auto-evict local chunks
-                uint64_t freed = 0;
-                for (uint32_t i = 0; i < manifest->chunk_count; i++)
+                // Only auto-evict if enabled in config (default: disabled)
+                if (Config_GetUint64(g_daemon.config, "auto_evict_enabled",
+                        CONFIG_DEFAULT_AUTO_EVICT))
                 {
-                    if (ChunkStore_Has(manifest->chunks[i].hash))
+                    uint64_t freed = 0;
+                    for (uint32_t i = 0; i < manifest->chunk_count; i++)
                     {
-                        freed += manifest->chunks[i].chunk_size;
-                        ChunkStore_Delete(manifest->chunks[i].hash);
-                        WH_ATOMIC_DEC(&g_daemon.chunk_count);
+                        if (ChunkStore_Has(manifest->chunks[i].hash))
+                        {
+                            freed += manifest->chunks[i].chunk_size;
+                            ChunkStore_Delete(manifest->chunks[i].hash);
+                            WH_ATOMIC_DEC(&g_daemon.chunk_count);
+                        }
+                    }
+
+                    FileRegistry_UpdateStatus(item->check_repl.manifest_hash,
+                        FILE_STATUS_OFFLOADED, replicated);
+
+                    if (freed > 0)
+                    {
+                        WH_ATOMIC_ADD64(&g_daemon.storage_used, -(LONGLONG)freed);
+                        LOG("[worker] Local chunks cleaned up for %s (freed %llu bytes)\n",
+                            entry.filename, (unsigned long long)freed);
                     }
                 }
-
-                FileRegistry_UpdateStatus(item->check_repl.manifest_hash,
-                    FILE_STATUS_OFFLOADED, replicated);
-
-                if (freed > 0)
+                else
                 {
-                    WH_ATOMIC_ADD64(&g_daemon.storage_used, -(LONGLONG)freed);
-                    LOG("[worker] Local chunks cleaned up for %s (freed %llu bytes)\n",
-                        entry.filename, (unsigned long long)freed);
+                    // Keep local copies, just mark as safe
+                    FileRegistry_UpdateStatus(item->check_repl.manifest_hash,
+                        FILE_STATUS_SAFE, replicated);
+                    LOG("[worker] File %s safe (local copies preserved)\n", entry.filename);
                 }
             }
             else
@@ -3614,9 +3643,45 @@ static uint32_t Daemon_HandleIpcCommand(
             Daemon_EnforceQuota(fsize);
         }
 
+        // Client-side encryption: encrypt file to temp, then chunk the ciphertext
+        uint8_t encryption_key[FILE_CRYPTO_KEY_SIZE];
+        char encrypted_path[MAX_PATH];
+        BOOLEAN file_encrypted = FALSE;
+        const char *chunk_source = filepath;
+
+        {
+            FileCrypto_GenerateKey(encryption_key);
+#ifdef _WIN32
+            const char *home_enc = getenv("USERPROFILE");
+            if (home_enc)
+                snprintf(encrypted_path, sizeof(encrypted_path),
+                    "%s\\.wormhole\\.enc_temp_%lu", home_enc, (unsigned long)GetCurrentProcessId());
+#else
+            const char *home_enc = getenv("HOME");
+            if (home_enc)
+                snprintf(encrypted_path, sizeof(encrypted_path),
+                    "%s/.wormhole/.enc_temp_%d", home_enc, (int)getpid());
+#endif
+            if (home_enc && FileCrypto_EncryptFile(filepath, encrypted_path, encryption_key))
+            {
+                chunk_source = encrypted_path;
+                file_encrypted = TRUE;
+                LOG("[daemon] File encrypted for storage\n");
+            }
+            else
+            {
+                LOG("[daemon] Encryption failed, storing plaintext\n");
+                memset(encryption_key, 0, sizeof(encryption_key));
+            }
+        }
+
         // Single-pass: read + hash + store chunks
         uint32_t stored = 0;
-        FILE_MANIFEST *manifest = Chunker_BuildManifestAndStore(filepath, &stored);
+        FILE_MANIFEST *manifest = Chunker_BuildManifestAndStore(chunk_source, &stored);
+
+        // Clean up temp encrypted file
+        if (file_encrypted)
+            remove(encrypted_path);
         if (!manifest)
         {
             LOG_ERROR("[daemon] Failed to chunk and store: %s\n", filepath);
@@ -3638,8 +3703,12 @@ static uint32_t Daemon_HandleIpcCommand(
         ExtractFilename(filepath, &reg_filename, &reg_filename_len);
         const char *display_name = reg_filename ? reg_filename : filepath;
 
-        // Save to file registry
-        FileRegistry_Save(manifest, display_name, FILE_STATUS_REPLICATING);
+        // Save to file registry (with encryption key if encrypted)
+        if (file_encrypted)
+            FileRegistry_SaveEncrypted(manifest, display_name,
+                FILE_STATUS_REPLICATING, encryption_key);
+        else
+            FileRegistry_Save(manifest, display_name, FILE_STATUS_REPLICATING);
 
         // Serialize manifest for background work items
         size_t manifest_data_size = 0;
@@ -4262,6 +4331,33 @@ static uint32_t Daemon_HandleIpcCommand(
             return 1;
         }
 
+        // Decrypt if the file was stored encrypted
+        if (entry.encrypted)
+        {
+            char decrypt_temp[MAX_PATH];
+#ifdef _WIN32
+            snprintf(decrypt_temp, sizeof(decrypt_temp), "%s.dec_tmp", output_path);
+#else
+            snprintf(decrypt_temp, sizeof(decrypt_temp), "%s.dec_tmp", output_path);
+#endif
+            // Reassembled file is ciphertext — decrypt to temp, then replace
+            if (FileCrypto_DecryptFile(output_path, decrypt_temp, entry.encryption_key))
+            {
+                remove(output_path);
+                rename(decrypt_temp, output_path);
+                LOG("[daemon] FILE_GET: decrypted successfully\n");
+            }
+            else
+            {
+                remove(decrypt_temp);
+                LOG_ERROR("[daemon] FILE_GET: decryption failed\n");
+                remove(output_path);
+                Manifest_Destroy(manifest);
+                response_out[0] = IPC_STATUS_ERROR;
+                return 1;
+            }
+        }
+
         LOG("[daemon] FILE_GET: wrote %llu bytes to %s\n",
             (unsigned long long)bytes_written, output_path);
 
@@ -4271,6 +4367,241 @@ static uint32_t Daemon_HandleIpcCommand(
         response_out[0] = IPC_STATUS_OK;
         WriteUint64LE(response_out + 1, bytes_written);
         return 9;
+    }
+
+    //--- FILE_DELETE: delete a stored file and all its chunks ---
+    case IPC_CMD_FILE_DELETE:
+    {
+        if (payload_size < WH_HASH_SIZE)
+        {
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        const uint8_t *manifest_hash = payload;
+
+        // Load file entry and manifest
+        FILE_REG_ENTRY del_entry;
+        FILE_MANIFEST *del_manifest = NULL;
+        if (!FileRegistry_Load(manifest_hash, &del_entry, &del_manifest))
+        {
+            response_out[0] = IPC_STATUS_NOT_FOUND;
+            return 1;
+        }
+
+        LOG("[daemon] FILE_DELETE: deleting %s (%u chunks)\n",
+            del_entry.filename, del_manifest->chunk_count);
+
+        // Delete each data chunk from local store
+        uint32_t chunks_deleted = 0;
+        uint64_t bytes_freed = 0;
+        for (uint32_t i = 0; i < del_manifest->chunk_count; i++)
+        {
+            if (ChunkStore_Has(del_manifest->chunks[i].hash))
+            {
+                bytes_freed += del_manifest->chunks[i].chunk_size;
+                ChunkStore_Delete(del_manifest->chunks[i].hash);
+                chunks_deleted++;
+            }
+
+            // Remove chunk from local DHT store
+            if (g_daemon.dht_enabled)
+            {
+                WH_MUTEX_LOCK(g_daemon.dht_lock);
+                DhtStore_Remove(&g_daemon.dht_node.value_store, del_manifest->chunks[i].hash);
+                WH_MUTEX_UNLOCK(g_daemon.dht_lock);
+            }
+        }
+
+        // Delete EC parity chunks and metadata if present
+        if (Config_GetUint64(g_daemon.config, "ec_enabled", CONFIG_DEFAULT_EC_ENABLED))
+        {
+            char ec_path[MAX_PATH];
+#ifdef _WIN32
+            const char *home_del = getenv("USERPROFILE");
+            if (home_del)
+            {
+                char hex_del[65];
+                for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+                    sprintf(hex_del + hi * 2, "%02x", manifest_hash[hi]);
+                hex_del[64] = '\0';
+                snprintf(ec_path, sizeof(ec_path), "%s\\.wormhole\\ec\\%s.ec", home_del, hex_del);
+
+                // Load EC metadata to find parity chunks
+                FILE_MANIFEST *ec_manifest_del = NULL;
+                EC_GROUP *ec_group_del = ErasureCoding_LoadMetadata(ec_path, &ec_manifest_del);
+                if (ec_group_del && ec_manifest_del)
+                {
+                    // Delete parity chunks (they are beyond manifest->chunk_count in EC manifest)
+                    for (uint32_t i = del_manifest->chunk_count; i < ec_manifest_del->chunk_count; i++)
+                    {
+                        if (ChunkStore_Has(ec_manifest_del->chunks[i].hash))
+                        {
+                            bytes_freed += ec_manifest_del->chunks[i].chunk_size;
+                            ChunkStore_Delete(ec_manifest_del->chunks[i].hash);
+                            chunks_deleted++;
+                        }
+                        if (g_daemon.dht_enabled)
+                        {
+                            WH_MUTEX_LOCK(g_daemon.dht_lock);
+                            DhtStore_Remove(&g_daemon.dht_node.value_store, ec_manifest_del->chunks[i].hash);
+                            WH_MUTEX_UNLOCK(g_daemon.dht_lock);
+                        }
+                    }
+                    Manifest_Destroy(ec_manifest_del);
+                    ErasureCoding_DestroyGroup(ec_group_del);
+                }
+                remove(ec_path);
+            }
+#else
+            const char *home_del = getenv("HOME");
+            if (home_del)
+            {
+                char hex_del[65];
+                for (int hi = 0; hi < WH_HASH_SIZE; hi++)
+                    sprintf(hex_del + hi * 2, "%02x", manifest_hash[hi]);
+                hex_del[64] = '\0';
+                snprintf(ec_path, sizeof(ec_path), "%s/.wormhole/ec/%s.ec", home_del, hex_del);
+
+                FILE_MANIFEST *ec_manifest_del = NULL;
+                EC_GROUP *ec_group_del = ErasureCoding_LoadMetadata(ec_path, &ec_manifest_del);
+                if (ec_group_del && ec_manifest_del)
+                {
+                    for (uint32_t i = del_manifest->chunk_count; i < ec_manifest_del->chunk_count; i++)
+                    {
+                        if (ChunkStore_Has(ec_manifest_del->chunks[i].hash))
+                        {
+                            bytes_freed += ec_manifest_del->chunks[i].chunk_size;
+                            ChunkStore_Delete(ec_manifest_del->chunks[i].hash);
+                            chunks_deleted++;
+                        }
+                        if (g_daemon.dht_enabled)
+                        {
+                            WH_MUTEX_LOCK(g_daemon.dht_lock);
+                            DhtStore_Remove(&g_daemon.dht_node.value_store, ec_manifest_del->chunks[i].hash);
+                            WH_MUTEX_UNLOCK(g_daemon.dht_lock);
+                        }
+                    }
+                    Manifest_Destroy(ec_manifest_del);
+                    ErasureCoding_DestroyGroup(ec_group_del);
+                }
+                remove(ec_path);
+            }
+#endif
+        }
+
+        Manifest_Destroy(del_manifest);
+
+        // Delete file registry entry
+        FileRegistry_Delete(manifest_hash);
+
+        // Update daemon stats
+        WH_ATOMIC_ADD(&g_daemon.chunk_count, -(LONG)chunks_deleted);
+        if (bytes_freed > 0)
+            WH_ATOMIC_ADD64(&g_daemon.storage_used, -(LONGLONG)bytes_freed);
+
+        LOG("[daemon] FILE_DELETE: removed %u chunks, freed %llu bytes\n",
+            chunks_deleted, (unsigned long long)bytes_freed);
+
+        response_out[0] = IPC_STATUS_OK;
+        return 1;
+    }
+
+    //--- EXPORT_KEY: return encryption key for a file ---
+    case IPC_CMD_EXPORT_KEY:
+    {
+        if (payload_size < WH_HASH_SIZE)
+        {
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        FILE_REG_ENTRY ek_entry;
+        if (!FileRegistry_Load(payload, &ek_entry, NULL))
+        {
+            response_out[0] = IPC_STATUS_NOT_FOUND;
+            return 1;
+        }
+
+        if (!ek_entry.encrypted)
+        {
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        // Response: [1B status][32B encryption_key]
+        response_out[0] = IPC_STATUS_OK;
+        memcpy(response_out + 1, ek_entry.encryption_key, 32);
+        return 33;
+    }
+
+    //--- IMPORT_KEY: set encryption key for a file ---
+    case IPC_CMD_IMPORT_KEY:
+    {
+        if (payload_size < WH_HASH_SIZE + 32)
+        {
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+
+        const uint8_t *ik_hash = payload;
+        const uint8_t *ik_key = payload + WH_HASH_SIZE;
+
+        // Verify file exists
+        FILE_REG_ENTRY ik_entry;
+        FILE_MANIFEST *ik_manifest = NULL;
+        if (!FileRegistry_Load(ik_hash, &ik_entry, &ik_manifest))
+        {
+            response_out[0] = IPC_STATUS_NOT_FOUND;
+            return 1;
+        }
+
+        // Re-save with encryption key
+        BOOLEAN ik_ok = FileRegistry_SaveEncrypted(ik_manifest, ik_entry.filename,
+                                                     ik_entry.status, ik_key);
+        Manifest_Destroy(ik_manifest);
+
+        response_out[0] = ik_ok ? IPC_STATUS_OK : IPC_STATUS_ERROR;
+        return 1;
+    }
+
+    //--- PEER_LIST: enumerate known DHT peers ---
+    case IPC_CMD_PEER_LIST:
+    {
+        if (!g_daemon.dht_enabled)
+        {
+            response_out[0] = IPC_STATUS_OK;
+            WriteUint32LE(response_out + 1, 0);
+            return 5;
+        }
+
+        // Query routing table for all known nodes
+        ROUTING_NODE peers[256];
+        WH_MUTEX_LOCK(g_daemon.dht_lock);
+        uint32_t peer_count = RoutingTable_FindClosest(
+            &g_daemon.dht_node.routing_table,
+            g_daemon.dht_node.routing_table.self_id,
+            peers, 256);
+        WH_MUTEX_UNLOCK(g_daemon.dht_lock);
+
+        // Response: [1B status][4B count][per peer: 32B node_id + 1B addr_type + 16B addr + 2B port + 8B last_seen]
+        response_out[0] = IPC_STATUS_OK;
+        WriteUint32LE(response_out + 1, peer_count);
+        uint32_t pl_off = 5;
+        uint32_t per_peer_size = 32 + 1 + 16 + 2 + 8;  // 59 bytes
+
+        for (uint32_t i = 0; i < peer_count; i++)
+        {
+            if (pl_off + per_peer_size > response_capacity) break;
+
+            memcpy(response_out + pl_off, peers[i].node_id, 32); pl_off += 32;
+            response_out[pl_off] = peers[i].addr_type; pl_off += 1;
+            memcpy(response_out + pl_off, peers[i].addr, 16); pl_off += 16;
+            WriteUint16LE(response_out + pl_off, peers[i].port); pl_off += 2;
+            WriteUint64LE(response_out + pl_off, (uint64_t)peers[i].last_seen); pl_off += 8;
+        }
+
+        return pl_off;
     }
 
     //--- SHUTDOWN: clean daemon shutdown ---
@@ -4548,36 +4879,54 @@ int main(int argc, char *argv[])
 
         if (cli_bootstrap)
         {
-            // Parse "host:port" — split on last ':'
-            static char bootstrap_buf[256];
-            strncpy(bootstrap_buf, cli_bootstrap, sizeof(bootstrap_buf) - 1);
-            bootstrap_buf[sizeof(bootstrap_buf) - 1] = '\0';
-            char *colon = strrchr(bootstrap_buf, ':');
-            if (colon)
-            {
-                *colon = '\0';
-                bootstrap_host = bootstrap_buf;
-                bootstrap_port = (uint16_t)atoi(colon + 1);
-            }
-            else
-            {
-                bootstrap_host = bootstrap_buf;
-                bootstrap_port = g_daemon.dht_port;
-            }
-            LOG("[daemon] DHT bootstrap peer: %s:%u\n", bootstrap_host, bootstrap_port);
+            // CLI flag takes precedence — may be comma-separated list
+            bootstrap_host = cli_bootstrap;
+            bootstrap_port = g_daemon.dht_port;
+            LOG("[daemon] DHT bootstrap peer(s): %s\n", bootstrap_host);
         }
         else
         {
-            bootstrap_host = Config_GetString(g_daemon.config, "relay_host",
-                                                CONFIG_DEFAULT_RELAY_HOST);
-            bootstrap_port = (uint16_t)Config_GetUint64(g_daemon.config, "relay_port",
-                                                         CONFIG_DEFAULT_RELAY_PORT);
+            // Check config for multi-bootstrap list
+            const char *cfg_bootstrap = Config_GetString(g_daemon.config,
+                "dht_bootstrap_nodes", CONFIG_DEFAULT_DHT_BOOTSTRAP);
+            if (cfg_bootstrap && cfg_bootstrap[0] != '\0')
+            {
+                bootstrap_host = cfg_bootstrap;
+                bootstrap_port = g_daemon.dht_port;
+                LOG("[daemon] DHT bootstrap peer(s) from config: %s\n", bootstrap_host);
+            }
+            else
+            {
+                // Fall back to relay server as bootstrap
+                bootstrap_host = Config_GetString(g_daemon.config, "relay_host",
+                                                    CONFIG_DEFAULT_RELAY_HOST);
+                bootstrap_port = (uint16_t)Config_GetUint64(g_daemon.config, "relay_port",
+                                                             CONFIG_DEFAULT_RELAY_PORT);
+            }
         }
 
         if (DhtNode_Init(&g_daemon.dht_node, &g_daemon.keypair,
                           g_daemon.dht_port, bootstrap_host, bootstrap_port))
         {
             LOG("[daemon] DHT node initialized on port %u\n", g_daemon.dht_port);
+
+            // Load persisted DHT value store (chunk locations)
+            {
+                char dht_store_path[MAX_PATH];
+#ifdef _WIN32
+                const char *home_ds = getenv("USERPROFILE");
+                if (home_ds) snprintf(dht_store_path, sizeof(dht_store_path),
+                    "%s\\.wormhole\\dht_store.bin", home_ds);
+#else
+                const char *home_ds = getenv("HOME");
+                if (home_ds) snprintf(dht_store_path, sizeof(dht_store_path),
+                    "%s/.wormhole/dht_store.bin", home_ds);
+#endif
+                if (home_ds && DhtStore_Load(&g_daemon.dht_node.value_store, dht_store_path))
+                    LOG("[daemon] Loaded DHT value store (%u entries)\n",
+                        DhtStore_GetCount(&g_daemon.dht_node.value_store));
+            }
+
             DhtNode_Bootstrap(&g_daemon.dht_node);
         }
         else
@@ -4623,9 +4972,11 @@ int main(int argc, char *argv[])
     time_t last_dht_expire = time(NULL);
     time_t last_dht_bootstrap_retry = time(NULL);
     time_t last_replication_check = time(NULL);
+    time_t last_dht_store_save = time(NULL);
     uint32_t dht_bootstrap_retries = 0;
-#define DHT_MAX_BOOTSTRAP_RETRIES 6
+    uint32_t dht_bootstrap_backoff_sec = 5;
 #define DHT_BOOTSTRAP_RETRY_SEC   10
+#define DHT_STORE_SAVE_SEC        300  // Save DHT value store every 5 minutes
 #define REPLICATION_CHECK_SEC     60
 
     while (WH_ATOMIC_LOAD(&g_daemon.shutdown_requested) == 0)
@@ -4711,9 +5062,30 @@ int main(int argc, char *argv[])
                 last_dht_expire = now;
             }
 
-            // Retry DHT bootstrap if routing table is still empty
-            if (dht_bootstrap_retries < DHT_MAX_BOOTSTRAP_RETRIES &&
-                now - last_dht_bootstrap_retry >= DHT_BOOTSTRAP_RETRY_SEC)
+            // Periodically save DHT value store to disk
+            if (now - last_dht_store_save >= DHT_STORE_SAVE_SEC)
+            {
+                char dht_sp[MAX_PATH];
+#ifdef _WIN32
+                const char *home_sp = getenv("USERPROFILE");
+                if (home_sp) snprintf(dht_sp, sizeof(dht_sp),
+                    "%s\\.wormhole\\dht_store.bin", home_sp);
+#else
+                const char *home_sp = getenv("HOME");
+                if (home_sp) snprintf(dht_sp, sizeof(dht_sp),
+                    "%s/.wormhole/dht_store.bin", home_sp);
+#endif
+                if (home_sp)
+                {
+                    WH_MUTEX_LOCK(g_daemon.dht_lock);
+                    DhtStore_Save(&g_daemon.dht_node.value_store, dht_sp);
+                    WH_MUTEX_UNLOCK(g_daemon.dht_lock);
+                }
+                last_dht_store_save = now;
+            }
+
+            // Retry DHT bootstrap with exponential backoff (never give up)
+            if (now - last_dht_bootstrap_retry >= (time_t)dht_bootstrap_backoff_sec)
             {
                 WH_MUTEX_LOCK(g_daemon.dht_lock);
                 ROUTING_NODE rt_check[1];
@@ -4722,10 +5094,23 @@ int main(int argc, char *argv[])
                     g_daemon.dht_node.keypair->public_key, rt_check, 1);
                 if (rt_has == 0)
                 {
-                    LOG("[daemon] DHT routing table empty, retrying bootstrap (%u/%u)\n",
-                        dht_bootstrap_retries + 1, DHT_MAX_BOOTSTRAP_RETRIES);
+                    LOG("[daemon] DHT routing table empty, retrying bootstrap (backoff %us)\n",
+                        dht_bootstrap_backoff_sec);
+                    if (g_daemon.dht_node.bootstrap_count == 0) {
+                        DhtNode_ReResolveBootstrap(&g_daemon.dht_node);
+                    }
                     DhtNode_Bootstrap(&g_daemon.dht_node);
                     dht_bootstrap_retries++;
+                    // Exponential backoff: 5s → 10s → 20s → ... → 300s cap
+                    if (dht_bootstrap_backoff_sec < 300)
+                        dht_bootstrap_backoff_sec *= 2;
+                    if (dht_bootstrap_backoff_sec > 300)
+                        dht_bootstrap_backoff_sec = 300;
+                }
+                else
+                {
+                    // Reset backoff on success
+                    dht_bootstrap_backoff_sec = 5;
                 }
                 WH_MUTEX_UNLOCK(g_daemon.dht_lock);
                 last_dht_bootstrap_retry = now;
@@ -4849,7 +5234,7 @@ int main(int argc, char *argv[])
                         {
                             do {
                                 if (ec_find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-                                if (ec_attempts >= 5) break;
+                                if (ec_attempts >= 20) break;
 
                                 char ec_file[MAX_PATH];
                                 snprintf(ec_file, sizeof(ec_file), "%s\\%s", ec_dir, ec_find.cFileName);
@@ -4859,7 +5244,7 @@ int main(int argc, char *argv[])
                                 if (!ec_group) continue;
 
                                 // Check each data chunk in manifest — recover if missing
-                                for (uint32_t ci = 0; ci < ec_manifest->chunk_count && ec_attempts < 5; ci++)
+                                for (uint32_t ci = 0; ci < ec_manifest->chunk_count && ec_attempts < 20; ci++)
                                 {
                                     if (!ChunkStore_Has(ec_manifest->chunks[ci].hash))
                                     {
@@ -4895,7 +5280,7 @@ int main(int argc, char *argv[])
                             while ((ec_ent = readdir(ec_dp)) != NULL)
                             {
                                 if (ec_ent->d_name[0] == '.') continue;
-                                if (ec_attempts >= 5) break;
+                                if (ec_attempts >= 20) break;
 
                                 // Check .ec extension
                                 size_t nlen = strlen(ec_ent->d_name);
@@ -4908,7 +5293,7 @@ int main(int argc, char *argv[])
                                 EC_GROUP *ec_group = ErasureCoding_LoadMetadata(ec_file, &ec_manifest);
                                 if (!ec_group) continue;
 
-                                for (uint32_t ci = 0; ci < ec_manifest->chunk_count && ec_attempts < 5; ci++)
+                                for (uint32_t ci = 0; ci < ec_manifest->chunk_count && ec_attempts < 20; ci++)
                                 {
                                     if (!ChunkStore_Has(ec_manifest->chunks[ci].hash))
                                     {
@@ -4945,10 +5330,10 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                // Fix 6: Proof-of-storage challenge initiation
+                // Proof-of-storage challenge initiation (20 chunks, 3 peers each)
                 {
-                    uint8_t repl_hashes[5][WH_HASH_SIZE];
-                    uint32_t repl_count = Health_GetReplicatedChunks(repl_hashes, 5);
+                    uint8_t repl_hashes[20][WH_HASH_SIZE];
+                    uint32_t repl_count = Health_GetReplicatedChunks(repl_hashes, 20);
                     uint32_t proofs_sent = 0, proofs_ok = 0, proofs_fail = 0;
 
                     for (uint32_t ri = 0; ri < repl_count; ri++)
@@ -4967,7 +5352,7 @@ int main(int argc, char *argv[])
                             continue;
                         }
 
-                        for (uint32_t pi = 0; pi < peer_count_r && pi < 2; pi++)
+                        for (uint32_t pi = 0; pi < peer_count_r && pi < 3; pi++)
                         {
                             char addr_buf[INET6_ADDRSTRLEN];
                             uint16_t port_buf;
@@ -5079,9 +5464,25 @@ cleanup:
     // Stop IPC server
     IpcServer_Stop();
 
-    // Shutdown DHT
+    // Shutdown DHT (save value store before shutdown destroys it)
     if (g_daemon.dht_enabled)
     {
+        char dht_store_path[MAX_PATH];
+#ifdef _WIN32
+        const char *home_dht = getenv("USERPROFILE");
+        if (home_dht) snprintf(dht_store_path, sizeof(dht_store_path),
+            "%s\\.wormhole\\dht_store.bin", home_dht);
+#else
+        const char *home_dht = getenv("HOME");
+        if (home_dht) snprintf(dht_store_path, sizeof(dht_store_path),
+            "%s/.wormhole/dht_store.bin", home_dht);
+#endif
+        if (home_dht)
+        {
+            DhtStore_Save(&g_daemon.dht_node.value_store, dht_store_path);
+            LOG("[daemon] DHT value store saved\n");
+        }
+
         DhtNode_Shutdown(&g_daemon.dht_node);
         LOG("[daemon] DHT node shut down\n");
     }

@@ -16,18 +16,22 @@
 
 // Default configuration values
 #define CONFIG_DEFAULT_MAX_STORAGE_GB     10
-#define CONFIG_DEFAULT_REPLICATION_TARGET 3
+#define CONFIG_DEFAULT_REPLICATION_TARGET 4
 #define CONFIG_DEFAULT_RELAY_HOST         "wormholerelay.com"
 #define CONFIG_DEFAULT_RELAY_PORT         443
 
 // DHT defaults
 #define CONFIG_DEFAULT_DHT_PORT           4568
 #define CONFIG_DEFAULT_DHT_ENABLED        1
+#define CONFIG_DEFAULT_DHT_BOOTSTRAP      ""   // Comma-separated host:port list (empty = use relay)
 
 // Erasure coding defaults
 #define CONFIG_DEFAULT_EC_ENABLED         1
-#define CONFIG_DEFAULT_EC_DATA_SHARDS     4
-#define CONFIG_DEFAULT_EC_PARITY_SHARDS   2
+#define CONFIG_DEFAULT_EC_DATA_SHARDS     8
+#define CONFIG_DEFAULT_EC_PARITY_SHARDS   4
+
+// Auto-eviction defaults
+#define CONFIG_DEFAULT_AUTO_EVICT         0    // Disabled by default — keep local copies
 
 // Health and verification defaults
 #define CONFIG_DEFAULT_MIN_STORAGE_RATIO  50   // 0.50 stored as integer percent

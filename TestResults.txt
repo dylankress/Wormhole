@@ -1,0 +1,2253 @@
+Linus Test:
+
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/build$ ls -la
+total 19644
+drwxrwxrwx 1 dylan dylan     512 Feb 19 15:05 .
+drwxrwxrwx 1 dylan dylan     512 Feb 19 14:42 ..
+-rwxrwxrwx 1 dylan dylan   19200 Feb 18 23:33 blake3.o
+-rwxrwxrwx 1 dylan dylan   36212 Feb 19 15:05 blake3.obj
+-rwxrwxrwx 1 dylan dylan    3176 Feb 18 23:33 blake3_dispatch.o
+-rwxrwxrwx 1 dylan dylan   41092 Feb 19 15:05 blake3_dispatch.obj
+-rwxrwxrwx 1 dylan dylan    9080 Feb 18 23:33 blake3_portable.o
+-rwxrwxrwx 1 dylan dylan   18942 Feb 19 15:05 blake3_portable.obj
+-rwxrwxrwx 1 dylan dylan   21944 Feb 18 23:33 chunk_store.o
+-rwxrwxrwx 1 dylan dylan   64262 Feb 19 15:05 chunk_store.obj
+-rwxrwxrwx 1 dylan dylan   16640 Feb 18 23:33 chunker.o
+-rwxrwxrwx 1 dylan dylan   44551 Feb 19 15:05 chunker.obj
+-rwxrwxrwx 1 dylan dylan   11672 Feb 19 15:00 config.o
+-rwxrwxrwx 1 dylan dylan   37792 Feb 19 15:05 config.obj
+-rwxrwxrwx 1 dylan dylan    9472 Feb 19 15:00 crypto.o
+-rwxrwxrwx 1 dylan dylan   39801 Feb 19 15:05 crypto.obj
+-rwxrwxrwx 1 dylan dylan    4216 Feb 18 23:33 dht_lookup.o
+-rwxrwxrwx 1 dylan dylan   27483 Feb 19 15:05 dht_lookup.obj
+-rwxrwxrwx 1 dylan dylan   21456 Feb 19 15:05 dht_node.o
+-rwxrwxrwx 1 dylan dylan   76918 Feb 19 15:05 dht_node.obj
+-rwxrwxrwx 1 dylan dylan    7688 Feb 18 23:33 dht_store.o
+-rwxrwxrwx 1 dylan dylan   38942 Feb 19 15:05 dht_store.obj
+-rwxrwxrwx 1 dylan dylan    4688 Feb 18 23:33 discovery.o
+-rwxrwxrwx 1 dylan dylan   53573 Feb 19 15:05 discovery.obj
+-rwxrwxrwx 1 dylan dylan   11320 Feb 18 23:33 erasure.o
+-rwxrwxrwx 1 dylan dylan   42856 Feb 19 15:05 erasure.obj
+-rwxrwxrwx 1 dylan dylan    4832 Feb 19 15:00 file_crypto.o
+-rwxrwxrwx 1 dylan dylan   32495 Feb 19 15:05 file_crypto.obj
+-rwxrwxrwx 1 dylan dylan    8384 Feb 18 23:33 file_io.o
+-rwxrwxrwx 1 dylan dylan   53225 Feb 19 15:05 file_io.obj
+-rwxrwxrwx 1 dylan dylan    9392 Feb 19 15:00 file_registry.o
+-rwxrwxrwx 1 dylan dylan   44109 Feb 19 15:05 file_registry.obj
+-rwxrwxrwx 1 dylan dylan    8600 Feb 19 15:00 health.o
+-rwxrwxrwx 1 dylan dylan   36339 Feb 19 15:05 health.obj
+-rwxrwxrwx 1 dylan dylan    5576 Feb 18 23:33 incentives.o
+-rwxrwxrwx 1 dylan dylan   33060 Feb 19 15:05 incentives.obj
+-rwxrwxrwx 1 dylan dylan   16240 Feb 18 23:33 ipc.o
+-rwxrwxrwx 1 dylan dylan   43861 Feb 19 15:05 ipc.obj
+lrwxrwxrwx 1 dylan dylan      14 Feb 18 22:25 libmsquic.so -> libmsquic.so.2
+lrwxrwxrwx 1 dylan dylan      18 Feb 18 22:25 libmsquic.so.2 -> libmsquic.so.2.6.0
+-rwxrwxrwx 1 dylan dylan 6699296 Feb 18 22:25 libmsquic.so.2.6.0
+-rwxrwxrwx 1 dylan dylan  343552 Jan  6 08:52 libsodium.dll
+-rwxrwxrwx 1 dylan dylan    7976 Feb 18 23:33 manifest.o
+-rwxrwxrwx 1 dylan dylan   24883 Feb 19 15:05 manifest.obj
+-rwxrwxrwx 1 dylan dylan 2208256 Feb  9 14:14 msquic.dll
+-rwxrwxrwx 1 dylan dylan    7968 Feb 18 23:33 peer_id.o
+-rwxrwxrwx 1 dylan dylan   63595 Feb 19 15:05 peer_id.obj
+-rwxrwxrwx 1 dylan dylan    5600 Feb 18 23:33 proof.o
+-rwxrwxrwx 1 dylan dylan   37991 Feb 19 15:05 proof.obj
+-rwxrwxrwx 1 dylan dylan   16456 Feb 18 23:33 relay_client.o
+-rwxrwxrwx 1 dylan dylan   74841 Feb 19 15:05 relay_client.obj
+-rwxrwxrwx 1 dylan dylan   12528 Feb 18 23:33 relay_forwarder.o
+-rwxrwxrwx 1 dylan dylan   38740 Feb 19 15:05 relay_forwarder.obj
+-rwxrwxrwx 1 dylan dylan    7104 Feb 18 23:33 routing_table.o
+-rwxrwxrwx 1 dylan dylan   38005 Feb 19 15:05 routing_table.obj
+-rwxrwxrwx 1 dylan dylan    7344 Feb 18 23:33 rs.o
+-rwxrwxrwx 1 dylan dylan   22310 Feb 19 15:05 rs.obj
+-rwxrwxrwx 1 dylan dylan   55648 Feb 18 23:32 stream.o
+-rwxrwxrwx 1 dylan dylan   92538 Feb 19 15:05 stream.obj
+-rwxrwxrwx 1 dylan dylan    6816 Feb 18 23:33 ticket.o
+-rwxrwxrwx 1 dylan dylan   17194 Feb 19 15:05 ticket.obj
+-rwxrwxrwx 1 dylan dylan    5840 Feb 18 23:33 transfer_state.o
+-rwxrwxrwx 1 dylan dylan   34464 Feb 19 15:05 transfer_state.obj
+-rwxrwxrwx 1 dylan dylan  258048 Feb 19 15:05 vc140.pdb
+-rwxrwxrwx 1 dylan dylan  250184 Feb 19 15:05 wormhole
+-rwxrwxrwx 1 dylan dylan  345600 Feb 19 15:05 wormhole.exe
+-rwxrwxrwx 1 dylan dylan 1532236 Feb 19 15:05 wormhole.ilk
+-rwxrwxrwx 1 dylan dylan   93856 Feb 18 23:32 wormhole.o
+-rwxrwxrwx 1 dylan dylan  157072 Feb 19 15:05 wormhole.obj
+-rwxrwxrwx 1 dylan dylan 1978368 Feb 19 15:05 wormhole.pdb
+-rwxrwxrwx 1 dylan dylan  270536 Feb 19 15:05 wormholed
+-rwxrwxrwx 1 dylan dylan  365056 Feb 19 15:05 wormholed.exe
+-rwxrwxrwx 1 dylan dylan 1545564 Feb 19 15:05 wormholed.ilk
+-rwxrwxrwx 1 dylan dylan  131896 Feb 19 15:00 wormholed.o
+-rwxrwxrwx 1 dylan dylan  226805 Feb 19 15:05 wormholed.obj
+-rwxrwxrwx 1 dylan dylan 2019328 Feb 19 15:05 wormholed.pdb
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/build$
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/build$ cd test
+-bash: cd: test: No such file or directory
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/build$ cd ..
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src$ cd test
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/test$
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/test$ ./testt_linux.sh
+-bash: ./testt_linux.sh: No such file or directory
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/test$ ls -la
+total 28584
+drwxrwxrwx 1 dylan dylan     512 Feb 19 15:09 .
+drwxrwxrwx 1 dylan dylan     512 Feb 19 14:42 ..
+-rwxrwxrwx 1 dylan dylan    6253 Feb 15 14:48 greatest.h
+-rwxrwxrwx 1 dylan dylan  343552 Jan  6 08:52 libsodium.dll
+-rwxrwxrwx 1 dylan dylan   22306 Feb 19 15:09 rs.obj
+-rwxrwxrwx 1 dylan dylan    9811 Feb 19 14:34 test.bat
+-rwxrwxrwx 1 dylan dylan   16222 Feb 18 17:24 test_chunk_store.c
+-rwxrwxrwx 1 dylan dylan  140800 Feb 19 15:09 test_chunk_store.exe
+-rwxrwxrwx 1 dylan dylan 1025394 Feb 19 15:09 test_chunk_store.ilk
+-rwxrwxrwx 1 dylan dylan   91184 Feb 19 15:09 test_chunk_store.obj
+-rwxrwxrwx 1 dylan dylan 1224704 Feb 19 15:09 test_chunk_store.pdb
+-rwxrwxrwx 1 dylan dylan    7937 Feb 18 23:13 test_chunker.c
+-rwxrwxrwx 1 dylan dylan  137728 Feb 19 15:09 test_chunker.exe
+-rwxrwxrwx 1 dylan dylan 1056314 Feb 19 15:09 test_chunker.ilk
+-rwxrwxrwx 1 dylan dylan   48745 Feb 19 15:09 test_chunker.obj
+-rwxrwxrwx 1 dylan dylan 1257472 Feb 19 15:09 test_chunker.pdb
+-rwxrwxrwx 1 dylan dylan    9823 Feb 19 14:29 test_config.c
+-rwxrwxrwx 1 dylan dylan   62464 Feb 19 15:09 test_config.exe
+-rwxrwxrwx 1 dylan dylan  470338 Feb 19 15:09 test_config.ilk
+-rwxrwxrwx 1 dylan dylan   66607 Feb 19 15:09 test_config.obj
+-rwxrwxrwx 1 dylan dylan  790528 Feb 19 15:09 test_config.pdb
+-rwxrwxrwx 1 dylan dylan    8374 Feb 16 21:04 test_dht_lookup.c
+-rwxrwxrwx 1 dylan dylan    8030 Feb 16 20:58 test_dht_protocol.c
+-rwxrwxrwx 1 dylan dylan   57856 Feb 19 15:09 test_dht_protocol.exe
+-rwxrwxrwx 1 dylan dylan  478786 Feb 19 15:09 test_dht_protocol.ilk
+-rwxrwxrwx 1 dylan dylan   54374 Feb 19 15:09 test_dht_protocol.obj
+-rwxrwxrwx 1 dylan dylan  856064 Feb 19 15:09 test_dht_protocol.pdb
+-rwxrwxrwx 1 dylan dylan    7189 Feb 16 22:25 test_dht_store.c
+-rwxrwxrwx 1 dylan dylan   55808 Feb 19 15:09 test_dht_store.exe
+-rwxrwxrwx 1 dylan dylan  501442 Feb 19 15:09 test_dht_store.ilk
+-rwxrwxrwx 1 dylan dylan   53201 Feb 19 15:09 test_dht_store.obj
+-rwxrwxrwx 1 dylan dylan  798720 Feb 19 15:09 test_dht_store.pdb
+-rwxrwxrwx 1 dylan dylan   13673 Feb 18 12:24 test_e2e.bat
+-rwxrwxrwx 1 dylan dylan   22181 Feb 19 14:26 test_erasure.c
+-rwxrwxrwx 1 dylan dylan  173568 Feb 19 15:09 test_erasure.exe
+-rwxrwxrwx 1 dylan dylan 1040482 Feb 19 15:09 test_erasure.ilk
+-rwxrwxrwx 1 dylan dylan  101600 Feb 19 15:09 test_erasure.obj
+-rwxrwxrwx 1 dylan dylan 1265664 Feb 19 15:09 test_erasure.pdb
+-rwxrwxrwx 1 dylan dylan    6549 Feb 19 14:34 test_file_crypto.c
+-rwxrwxrwx 1 dylan dylan   49664 Feb 19 15:09 test_file_crypto.exe
+-rwxrwxrwx 1 dylan dylan  453938 Feb 19 15:09 test_file_crypto.ilk
+-rwxrwxrwx 1 dylan dylan   55412 Feb 19 15:09 test_file_crypto.obj
+-rwxrwxrwx 1 dylan dylan  790528 Feb 19 15:09 test_file_crypto.pdb
+-rwxrwxrwx 1 dylan dylan    8627 Feb 18 11:40 test_file_registry.c
+-rwxrwxrwx 1 dylan dylan  122368 Feb 19 15:09 test_file_registry.exe
+-rwxrwxrwx 1 dylan dylan  991722 Feb 19 15:09 test_file_registry.ilk
+-rwxrwxrwx 1 dylan dylan   60731 Feb 19 15:09 test_file_registry.obj
+-rwxrwxrwx 1 dylan dylan 1167360 Feb 19 15:09 test_file_registry.pdb
+-rwxrwxrwx 1 dylan dylan   13899 Feb 18 17:24 test_health.c
+-rwxrwxrwx 1 dylan dylan  153600 Feb 19 15:09 test_health.exe
+-rwxrwxrwx 1 dylan dylan 1044146 Feb 19 15:09 test_health.ilk
+-rwxrwxrwx 1 dylan dylan   64605 Feb 19 15:09 test_health.obj
+-rwxrwxrwx 1 dylan dylan 1273856 Feb 19 15:09 test_health.pdb
+-rwxrwxrwx 1 dylan dylan    9935 Feb 16 20:50 test_incentives.c
+-rwxrwxrwx 1 dylan dylan   58880 Feb 19 15:09 test_incentives.exe
+-rwxrwxrwx 1 dylan dylan  449890 Feb 19 15:09 test_incentives.ilk
+-rwxrwxrwx 1 dylan dylan   60470 Feb 19 15:09 test_incentives.obj
+-rwxrwxrwx 1 dylan dylan  815104 Feb 19 15:09 test_incentives.pdb
+-rwxrwxrwx 1 dylan dylan    3997 Feb 19 14:34 test_linux.sh
+-rwxrwxrwx 1 dylan dylan   15072 Feb 15 18:30 test_manifest.c
+-rwxrwxrwx 1 dylan dylan  102912 Feb 19 15:09 test_manifest.exe
+-rwxrwxrwx 1 dylan dylan  428130 Feb 19 15:09 test_manifest.ilk
+-rwxrwxrwx 1 dylan dylan   87340 Feb 19 15:09 test_manifest.obj
+-rwxrwxrwx 1 dylan dylan  847872 Feb 19 15:09 test_manifest.pdb
+-rwxrwxrwx 1 dylan dylan   15374 Feb 18 18:55 test_multi_node.bat
+-rwxrwxrwx 1 dylan dylan    8402 Feb 16 20:50 test_proof.c
+-rwxrwxrwx 1 dylan dylan   72192 Feb 19 15:09 test_proof.exe
+-rwxrwxrwx 1 dylan dylan  471562 Feb 19 15:09 test_proof.ilk
+-rwxrwxrwx 1 dylan dylan   54981 Feb 19 15:09 test_proof.obj
+-rwxrwxrwx 1 dylan dylan  897024 Feb 19 15:09 test_proof.pdb
+-rwxrwxrwx 1 dylan dylan   13291 Feb 16 20:51 test_reed_solomon.c
+-rwxrwxrwx 1 dylan dylan   65024 Feb 19 15:09 test_reed_solomon.exe
+-rwxrwxrwx 1 dylan dylan  395650 Feb 19 15:09 test_reed_solomon.ilk
+-rwxrwxrwx 1 dylan dylan   64256 Feb 19 15:09 test_reed_solomon.obj
+-rwxrwxrwx 1 dylan dylan  733184 Feb 19 15:09 test_reed_solomon.pdb
+-rwxrwxrwx 1 dylan dylan   17736 Feb 16 20:58 test_routing_table.c
+-rwxrwxrwx 1 dylan dylan   77312 Feb 19 15:09 test_routing_table.exe
+-rwxrwxrwx 1 dylan dylan  442050 Feb 19 15:09 test_routing_table.ilk
+-rwxrwxrwx 1 dylan dylan   83866 Feb 19 15:09 test_routing_table.obj
+-rwxrwxrwx 1 dylan dylan  806912 Feb 19 15:09 test_routing_table.pdb
+-rwxrwxrwx 1 dylan dylan    7496 Feb 15 18:31 test_transfer_state.c
+-rwxrwxrwx 1 dylan dylan   85504 Feb 19 15:09 test_transfer_state.exe
+-rwxrwxrwx 1 dylan dylan  937050 Feb 19 15:09 test_transfer_state.ilk
+-rwxrwxrwx 1 dylan dylan   55624 Feb 19 15:09 test_transfer_state.obj
+-rwxrwxrwx 1 dylan dylan 1085440 Feb 19 15:09 test_transfer_state.pdb
+-rwxrwxrwx 1 dylan dylan    3768 Feb 15 18:30 test_wire_format.c
+-rwxrwxrwx 1 dylan dylan   48128 Feb 19 15:09 test_wire_format.exe
+-rwxrwxrwx 1 dylan dylan  377554 Feb 19 15:09 test_wire_format.ilk
+-rwxrwxrwx 1 dylan dylan   46115 Feb 19 15:09 test_wire_format.obj
+-rwxrwxrwx 1 dylan dylan  708608 Feb 19 15:09 test_wire_format.pdb
+-rwxrwxrwx 1 dylan dylan  143360 Feb 19 15:09 vc140.pdb
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/test$
+dylan@DevRig1:/mnt/c/Dev/Wormhole/src/test$ ./test_linux.sh
+============================================
+  Wormhole Unit Tests (Linux)
+============================================
+
+--- test_wire_format ---
+
+== SUITE: uint16_suite ==
+  [PASS] test_uint16_roundtrip_zero
+  [PASS] test_uint16_roundtrip_max
+  [PASS] test_uint16_roundtrip_mid
+  [PASS] test_uint16_byte_order
+
+== SUITE: uint32_suite ==
+  [PASS] test_uint32_roundtrip_zero
+  [PASS] test_uint32_roundtrip_max
+  [PASS] test_uint32_roundtrip_mid
+  [PASS] test_uint32_byte_order
+
+== SUITE: uint64_suite ==
+  [PASS] test_uint64_roundtrip_zero
+  [PASS] test_uint64_roundtrip_max
+  [PASS] test_uint64_roundtrip_mid
+  [PASS] test_uint64_byte_order
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  12 total, 12 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_manifest ---
+../manifest.c: In function ‘SerializeBody’:
+../manifest.c:141:16: warning: unused variable ‘stripe_size’ [-Wunused-variable]
+  141 |         size_t stripe_size = 4 + 4 + (size_t)m->ec_m * (WH_HASH_SIZE + 4);
+      |                ^~~~~~~~~~~
+../manifest.c:136:24: warning: unused variable ‘stripe_data’ [-Wunused-variable]
+  136 |         const uint8_t *stripe_data = (const uint8_t *)m->ec_stripes;
+      |                        ^~~~~~~~~~~
+../manifest.c: In function ‘Manifest_Deserialize’:
+../manifest.c:500:14: warning: unused variable ‘ec_stripe_count’ [-Wunused-variable]
+  500 |     uint32_t ec_stripe_count = 0;
+      |              ^~~~~~~~~~~~~~~
+../manifest.c:499:23: warning: unused variable ‘ec_m’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |                       ^~~~
+../manifest.c:499:13: warning: unused variable ‘ec_k’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |             ^~~~
+
+== SUITE: create_suite ==
+  [PASS] test_create_basic
+  [PASS] test_create_zero_size
+  [PASS] test_create_partial_chunk
+  [PASS] test_create_exact_boundary
+  [PASS] test_create_large_file
+  [PASS] test_create_null_filename
+
+== SUITE: roundtrip_suite ==
+  [PASS] test_roundtrip_basic
+  [PASS] test_roundtrip_single_chunk
+  [PASS] test_roundtrip_zero_size
+  [PASS] test_roundtrip_long_filename
+
+== SUITE: validation_suite ==
+  [PASS] test_tampered_body_rejected
+  [PASS] test_bad_magic_rejected
+  [PASS] test_truncated_data_rejected
+  [PASS] test_magic_bytes
+
+== SUITE: multifile_suite ==
+  [PASS] test_create_multifile_basic
+  [PASS] test_multifile_chunk_ranges
+  [PASS] test_multifile_roundtrip
+  [PASS] test_multifile_total_size
+  [PASS] test_multifile_single_file
+  [PASS] test_multifile_empty_file
+
+
+=== RESULTS ===
+  Suites run: 4
+  Tests:  20 total, 20 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_chunk_store ---
+test_chunk_store.c: In function ‘cleanup_test_home’:
+test_chunk_store.c:57:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   57 |     system(cmd);
+      |     ^~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_SetReplicaLocation’:
+../chunk_store.c:402:13: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  402 |             fread(existing_peers, 32, count, fh);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_RemoveReplicaLocation’:
+../chunk_store.c:525:9: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  525 |         fread(existing_peers, 32, count, fh);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetReplicaPath.constprop’:
+../chunk_store.c:292:34: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  292 |     snprintf(path, path_len, "%s/%.2s/%s", base, hex, hex + 2);
+      |                                  ^~~~            ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../chunk_store.h:10,
+                 from ../chunk_store.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetReplicaPath.constprop’ at ../chunk_store.c:292:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 3 and 4162 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetAccessTimePath.constprop’:
+../chunk_store.c:657:33: warning: ‘/access_times.dat’ directive output may be truncated writing 17 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  657 |     snprintf(path, path_len, "%s/access_times.dat", base);
+      |                                 ^~~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘GetAccessTimePath.constprop’ at ../chunk_store.c:657:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 18 and 4113 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetChunkPath.constprop’:
+../chunk_store.c:107:34: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  107 |     snprintf(path, path_len, "%s/%.2s/%s", base, hex, hex + 2);
+      |                                  ^~~~            ~~~
+In function ‘snprintf’,
+    inlined from ‘GetChunkPath.constprop’ at ../chunk_store.c:107:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 3 and 4162 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Put’:
+../chunk_store.c:185:50: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  185 |     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
+      |                                                  ^~~~         ~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Put’ at ../chunk_store.c:185:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4099 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_SetReplicaLocation’:
+../chunk_store.c:315:50: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  315 |     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
+      |                                                  ^~~~         ~~~
+In function ‘snprintf’,
+    inlined from ‘EnsureReplicaDirs’ at ../chunk_store.c:315:5,
+    inlined from ‘ChunkStore_SetReplicaLocation’ at ../chunk_store.c:371:10:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4099 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Delete’:
+../chunk_store.c:657:33: warning: ‘/access_times.dat’ directive output may be truncated writing 17 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  657 |     snprintf(path, path_len, "%s/access_times.dat", base);
+      |                                 ^~~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘GetAccessTimePath’ at ../chunk_store.c:657:5,
+    inlined from ‘ChunkStore_Delete’ at ../chunk_store.c:610:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 18 and 4113 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Delete’:
+../chunk_store.c:616:53: warning: ‘.tmp’ directive output may be truncated writing 4 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  616 |             snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+      |                                                     ^~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Delete’ at ../chunk_store.c:616:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 5 and 4100 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_GetTotalSize’:
+../chunk_store.c:807:46: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  807 |         snprintf(subdir, sizeof(subdir), "%s/%s", base, ent->d_name);
+      |                                              ^~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_GetTotalSize’ at ../chunk_store.c:807:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_GetTotalSize’:
+../chunk_store.c:821:54: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  821 |             snprintf(filepath, sizeof(filepath), "%s/%s", subdir, sub_ent->d_name);
+      |                                                      ^~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_GetTotalSize’ at ../chunk_store.c:821:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Evict’:
+../chunk_store.c:1013:53: warning: ‘.tmp’ directive output may be truncated writing 4 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+ 1013 |             snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+      |                                                     ^~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Evict’ at ../chunk_store.c:1013:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 5 and 4100 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../proof.c: In function ‘GetProofCachePath.constprop’:
+../proof.c:79:34: warning: ‘%s’ directive output may be truncated writing up to 64 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+   79 |     snprintf(path, path_len, "%s/%s", base, hex);
+      |                                  ^~         ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../proof.h:10,
+                 from ../proof.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetProofCachePath.constprop’ at ../proof.c:79:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4161 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: chunk_store_suite ==
+  [PASS] test_init
+  [PASS] test_put_has
+  [PASS] test_put_get_roundtrip
+  [PASS] test_dedup
+  [PASS] test_has_nonexistent
+  [PASS] test_get_nonexistent
+  [PASS] test_large_chunk
+  [PASS] test_multiple_chunks
+
+== SUITE: replica_suite ==
+  [PASS] test_put_with_meta
+  [PASS] test_put_with_meta_null_peer
+  [PASS] test_replica_count_none
+  [PASS] test_set_replica_locations
+  [PASS] test_replica_dedup
+  [PASS] test_get_replica_locations
+[15:10:41.361] [chunk_store] Replica at capacity (16)
+  [PASS] test_replica_max
+  [PASS] test_remove_replica_location
+  [PASS] test_remove_replica_nonexistent_peer
+  [PASS] test_remove_last_replica
+
+== SUITE: eviction_suite ==
+  [PASS] test_total_size
+[15:10:41.368] [evict] Removed chunk e736d02a... (37 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk 41d39b03... (23 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk e4558473... (262144 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk 4d006976... (64 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk 29c04cc4... (64 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk fe969aba... (64 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk dcf398ce... (64 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk c7749c16... (64 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk 97996384... (512 bytes, 0 replicas)
+[15:10:41.369] [evict] Removed chunk 63734b18... (512 bytes, 0 replicas)
+[15:10:41.369] [evict] Evicted 10 chunks, freed 263548 bytes
+  [PASS] test_evict_frees_chunks
+[15:10:41.372] [evict] Removed chunk d29ab0a1... (256 bytes, 3 replicas)
+[15:10:41.372] [evict] Evicted 1 chunks, freed 256 bytes
+  [PASS] test_evict_prefers_replicated
+  [PASS] test_evict_zero
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  22 total, 22 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_transfer_state ---
+test_transfer_state.c: In function ‘cleanup_test_home’:
+test_transfer_state.c:56:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   56 |     system(cmd);
+      |     ^~~~~~~~~~~
+../transfer_state.c: In function ‘GetStatePath.constprop’:
+../transfer_state.c:77:34: warning: ‘%s’ directive output may be truncated writing up to 64 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+   77 |     snprintf(path, path_len, "%s/%s.state", transfers_dir, hex);
+      |                                  ^~                        ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../transfer_state.h:9,
+                 from ../transfer_state.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetStatePath.constprop’ at ../transfer_state.c:77:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 8 and 4167 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: save_load_suite ==
+[15:10:43.810] [TransferState] Deleted state file
+  [PASS] test_save_load_roundtrip
+[15:10:43.810] [TransferState] Deleted state file
+  [PASS] test_single_chunk
+[15:10:43.810] [TransferState] Deleted state file
+  [PASS] test_no_chunks_received
+[15:10:43.810] [TransferState] Deleted state file
+  [PASS] test_all_chunks_received
+[15:10:43.810] [TransferState] Deleted state file
+  [PASS] test_boundary_8
+[15:10:43.811] [TransferState] Deleted state file
+  [PASS] test_boundary_9
+[15:10:43.811] [TransferState] Deleted state file
+  [PASS] test_large_count
+
+== SUITE: error_suite ==
+  [PASS] test_load_nonexistent
+  [PASS] test_save_zero_chunks
+  [PASS] test_save_null_array
+[15:10:43.811] [TransferState] Deleted state file
+  [PASS] test_delete
+
+
+=== RESULTS ===
+  Suites run: 2
+  Tests:  11 total, 11 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_config ---
+test_config.c: In function ‘cleanup_test_home’:
+test_config.c:56:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_resul’ [-Wunused-result]
+   56 |     system(cmd);
+      |     ^~~~~~~~~~~
+test_config.c: In function ‘make_temp_path.constprop’:
+test_config.c:65:34: warning: ‘__builtin___snprintf_chk’ output may be truncated before the last format character [-Wformat-truncation=]
+   65 |     snprintf(out, out_len, "%s/%s", g_test_home, filename);
+      |                                  ^
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../config.h:9,
+                 from test_config.c:6:
+In function ‘snprintf’,
+    inlined from ‘make_temp_path.constprop’ at test_config.c:65:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output 2 or more bytes (assuming 513) into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: defaults_suite ==
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/nonexistent_config.ini, using defaults
+  [PASS] test_load_missing_file
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/nonexistent_config2.ini, using defaults
+  [PASS] test_default_count
+
+== SUITE: getset_suite ==
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/gs_test.ini, using defaults
+  [PASS] test_set_and_get_string
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/gs_test2.ini, using defaults
+  [PASS] test_set_and_get_uint64
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/gs_test3.ini, using defaults
+  [PASS] test_get_missing_key
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/gs_test4.ini, using defaults
+  [PASS] test_get_uint64_invalid
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/gs_test5.ini, using defaults
+  [PASS] test_overwrite_existing
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/gs_test6.ini, using defaults
+  [PASS] test_case_insensitive
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/gs_test7.ini, using defaults
+[15:10:47.704] [config] Config full (64 entries)
+    ASSERT: test_config.c:213: Config_Set(config, key, "value")
+  [FAIL] test_config_full
+
+== SUITE: file_roundtrip_suite ==
+[15:10:47.704] [config] No config file at /tmp/wh_test_cfg_87203/roundtrip.ini, using defaults
+[15:10:47.704] [config] Saved config to /tmp/wh_test_cfg_87203/roundtrip.ini
+[15:10:47.704] [config] Loaded config from /tmp/wh_test_cfg_87203/roundtrip.ini (16 entries)
+  [PASS] test_save_and_reload
+[15:10:47.704] [config] Loaded config from /tmp/wh_test_cfg_87203/comments.ini (16 entries)
+  [PASS] test_parse_comments
+[15:10:47.705] [config] Loaded config from /tmp/wh_test_cfg_87203/whitespace.ini (15 entries)
+  [PASS] test_parse_whitespace
+[15:10:47.705] [config] Loaded config from /tmp/wh_test_cfg_87203/emptylines.ini (16 entries)
+  [PASS] test_parse_empty_lines
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  13 total, 12 passed, 1 failed, 0 skipped
+  FAILED
+
+  TEST FAILED (exit code 1)
+
+--- test_chunker ---
+test_chunker.c: In function ‘cleanup_test_home’:
+test_chunker.c:58:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   58 |     system(cmd);
+      |     ^~~~~~~~~~~
+test_chunker.c: In function ‘make_path.constprop’:
+test_chunker.c:67:34: warning: ‘__builtin___snprintf_chk’ output may be truncated before the last format character [-Wformat-truncation=]
+   67 |     snprintf(out, out_len, "%s/%s", g_test_home, name);
+      |                                  ^
+In file included from /usr/include/stdio.h:980,
+                 from greatest.h:19,
+                 from test_chunker.c:6:
+In function ‘snprintf’,
+    inlined from ‘make_path.constprop’ at test_chunker.c:67:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output 2 or more bytes (assuming 513) into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+test_chunker.c: In function ‘test_build_manifest_nested_dir’:
+test_chunker.c:237:45: warning: ‘/subdir’ directive output may be truncated writing 7 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  237 |     snprintf(sub_path, sizeof(sub_path), "%s/subdir", dir_path);
+      |                                             ^~~~~~~
+In function ‘snprintf’,
+    inlined from ‘test_build_manifest_nested_dir’ at test_chunker.c:237:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 8 and 519 bytes into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+test_chunker.c: In function ‘test_build_manifest_nested_dir’:
+test_chunker.c:246:47: warning: ‘/nested_file.txt’ directive output may be truncated writing 16 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  246 |     snprintf(file_path, sizeof(file_path), "%s/nested_file.txt", sub_path);
+      |                                               ^~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘test_build_manifest_nested_dir’ at test_chunker.c:246:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 17 and 528 bytes into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+test_chunker.c: In function ‘test_build_manifest_from_directory’:
+test_chunker.c:196:39: warning: ‘/file_a.txt’ directive output may be truncated writing 11 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  196 |     snprintf(file1, sizeof(file1), "%s/file_a.txt", dir_path);
+      |                                       ^~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘test_build_manifest_from_directory’ at test_chunker.c:196:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 12 and 523 bytes into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+test_chunker.c: In function ‘test_build_manifest_from_directory’:
+test_chunker.c:197:39: warning: ‘/file_b.txt’ directive output may be truncated writing 11 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  197 |     snprintf(file2, sizeof(file2), "%s/file_b.txt", dir_path);
+      |                                       ^~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘test_build_manifest_from_directory’ at test_chunker.c:197:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 12 and 523 bytes into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_SetReplicaLocation’:
+../chunk_store.c:402:13: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  402 |             fread(existing_peers, 32, count, fh);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_RemoveReplicaLocation’:
+../chunk_store.c:525:9: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  525 |         fread(existing_peers, 32, count, fh);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetReplicaPath.constprop’:
+../chunk_store.c:292:34: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  292 |     snprintf(path, path_len, "%s/%.2s/%s", base, hex, hex + 2);
+      |                                  ^~~~            ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../chunk_store.h:10,
+                 from ../chunk_store.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetReplicaPath.constprop’ at ../chunk_store.c:292:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 3 and 4162 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetAccessTimePath.constprop’:
+../chunk_store.c:657:33: warning: ‘/access_times.dat’ directive output may be truncated writing 17 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  657 |     snprintf(path, path_len, "%s/access_times.dat", base);
+      |                                 ^~~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘GetAccessTimePath.constprop’ at ../chunk_store.c:657:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 18 and 4113 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetChunkPath.constprop’:
+../chunk_store.c:107:34: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  107 |     snprintf(path, path_len, "%s/%.2s/%s", base, hex, hex + 2);
+      |                                  ^~~~            ~~~
+In function ‘snprintf’,
+    inlined from ‘GetChunkPath.constprop’ at ../chunk_store.c:107:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 3 and 4162 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Put’:
+../chunk_store.c:185:50: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  185 |     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
+      |                                                  ^~~~         ~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Put’ at ../chunk_store.c:185:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4099 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_SetReplicaLocation’:
+../chunk_store.c:315:50: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  315 |     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
+      |                                                  ^~~~         ~~~
+In function ‘snprintf’,
+    inlined from ‘EnsureReplicaDirs’ at ../chunk_store.c:315:5,
+    inlined from ‘ChunkStore_SetReplicaLocation’ at ../chunk_store.c:371:10:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4099 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Delete’:
+../chunk_store.c:657:33: warning: ‘/access_times.dat’ directive output may be truncated writing 17 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  657 |     snprintf(path, path_len, "%s/access_times.dat", base);
+      |                                 ^~~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘GetAccessTimePath’ at ../chunk_store.c:657:5,
+    inlined from ‘ChunkStore_Delete’ at ../chunk_store.c:610:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 18 and 4113 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Delete’:
+../chunk_store.c:616:53: warning: ‘.tmp’ directive output may be truncated writing 4 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  616 |             snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+      |                                                     ^~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Delete’ at ../chunk_store.c:616:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 5 and 4100 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_GetTotalSize’:
+../chunk_store.c:807:46: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  807 |         snprintf(subdir, sizeof(subdir), "%s/%s", base, ent->d_name);
+      |                                              ^~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_GetTotalSize’ at ../chunk_store.c:807:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_GetTotalSize’:
+../chunk_store.c:821:54: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  821 |             snprintf(filepath, sizeof(filepath), "%s/%s", subdir, sub_ent->d_name);
+      |                                                      ^~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_GetTotalSize’ at ../chunk_store.c:821:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Evict’:
+../chunk_store.c:1013:53: warning: ‘.tmp’ directive output may be truncated writing 4 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+ 1013 |             snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+      |                                                     ^~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Evict’ at ../chunk_store.c:1013:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 5 and 4100 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../manifest.c: In function ‘SerializeBody’:
+../manifest.c:141:16: warning: unused variable ‘stripe_size’ [-Wunused-variable]
+  141 |         size_t stripe_size = 4 + 4 + (size_t)m->ec_m * (WH_HASH_SIZE + 4);
+      |                ^~~~~~~~~~~
+../manifest.c:136:24: warning: unused variable ‘stripe_data’ [-Wunused-variable]
+  136 |         const uint8_t *stripe_data = (const uint8_t *)m->ec_stripes;
+      |                        ^~~~~~~~~~~
+../manifest.c: In function ‘Manifest_Deserialize’:
+../manifest.c:500:14: warning: unused variable ‘ec_stripe_count’ [-Wunused-variable]
+  500 |     uint32_t ec_stripe_count = 0;
+      |              ^~~~~~~~~~~~~~~
+../manifest.c:499:23: warning: unused variable ‘ec_m’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |                       ^~~~
+../manifest.c:499:13: warning: unused variable ‘ec_k’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |             ^~~~
+../proof.c: In function ‘GetProofCachePath.constprop’:
+../proof.c:79:34: warning: ‘%s’ directive output may be truncated writing up to 64 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+   79 |     snprintf(path, path_len, "%s/%s", base, hex);
+      |                                  ^~         ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../proof.h:10,
+                 from ../proof.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetProofCachePath.constprop’ at ../proof.c:79:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4161 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: chunker_suite ==
+  [PASS] test_build_manifest_small_file
+  [PASS] test_build_manifest_multi_chunk
+  [PASS] test_build_manifest_deterministic
+[15:10:53.569] [Chunker] Enumerating directory: /tmp/wh_test_chk_87228/testdir
+[15:10:53.569] [Chunker] Found 2 files in directory
+[15:10:53.570] [Chunker] Directory manifest: 2 files, 2 chunks, 3000 bytes total
+  [PASS] test_build_manifest_from_directory
+[15:10:53.571] [Chunker] Enumerating directory: /tmp/wh_test_chk_87228/nested
+[15:10:53.571] [Chunker] Found 1 files in directory
+[15:10:53.571] [Chunker] Directory manifest: 1 files, 1 chunks, 500 bytes total
+  [PASS] test_build_manifest_nested_dir
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  5 total, 5 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_reed_solomon ---
+
+== SUITE: reed_solomon_suite ==
+  [PASS] test_rs_create
+  [PASS] test_rs_create_invalid
+  [PASS] test_rs_encode_decode_no_loss
+  [PASS] test_rs_decode_one_data_missing
+  [PASS] test_rs_decode_two_data_missing
+  [PASS] test_rs_decode_one_parity_missing
+  [PASS] test_rs_decode_mixed_missing
+  [PASS] test_rs_decode_too_many_missing
+  [PASS] test_rs_partial_stripe
+  [PASS] test_rs_large_shard
+  [PASS] test_gf_multiply
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  11 total, 11 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_erasure ---
+test_erasure.c: In function ‘cleanup_test_home’:
+test_erasure.c:61:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   61 |     system(cmd);
+      |     ^~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_SetReplicaLocation’:
+../chunk_store.c:402:13: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  402 |             fread(existing_peers, 32, count, fh);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_RemoveReplicaLocation’:
+../chunk_store.c:525:9: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  525 |         fread(existing_peers, 32, count, fh);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetReplicaPath.constprop’:
+../chunk_store.c:292:34: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  292 |     snprintf(path, path_len, "%s/%.2s/%s", base, hex, hex + 2);
+      |                                  ^~~~            ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../chunk_store.h:10,
+                 from ../chunk_store.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetReplicaPath.constprop’ at ../chunk_store.c:292:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 3 and 4162 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetAccessTimePath.constprop’:
+../chunk_store.c:657:33: warning: ‘/access_times.dat’ directive output may be truncated writing 17 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  657 |     snprintf(path, path_len, "%s/access_times.dat", base);
+      |                                 ^~~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘GetAccessTimePath.constprop’ at ../chunk_store.c:657:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 18 and 4113 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetChunkPath.constprop’:
+../chunk_store.c:107:34: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  107 |     snprintf(path, path_len, "%s/%.2s/%s", base, hex, hex + 2);
+      |                                  ^~~~            ~~~
+In function ‘snprintf’,
+    inlined from ‘GetChunkPath.constprop’ at ../chunk_store.c:107:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 3 and 4162 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Put’:
+../chunk_store.c:185:50: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  185 |     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
+      |                                                  ^~~~         ~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Put’ at ../chunk_store.c:185:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4099 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_SetReplicaLocation’:
+../chunk_store.c:315:50: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  315 |     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
+      |                                                  ^~~~         ~~~
+In function ‘snprintf’,
+    inlined from ‘EnsureReplicaDirs’ at ../chunk_store.c:315:5,
+    inlined from ‘ChunkStore_SetReplicaLocation’ at ../chunk_store.c:371:10:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4099 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Delete’:
+../chunk_store.c:657:33: warning: ‘/access_times.dat’ directive output may be truncated writing 17 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  657 |     snprintf(path, path_len, "%s/access_times.dat", base);
+      |                                 ^~~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘GetAccessTimePath’ at ../chunk_store.c:657:5,
+    inlined from ‘ChunkStore_Delete’ at ../chunk_store.c:610:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 18 and 4113 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Delete’:
+../chunk_store.c:616:53: warning: ‘.tmp’ directive output may be truncated writing 4 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  616 |             snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+      |                                                     ^~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Delete’ at ../chunk_store.c:616:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 5 and 4100 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_GetTotalSize’:
+../chunk_store.c:807:46: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  807 |         snprintf(subdir, sizeof(subdir), "%s/%s", base, ent->d_name);
+      |                                              ^~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_GetTotalSize’ at ../chunk_store.c:807:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_GetTotalSize’:
+../chunk_store.c:821:54: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  821 |             snprintf(filepath, sizeof(filepath), "%s/%s", subdir, sub_ent->d_name);
+      |                                                      ^~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_GetTotalSize’ at ../chunk_store.c:821:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Evict’:
+../chunk_store.c:1013:53: warning: ‘.tmp’ directive output may be truncated writing 4 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+ 1013 |             snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+      |                                                     ^~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Evict’ at ../chunk_store.c:1013:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 5 and 4100 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../manifest.c: In function ‘SerializeBody’:
+../manifest.c:141:16: warning: unused variable ‘stripe_size’ [-Wunused-variable]
+  141 |         size_t stripe_size = 4 + 4 + (size_t)m->ec_m * (WH_HASH_SIZE + 4);
+      |                ^~~~~~~~~~~
+../manifest.c:136:24: warning: unused variable ‘stripe_data’ [-Wunused-variable]
+  136 |         const uint8_t *stripe_data = (const uint8_t *)m->ec_stripes;
+      |                        ^~~~~~~~~~~
+../manifest.c: In function ‘Manifest_Deserialize’:
+../manifest.c:500:14: warning: unused variable ‘ec_stripe_count’ [-Wunused-variable]
+  500 |     uint32_t ec_stripe_count = 0;
+      |              ^~~~~~~~~~~~~~~
+../manifest.c:499:23: warning: unused variable ‘ec_m’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |                       ^~~~
+../manifest.c:499:13: warning: unused variable ‘ec_k’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |             ^~~~
+../proof.c: In function ‘GetProofCachePath.constprop’:
+../proof.c:79:34: warning: ‘%s’ directive output may be truncated writing up to 64 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+   79 |     snprintf(path, path_len, "%s/%s", base, hex);
+      |                                  ^~         ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../proof.h:10,
+                 from ../proof.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetProofCachePath.constprop’ at ../proof.c:79:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4161 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: erasure_suite ==
+  [PASS] test_ec_encode_basic
+  [PASS] test_ec_reconstruct_chunk
+  [PASS] test_ec_serialize_deserialize
+  [PASS] test_ec_partial_last_stripe
+  [PASS] test_ec_destroy_group
+  [PASS] test_ec_deserialize_invalid
+
+== SUITE: metadata_suite ==
+  [PASS] test_ec_save_load_metadata
+  [PASS] test_ec_load_metadata_bad_file
+
+== SUITE: rs84_suite ==
+  [PASS] test_ec_rs84_encode_single_stripe
+  [PASS] test_ec_rs84_encode_multi_stripe
+  [PASS] test_ec_rs84_reconstruct_one_missing
+  [PASS] test_ec_rs84_reconstruct_max_missing
+  [PASS] test_ec_rs84_partial_stripe_small_file
+  [PASS] test_ec_rs84_serialize_roundtrip
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  14 total, 14 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_routing_table ---
+
+== SUITE: bucket_index_suite ==
+  [PASS] test_bucket_index_same_id
+  [PASS] test_bucket_index_msb_differ
+  [PASS] test_bucket_index_lsb_differ
+  [PASS] test_bucket_index_middle_bit
+  [PASS] test_bucket_index_nonzero_self
+
+== SUITE: add_node_suite ==
+  [PASS] test_add_single_node
+  [PASS] test_add_self_rejected
+  [PASS] test_add_updates_existing
+  [PASS] test_fill_bucket
+  [PASS] test_bucket_full_evict_failed
+  [PASS] test_bucket_full_all_healthy
+
+== SUITE: find_closest_suite ==
+  [PASS] test_find_closest_sorted
+  [PASS] test_find_closest_across_buckets
+  [PASS] test_find_closest_max_limit
+  [PASS] test_find_closest_empty
+
+== SUITE: node_ops_suite ==
+  [PASS] test_touch_node
+  [PASS] test_mark_failed
+  [PASS] test_remove_node
+  [PASS] test_remove_nonexistent
+
+== SUITE: total_nodes_suite ==
+  [PASS] test_get_total_nodes
+
+== SUITE: save_load_suite ==
+  [PASS] test_save_load_roundtrip
+  [PASS] test_load_nonexistent_file
+  [PASS] test_load_invalid_magic
+
+
+=== RESULTS ===
+  Suites run: 6
+  Tests:  23 total, 23 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_dht_protocol ---
+
+== SUITE: struct_size_suite ==
+  [PASS] test_header_size
+  [PASS] test_node_info_size
+  [PASS] test_ping_msg_size
+  [PASS] test_pong_msg_size
+  [PASS] test_find_node_msg_size
+  [PASS] test_find_node_response_header_size
+  [PASS] test_find_node_response_mtu_safe
+  [PASS] test_store_msg_header_size
+  [PASS] test_store_response_msg_size
+  [PASS] test_header_field_offsets
+
+== SUITE: sign_verify_suite ==
+[PeerID] Generated new keypair
+  [PASS] test_sign_verify_roundtrip
+[PeerID] Generated new keypair
+  [PASS] test_tampered_message_fails_verify
+[PeerID] Generated new keypair
+[PeerID] Generated new keypair
+  [PASS] test_wrong_key_fails_verify
+[PeerID] Generated new keypair
+  [PASS] test_find_node_sign_verify
+
+== SUITE: constants_suite ==
+  [PASS] test_message_types_no_conflict
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  15 total, 15 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_dht_store ---
+
+== SUITE: dht_store_suite ==
+  [PASS] test_store_init
+  [PASS] test_store_put_get
+  [PASS] test_store_merge_locations
+  [PASS] test_store_dedup_locations
+  [PASS] test_store_not_found
+  [PASS] test_store_multiple_keys
+  [PASS] test_store_expire_old
+  [PASS] test_store_expire_keeps_fresh
+  [PASS] test_store_save_load
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  9 total, 9 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_dht_lookup ---
+
+== SUITE: dht_lookup_suite ==
+  [PASS] test_lookup_start_seeds_shortlist
+  [PASS] test_lookup_select_next_queries
+  [PASS] test_lookup_mark_queried
+  [PASS] test_lookup_handle_response_merges_nodes
+  [PASS] test_lookup_find_value_early_termination
+  [PASS] test_lookup_mark_failed
+  [PASS] test_lookup_max_iterations
+  [PASS] test_lookup_get_closest_nodes
+  [PASS] test_lookup_empty_routing_table
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  9 total, 9 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_proof ---
+test_proof.c: In function ‘cleanup_test_home’:
+test_proof.c:57:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   57 |     system(cmd);
+      |     ^~~~~~~~~~~
+test_proof.c: In function ‘test_proof_delete_cache’:
+test_proof.c:240:5: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  240 |     fread(count_buf, 1, 4, fh);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+test_proof.c:242:5: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  242 |     fread(seed, 1, WH_HASH_SIZE, fh);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+test_proof.c: In function ‘test_proof_precompute_and_lookup’:
+test_proof.c:144:37: warning: ‘/.wormhole/proofs/’ directive output may be truncated writing 18 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  144 |     snprintf(path, sizeof(path), "%s/.wormhole/proofs/", g_test_home);
+      |                                     ^~~~~~~~~~~~~~~~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../proof.h:10,
+                 from test_proof.c:6:
+In function ‘snprintf’,
+    inlined from ‘test_proof_precompute_and_lookup’ at test_proof.c:144:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 19 and 530 bytes into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../proof.c: In function ‘GetProofCachePath.constprop’:
+../proof.c:79:34: warning: ‘%s’ directive output may be truncated writing up to 64 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+   79 |     snprintf(path, path_len, "%s/%s", base, hex);
+      |                                  ^~         ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../proof.h:10,
+                 from ../proof.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetProofCachePath.constprop’ at ../proof.c:79:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4161 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: proof_suite ==
+  [PASS] test_proof_compute_deterministic
+  [PASS] test_proof_different_seed
+  [PASS] test_proof_different_data
+  [PASS] test_proof_precompute_and_lookup
+  [PASS] test_proof_lookup_miss
+  [PASS] test_proof_delete_cache
+  [PASS] test_proof_no_cache_file
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  7 total, 7 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_incentives ---
+test_incentives.c: In function ‘cleanup_test_home’:
+test_incentives.c:57:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   57 |     system(cmd);
+      |     ^~~~~~~~~~~
+test_incentives.c: In function ‘make_temp_path.constprop’:
+test_incentives.c:66:34: warning: ‘__builtin___snprintf_chk’ output may be truncated before the last format character [-Wformat-truncation=]
+   66 |     snprintf(out, out_len, "%s/%s", g_test_home, filename);
+      |                                  ^
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../incentives.h:11,
+                 from test_incentives.c:6:
+In function ‘snprintf’,
+    inlined from ‘make_temp_path.constprop’ at test_incentives.c:66:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output 2 or more bytes (assuming 513) into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: ledger_suite ==
+  [PASS] test_ledger_init
+  [PASS] test_ledger_record_balanced
+  [PASS] test_ledger_record_unbalanced_reject
+  [PASS] test_ledger_new_peer_accepted
+  [PASS] test_ledger_new_peer_rejected_over_threshold
+  [PASS] test_ledger_ratio_calculation
+  [PASS] test_ledger_ratio_no_storage_for_them
+  [PASS] test_ledger_should_accept_threshold
+  [PASS] test_ledger_multiple_peers
+  [PASS] test_ledger_cumulative_recording
+
+== SUITE: persistence_suite ==
+  [PASS] test_ledger_save_load_roundtrip
+  [PASS] test_ledger_load_bad_magic
+
+
+=== RESULTS ===
+  Suites run: 2
+  Tests:  12 total, 12 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_health ---
+test_health.c: In function ‘cleanup_test_home’:
+test_health.c:63:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_resul’ [-Wunused-result]
+   63 |     system(cmd);
+      |     ^~~~~~~~~~~
+../health.c: In function ‘ScanStoreChunks.constprop.isra’:
+../health.c:138:46: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  138 |         snprintf(subdir, sizeof(subdir), "%s/%s", base, ent->d_name);
+      |                                              ^~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../health.h:10,
+                 from ../health.c:7:
+In function ‘snprintf’,
+    inlined from ‘ScanStoreChunks.constprop.isra’ at ../health.c:138:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../health.c: In function ‘ScanStoreChunks.constprop.isra’:
+../health.c:144:43: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size 3 [-Wformat-truncation=]
+  144 |         snprintf(prefix, sizeof(prefix), "%s", ent->d_name);
+      |                                           ^~
+In function ‘snprintf’,
+    inlined from ‘ScanStoreChunks.constprop.isra’ at ../health.c:144:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin_snprintf’ output between 1 and 256 bytes into a destination of size 3
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../health.c: In function ‘ScanStoreChunks.constprop.isra’:
+../health.c:156:43: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 63 and 65 [-Wformat-truncation=]
+  156 |             snprintf(hex, sizeof(hex), "%s%s", prefix, sub_ent->d_name);
+      |                                           ^~
+In function ‘snprintf’,
+    inlined from ‘ScanStoreChunks.constprop.isra’ at ../health.c:156:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 1 and 258 bytes into a destination of size 65
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_SetReplicaLocation’:
+../chunk_store.c:402:13: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  402 |             fread(existing_peers, 32, count, fh);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_RemoveReplicaLocation’:
+../chunk_store.c:525:9: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  525 |         fread(existing_peers, 32, count, fh);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetReplicaPath.constprop’:
+../chunk_store.c:292:34: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  292 |     snprintf(path, path_len, "%s/%.2s/%s", base, hex, hex + 2);
+      |                                  ^~~~            ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../chunk_store.h:10,
+                 from ../chunk_store.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetReplicaPath.constprop’ at ../chunk_store.c:292:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 3 and 4162 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetAccessTimePath.constprop’:
+../chunk_store.c:657:33: warning: ‘/access_times.dat’ directive output may be truncated writing 17 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  657 |     snprintf(path, path_len, "%s/access_times.dat", base);
+      |                                 ^~~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘GetAccessTimePath.constprop’ at ../chunk_store.c:657:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 18 and 4113 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘GetChunkPath.constprop’:
+../chunk_store.c:107:34: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  107 |     snprintf(path, path_len, "%s/%.2s/%s", base, hex, hex + 2);
+      |                                  ^~~~            ~~~
+In function ‘snprintf’,
+    inlined from ‘GetChunkPath.constprop’ at ../chunk_store.c:107:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 3 and 4162 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Put’:
+../chunk_store.c:185:50: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  185 |     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
+      |                                                  ^~~~         ~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Put’ at ../chunk_store.c:185:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4099 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_SetReplicaLocation’:
+../chunk_store.c:315:50: warning: ‘%.2s’ directive output may be truncated writing up to 2 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  315 |     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
+      |                                                  ^~~~         ~~~
+In function ‘snprintf’,
+    inlined from ‘EnsureReplicaDirs’ at ../chunk_store.c:315:5,
+    inlined from ‘ChunkStore_SetReplicaLocation’ at ../chunk_store.c:371:10:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4099 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Delete’:
+../chunk_store.c:657:33: warning: ‘/access_times.dat’ directive output may be truncated writing 17 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  657 |     snprintf(path, path_len, "%s/access_times.dat", base);
+      |                                 ^~~~~~~~~~~~~~~~~
+In function ‘snprintf’,
+    inlined from ‘GetAccessTimePath’ at ../chunk_store.c:657:5,
+    inlined from ‘ChunkStore_Delete’ at ../chunk_store.c:610:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 18 and 4113 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Delete’:
+../chunk_store.c:616:53: warning: ‘.tmp’ directive output may be truncated writing 4 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+  616 |             snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+      |                                                     ^~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Delete’ at ../chunk_store.c:616:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 5 and 4100 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_GetTotalSize’:
+../chunk_store.c:807:46: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  807 |         snprintf(subdir, sizeof(subdir), "%s/%s", base, ent->d_name);
+      |                                              ^~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_GetTotalSize’ at ../chunk_store.c:807:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_GetTotalSize’:
+../chunk_store.c:821:54: warning: ‘%s’ directive output may be truncated writing up to 255 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+  821 |             snprintf(filepath, sizeof(filepath), "%s/%s", subdir, sub_ent->d_name);
+      |                                                      ^~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_GetTotalSize’ at ../chunk_store.c:821:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4352 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../chunk_store.c: In function ‘ChunkStore_Evict’:
+../chunk_store.c:1013:53: warning: ‘.tmp’ directive output may be truncated writing 4 bytes into a region of size between 1 and 4096 [-Wformat-truncation=]
+ 1013 |             snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", at_path);
+      |                                                     ^~~~
+In function ‘snprintf’,
+    inlined from ‘ChunkStore_Evict’ at ../chunk_store.c:1013:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 5 and 4100 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../manifest.c: In function ‘SerializeBody’:
+../manifest.c:141:16: warning: unused variable ‘stripe_size’ [-Wunused-variable]
+  141 |         size_t stripe_size = 4 + 4 + (size_t)m->ec_m * (WH_HASH_SIZE + 4);
+      |                ^~~~~~~~~~~
+../manifest.c:136:24: warning: unused variable ‘stripe_data’ [-Wunused-variable]
+  136 |         const uint8_t *stripe_data = (const uint8_t *)m->ec_stripes;
+      |                        ^~~~~~~~~~~
+../manifest.c: In function ‘Manifest_Deserialize’:
+../manifest.c:500:14: warning: unused variable ‘ec_stripe_count’ [-Wunused-variable]
+  500 |     uint32_t ec_stripe_count = 0;
+      |              ^~~~~~~~~~~~~~~
+../manifest.c:499:23: warning: unused variable ‘ec_m’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |                       ^~~~
+../manifest.c:499:13: warning: unused variable ‘ec_k’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |             ^~~~
+../proof.c: In function ‘GetProofCachePath.constprop’:
+../proof.c:79:34: warning: ‘%s’ directive output may be truncated writing up to 64 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+   79 |     snprintf(path, path_len, "%s/%s", base, hex);
+      |                                  ^~         ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../proof.h:10,
+                 from ../proof.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetProofCachePath.constprop’ at ../proof.c:79:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 2 and 4161 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: recovery_suite ==
+[15:11:22.132] [health] Attempting EC reconstruction for chunk 2...
+[15:11:22.137] [health] Chunk 2 reconstructed successfully
+  [PASS] test_health_recover_with_ec
+  [PASS] test_health_recover_already_exists
+  [PASS] test_health_recover_null_params
+[15:11:22.165] [health] Hash not found in manifest, cannot recover
+  [PASS] test_health_recover_hash_not_in_manifest
+[15:11:22.180] [health] Attempting EC reconstruction for chunk 0...
+[15:11:22.182] [health] EC reconstruction failed (insufficient local shards)
+  [PASS] test_health_recover_too_many_missing
+
+== SUITE: check_suite ==
+  [PASS] test_health_check_chunks_basic
+  [PASS] test_health_replicate_at_target
+[15:11:22.187] [health] Chunk needs 2 more replicas (have 1, target 3)
+  [PASS] test_health_replicate_needs_more
+  [PASS] test_health_get_degraded_chunks
+  [PASS] test_health_get_degraded_chunks_capped
+  [PASS] test_health_get_degraded_null_params
+  [PASS] test_health_get_replicated_chunks
+  [PASS] test_health_get_replicated_null_params
+
+
+=== RESULTS ===
+  Suites run: 2
+  Tests:  13 total, 13 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_file_registry ---
+test_file_registry.c: In function ‘cleanup_test_home’:
+test_file_registry.c:58:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   58 |     system(cmd);
+      |     ^~~~~~~~~~~
+../file_registry.c: In function ‘GetFilePath.constprop’:
+../file_registry.c:78:34: warning: ‘%s’ directive output may be truncated writing up to 64 bytes into a region of size between 0 and 4095 [-Wformat-truncation=]
+   78 |     snprintf(path, path_len, "%s/%s.file", base, hex);
+      |                                  ^~              ~~~
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../file_registry.h:10,
+                 from ../file_registry.c:7:
+In function ‘snprintf’,
+    inlined from ‘GetFilePath.constprop’ at ../file_registry.c:78:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output between 7 and 4166 bytes into a destination of size 4096
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+../manifest.c: In function ‘SerializeBody’:
+../manifest.c:141:16: warning: unused variable ‘stripe_size’ [-Wunused-variable]
+  141 |         size_t stripe_size = 4 + 4 + (size_t)m->ec_m * (WH_HASH_SIZE + 4);
+      |                ^~~~~~~~~~~
+../manifest.c:136:24: warning: unused variable ‘stripe_data’ [-Wunused-variable]
+  136 |         const uint8_t *stripe_data = (const uint8_t *)m->ec_stripes;
+      |                        ^~~~~~~~~~~
+../manifest.c: In function ‘Manifest_Deserialize’:
+../manifest.c:500:14: warning: unused variable ‘ec_stripe_count’ [-Wunused-variable]
+  500 |     uint32_t ec_stripe_count = 0;
+      |              ^~~~~~~~~~~~~~~
+../manifest.c:499:23: warning: unused variable ‘ec_m’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |                       ^~~~
+../manifest.c:499:13: warning: unused variable ‘ec_k’ [-Wunused-variable]
+  499 |     uint8_t ec_k = 0, ec_m = 0;
+      |             ^~~~
+
+== SUITE: registry_suite ==
+  [PASS] test_init
+  [PASS] test_save_and_load
+  [PASS] test_load_nonexistent
+  [PASS] test_update_status
+
+== SUITE: listing_suite ==
+  [PASS] test_list_files
+  [PASS] test_find_by_prefix
+  [PASS] test_find_by_prefix_too_short
+  [PASS] test_find_by_prefix_no_match
+
+== SUITE: roundtrip_suite ==
+  [PASS] test_save_load_with_manifest_roundtrip
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  9 total, 9 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_file_crypto ---
+test_file_crypto.c: In function ‘cleanup_test_home’:
+test_file_crypto.c:56:5: warning: ignoring return value of ‘system’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   56 |     system(cmd);
+      |     ^~~~~~~~~~~
+test_file_crypto.c: In function ‘make_path.constprop’:
+test_file_crypto.c:64:30: warning: ‘__builtin___snprintf_chk’ output may be truncated before the last format character [-Wformat-truncation=]
+   64 |     snprintf(out, len, "%s/%s", g_test_home, name);
+      |                              ^
+In file included from /usr/include/stdio.h:980,
+                 from ../../msquic/src/inc/msquic_posix.h:25,
+                 from ../../msquic/src/inc/msquic.h:36,
+                 from ../common.h:15,
+                 from ../file_crypto.h:9,
+                 from test_file_crypto.c:6:
+In function ‘snprintf’,
+    inlined from ‘make_path.constprop’ at test_file_crypto.c:64:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: note: ‘__builtin___snprintf_chk’ output 2 or more bytes (assuming 513) into a destination of size 512
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   55 |                                    __glibc_objsize (__s), __fmt,
+      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   56 |                                    __va_arg_pack ());
+      |                                    ~~~~~~~~~~~~~~~~~
+
+== SUITE: file_crypto_suite ==
+  [PASS] test_encrypt_decrypt_small
+  [PASS] test_encrypt_decrypt_large
+  [PASS] test_encrypt_decrypt_empty
+  [PASS] test_wrong_key_fails
+  [PASS] test_ciphertext_differs
+  [PASS] test_null_args
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  6 total, 6 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+============================================
+  Results: 16/17 passed, 1 failed
+============================================
+
+
+Windows Test:
+
+C:\Dev\Wormhole\src\test>test.bat
+
+--- test_wire_format ---
+test_wire_format.c
+
+== SUITE: uint16_suite ==
+  [PASS] test_uint16_roundtrip_zero
+  [PASS] test_uint16_roundtrip_max
+  [PASS] test_uint16_roundtrip_mid
+  [PASS] test_uint16_byte_order
+
+== SUITE: uint32_suite ==
+  [PASS] test_uint32_roundtrip_zero
+  [PASS] test_uint32_roundtrip_max
+  [PASS] test_uint32_roundtrip_mid
+  [PASS] test_uint32_byte_order
+
+== SUITE: uint64_suite ==
+  [PASS] test_uint64_roundtrip_zero
+  [PASS] test_uint64_roundtrip_max
+  [PASS] test_uint64_roundtrip_mid
+  [PASS] test_uint64_byte_order
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  12 total, 12 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_manifest ---
+test_manifest.c
+
+== SUITE: create_suite ==
+  [PASS] test_create_basic
+  [PASS] test_create_zero_size
+  [PASS] test_create_partial_chunk
+  [PASS] test_create_exact_boundary
+  [PASS] test_create_large_file
+  [PASS] test_create_null_filename
+
+== SUITE: roundtrip_suite ==
+  [PASS] test_roundtrip_basic
+  [PASS] test_roundtrip_single_chunk
+  [PASS] test_roundtrip_zero_size
+  [PASS] test_roundtrip_long_filename
+
+== SUITE: validation_suite ==
+  [PASS] test_tampered_body_rejected
+  [PASS] test_bad_magic_rejected
+  [PASS] test_truncated_data_rejected
+  [PASS] test_magic_bytes
+
+== SUITE: multifile_suite ==
+  [PASS] test_create_multifile_basic
+  [PASS] test_multifile_chunk_ranges
+  [PASS] test_multifile_roundtrip
+  [PASS] test_multifile_total_size
+  [PASS] test_multifile_single_file
+  [PASS] test_multifile_empty_file
+
+
+=== RESULTS ===
+  Suites run: 4
+  Tests:  20 total, 20 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_chunk_store ---
+test_chunk_store.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+
+== SUITE: chunk_store_suite ==
+  [PASS] test_init
+  [PASS] test_put_has
+  [PASS] test_put_get_roundtrip
+  [PASS] test_dedup
+  [PASS] test_has_nonexistent
+  [PASS] test_get_nonexistent
+  [PASS] test_large_chunk
+  [PASS] test_multiple_chunks
+
+== SUITE: replica_suite ==
+  [PASS] test_put_with_meta
+  [PASS] test_put_with_meta_null_peer
+  [PASS] test_replica_count_none
+  [PASS] test_set_replica_locations
+  [PASS] test_replica_dedup
+  [PASS] test_get_replica_locations
+  [PASS] test_replica_max
+  [PASS] test_remove_replica_location
+  [PASS] test_remove_replica_nonexistent_peer
+  [PASS] test_remove_last_replica
+
+== SUITE: eviction_suite ==
+  [PASS] test_total_size
+[15:09:12.956] [evict] Removed chunk e736d02a... (37 bytes, 0 replicas)
+[15:09:12.956] [evict] Removed chunk 41d39b03... (23 bytes, 0 replicas)
+[15:09:12.957] [evict] Removed chunk e4558473... (262144 bytes, 0 replicas)
+[15:09:12.957] [evict] Removed chunk 4d006976... (64 bytes, 0 replicas)
+[15:09:12.957] [evict] Removed chunk 29c04cc4... (64 bytes, 0 replicas)
+[15:09:12.958] [evict] Removed chunk fe969aba... (64 bytes, 0 replicas)
+[15:09:12.958] [evict] Removed chunk dcf398ce... (64 bytes, 0 replicas)
+[15:09:12.958] [evict] Removed chunk c7749c16... (64 bytes, 0 replicas)
+[15:09:12.958] [evict] Removed chunk 97996384... (512 bytes, 0 replicas)
+[15:09:12.958] [evict] Removed chunk 63734b18... (512 bytes, 0 replicas)
+[15:09:12.959] [evict] Evicted 10 chunks, freed 263548 bytes
+  [PASS] test_evict_frees_chunks
+[15:09:12.963] [evict] Removed chunk d29ab0a1... (256 bytes, 3 replicas)
+[15:09:12.964] [evict] Evicted 1 chunks, freed 256 bytes
+  [PASS] test_evict_prefers_replicated
+  [PASS] test_evict_zero
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  22 total, 22 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_transfer_state ---
+test_transfer_state.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+
+== SUITE: save_load_suite ==
+[15:09:14.370] [TransferState] Deleted state file
+  [PASS] test_save_load_roundtrip
+[15:09:14.372] [TransferState] Deleted state file
+  [PASS] test_single_chunk
+[15:09:14.373] [TransferState] Deleted state file
+  [PASS] test_no_chunks_received
+[15:09:14.375] [TransferState] Deleted state file
+  [PASS] test_all_chunks_received
+[15:09:14.376] [TransferState] Deleted state file
+  [PASS] test_boundary_8
+[15:09:14.377] [TransferState] Deleted state file
+  [PASS] test_boundary_9
+[15:09:14.379] [TransferState] Deleted state file
+  [PASS] test_large_count
+
+== SUITE: error_suite ==
+  [PASS] test_load_nonexistent
+  [PASS] test_save_zero_chunks
+  [PASS] test_save_null_array
+[15:09:14.381] [TransferState] Deleted state file
+  [PASS] test_delete
+
+
+=== RESULTS ===
+  Suites run: 2
+  Tests:  11 total, 11 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_config ---
+test_config.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+
+== SUITE: defaults_suite ==
+[15:09:15.749] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\nonexistent_config.ini, using defaults
+  [PASS] test_load_missing_file
+[15:09:15.749] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\nonexistent_config2.ini, using defaults
+  [PASS] test_default_count
+
+== SUITE: getset_suite ==
+[15:09:15.750] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\gs_test.ini, using defaults
+  [PASS] test_set_and_get_string
+[15:09:15.750] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\gs_test2.ini, using defaults
+  [PASS] test_set_and_get_uint64
+[15:09:15.750] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\gs_test3.ini, using defaults
+  [PASS] test_get_missing_key
+[15:09:15.750] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\gs_test4.ini, using defaults
+  [PASS] test_get_uint64_invalid
+[15:09:15.751] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\gs_test5.ini, using defaults
+  [PASS] test_overwrite_existing
+[15:09:15.751] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\gs_test6.ini, using defaults
+  [PASS] test_case_insensitive
+[15:09:15.751] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\gs_test7.ini, using defaults
+    ASSERT: test_config.c:213: Config_Set(config, key, "value")
+  [FAIL] test_config_full
+
+== SUITE: file_roundtrip_suite ==
+[15:09:15.751] [config] No config file at C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\roundtrip.ini, using defaults
+[15:09:15.752] [config] Saved config to C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\roundtrip.ini
+[15:09:15.752] [config] Loaded config from C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\roundtrip.ini (16 entries)
+  [PASS] test_save_and_reload
+[15:09:15.752] [config] Loaded config from C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\comments.ini (16 entries)
+  [PASS] test_parse_comments
+[15:09:15.753] [config] Loaded config from C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\whitespace.ini (15 entries)
+  [PASS] test_parse_whitespace
+[15:09:15.754] [config] Loaded config from C:\Users\dylan\AppData\Local\Temp\wh_test_cfg_19324\emptylines.ini (16 entries)
+  [PASS] test_parse_empty_lines
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  13 total, 12 passed, 1 failed, 0 skipped
+  FAILED
+
+
+--- test_chunker ---
+test_chunker.c
+
+== SUITE: chunker_suite ==
+  [PASS] test_build_manifest_small_file
+  [PASS] test_build_manifest_multi_chunk
+  [PASS] test_build_manifest_deterministic
+[15:09:16.842] [Chunker] Enumerating directory: C:\Users\dylan\AppData\Local\Temp\wh_test_chk_2772\testdir
+[15:09:16.843] [Chunker] Found 2 files in directory
+[15:09:16.843] [Chunker] Directory manifest: 2 files, 2 chunks, 3000 bytes total
+  [PASS] test_build_manifest_from_directory
+[15:09:16.844] [Chunker] Enumerating directory: C:\Users\dylan\AppData\Local\Temp\wh_test_chk_2772\nested
+[15:09:16.845] [Chunker] Found 1 files in directory
+[15:09:16.845] [Chunker] Directory manifest: 1 files, 1 chunks, 500 bytes total
+  [PASS] test_build_manifest_nested_dir
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  5 total, 5 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_reed_solomon ---
+test_reed_solomon.c
+rs.c
+Generating Code...
+
+== SUITE: reed_solomon_suite ==
+  [PASS] test_rs_create
+  [PASS] test_rs_create_invalid
+  [PASS] test_rs_encode_decode_no_loss
+  [PASS] test_rs_decode_one_data_missing
+  [PASS] test_rs_decode_two_data_missing
+  [PASS] test_rs_decode_one_parity_missing
+  [PASS] test_rs_decode_mixed_missing
+  [PASS] test_rs_decode_too_many_missing
+  [PASS] test_rs_partial_stripe
+  [PASS] test_rs_large_shard
+  [PASS] test_gf_multiply
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  11 total, 11 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_erasure ---
+test_erasure.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+rs.c
+Generating Code...
+
+== SUITE: erasure_suite ==
+  [PASS] test_ec_encode_basic
+  [PASS] test_ec_reconstruct_chunk
+  [PASS] test_ec_serialize_deserialize
+  [PASS] test_ec_partial_last_stripe
+  [PASS] test_ec_destroy_group
+  [PASS] test_ec_deserialize_invalid
+
+== SUITE: metadata_suite ==
+  [PASS] test_ec_save_load_metadata
+  [PASS] test_ec_load_metadata_bad_file
+
+== SUITE: rs84_suite ==
+  [PASS] test_ec_rs84_encode_single_stripe
+  [PASS] test_ec_rs84_encode_multi_stripe
+  [PASS] test_ec_rs84_reconstruct_one_missing
+  [PASS] test_ec_rs84_reconstruct_max_missing
+  [PASS] test_ec_rs84_partial_stripe_small_file
+  [PASS] test_ec_rs84_serialize_roundtrip
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  14 total, 14 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_routing_table ---
+test_routing_table.c
+
+== SUITE: bucket_index_suite ==
+  [PASS] test_bucket_index_same_id
+  [PASS] test_bucket_index_msb_differ
+  [PASS] test_bucket_index_lsb_differ
+  [PASS] test_bucket_index_middle_bit
+  [PASS] test_bucket_index_nonzero_self
+
+== SUITE: add_node_suite ==
+  [PASS] test_add_single_node
+  [PASS] test_add_self_rejected
+  [PASS] test_add_updates_existing
+  [PASS] test_fill_bucket
+  [PASS] test_bucket_full_evict_failed
+  [PASS] test_bucket_full_all_healthy
+
+== SUITE: find_closest_suite ==
+  [PASS] test_find_closest_sorted
+  [PASS] test_find_closest_across_buckets
+  [PASS] test_find_closest_max_limit
+  [PASS] test_find_closest_empty
+
+== SUITE: node_ops_suite ==
+  [PASS] test_touch_node
+  [PASS] test_mark_failed
+  [PASS] test_remove_node
+  [PASS] test_remove_nonexistent
+
+== SUITE: total_nodes_suite ==
+  [PASS] test_get_total_nodes
+
+== SUITE: save_load_suite ==
+  [PASS] test_save_load_roundtrip
+  [PASS] test_load_nonexistent_file
+  [PASS] test_load_invalid_magic
+
+
+=== RESULTS ===
+  Suites run: 6
+  Tests:  23 total, 23 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_dht_protocol ---
+test_dht_protocol.c
+
+== SUITE: struct_size_suite ==
+  [PASS] test_header_size
+  [PASS] test_node_info_size
+  [PASS] test_ping_msg_size
+  [PASS] test_pong_msg_size
+  [PASS] test_find_node_msg_size
+  [PASS] test_find_node_response_header_size
+  [PASS] test_find_node_response_mtu_safe
+  [PASS] test_store_msg_header_size
+  [PASS] test_store_response_msg_size
+  [PASS] test_header_field_offsets
+
+== SUITE: sign_verify_suite ==
+[PeerID] Generated new keypair
+  [PASS] test_sign_verify_roundtrip
+[PeerID] Generated new keypair
+  [PASS] test_tampered_message_fails_verify
+[PeerID] Generated new keypair
+[PeerID] Generated new keypair
+  [PASS] test_wrong_key_fails_verify
+[PeerID] Generated new keypair
+  [PASS] test_find_node_sign_verify
+
+== SUITE: constants_suite ==
+  [PASS] test_message_types_no_conflict
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  15 total, 15 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_dht_store ---
+test_dht_store.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+test_dht_store.c(304): warning C4100: 'argv': unreferenced parameter
+test_dht_store.c(304): warning C4100: 'argc': unreferenced parameter
+
+== SUITE: dht_store_suite ==
+  [PASS] test_store_init
+  [PASS] test_store_put_get
+  [PASS] test_store_merge_locations
+  [PASS] test_store_dedup_locations
+  [PASS] test_store_not_found
+  [PASS] test_store_multiple_keys
+  [PASS] test_store_expire_old
+  [PASS] test_store_expire_keeps_fresh
+  [PASS] test_store_save_load
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  9 total, 9 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_dht_lookup ---
+test_dht_lookup.c
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(1640): warning C4047: 'return': 'const UCHAR *' differs in levels of indirection from 'int'
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(1655): warning C4098: 'INET_SET_ADDRESS': 'void' function returning a value
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(1700): warning C4098: 'INETADDR_SETSOCKADDR': 'void' function returning a value
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(1714): warning C4098: 'INETADDR_SETANY': 'void' function returning a value
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(1726): warning C4098: 'INETADDR_SETLOOPBACK': 'void' function returning a value
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(1826): error C2440: 'return': cannot convert from 'int' to 'SCOPE_ID'
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(1851): warning C4047: 'return': 'PUCHAR' differs in levels of indirection from 'int'
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(1872): warning C4098: 'INETADDR_SET_ADDRESS': 'void' function returning a value
+  COMPILE FAILED
+
+--- test_proof ---
+test_proof.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+
+== SUITE: proof_suite ==
+  [PASS] test_proof_compute_deterministic
+  [PASS] test_proof_different_seed
+  [PASS] test_proof_different_data
+  [PASS] test_proof_precompute_and_lookup
+  [PASS] test_proof_lookup_miss
+  [PASS] test_proof_delete_cache
+  [PASS] test_proof_no_cache_file
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  7 total, 7 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_incentives ---
+test_incentives.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+'C:\Dev\Wormhole\src\test\test_incentives.exe' was blocked by your organization's Device Guard policy.
+Contact your support person for more info.
+  [SKIPPED - blocked by Device Guard]
+
+--- test_health ---
+test_health.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+rs.c
+Generating Code...
+
+== SUITE: recovery_suite ==
+[15:09:28.911] [health] Attempting EC reconstruction for chunk 2...
+[15:09:28.938] [health] Chunk 2 reconstructed successfully
+  [PASS] test_health_recover_with_ec
+  [PASS] test_health_recover_already_exists
+  [PASS] test_health_recover_null_params
+[15:09:29.159] [health] Hash not found in manifest, cannot recover
+  [PASS] test_health_recover_hash_not_in_manifest
+[15:09:29.266] [health] Attempting EC reconstruction for chunk 0...
+[15:09:29.280] [health] EC reconstruction failed (insufficient local shards)
+  [PASS] test_health_recover_too_many_missing
+
+== SUITE: check_suite ==
+  [PASS] test_health_check_chunks_basic
+  [PASS] test_health_replicate_at_target
+[15:09:29.307] [health] Chunk needs 2 more replicas (have 1, target 3)
+  [PASS] test_health_replicate_needs_more
+  [PASS] test_health_get_degraded_chunks
+  [PASS] test_health_get_degraded_chunks_capped
+  [PASS] test_health_get_degraded_null_params
+  [PASS] test_health_get_replicated_chunks
+  [PASS] test_health_get_replicated_null_params
+
+
+=== RESULTS ===
+  Suites run: 2
+  Tests:  13 total, 13 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_file_registry ---
+test_file_registry.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+
+== SUITE: registry_suite ==
+  [PASS] test_init
+  [PASS] test_save_and_load
+  [PASS] test_load_nonexistent
+  [PASS] test_update_status
+
+== SUITE: listing_suite ==
+  [PASS] test_list_files
+  [PASS] test_find_by_prefix
+  [PASS] test_find_by_prefix_too_short
+  [PASS] test_find_by_prefix_no_match
+
+== SUITE: roundtrip_suite ==
+  [PASS] test_save_load_with_manifest_roundtrip
+
+
+=== RESULTS ===
+  Suites run: 3
+  Tests:  9 total, 9 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+--- test_file_crypto ---
+test_file_crypto.c
+C:\Dev\Wormhole\src\test\greatest.h(143): warning C4005: 'ASSERT': macro redefinition
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\shared\mstcpip.h(83): note: see previous definition of 'ASSERT'
+
+== SUITE: file_crypto_suite ==
+  [PASS] test_encrypt_decrypt_small
+  [PASS] test_encrypt_decrypt_large
+  [PASS] test_encrypt_decrypt_empty
+  [PASS] test_wrong_key_fails
+  [PASS] test_ciphertext_differs
+  [PASS] test_null_args
+
+
+=== RESULTS ===
+  Suites run: 1
+  Tests:  6 total, 6 passed, 0 failed, 0 skipped
+  ALL PASSED
+
+
+=============================================
+  TEST SUMMARY: 14/17 passed, 1 skipped [Device Guard]
+=============================================
+  SOME TESTS FAILED

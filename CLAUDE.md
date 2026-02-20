@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wormhole is a decentralized P2P file storage platform written in C — a privacy-respecting alternative to Dropbox/Google Drive. Peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without centralized cloud providers. Built on QUIC (via MsQuic) with a Kademlia DHT for decentralized discovery and a UDP relay server for NAT traversal. Also supports direct peer-to-peer file transfer via ticket codes like "3-guitar-battery".
 
-**Current focus:** Phases 1–5 progressing. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(4,2)), proof-of-storage verification, and storage incentive tracking — all wired together and tested (16 unit test suites + E2E daemon tests). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
+**Current focus:** Phase 7 (Usability & Management). Phases 1-6 complete. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (17 unit test suites + E2E daemon tests). Phase 7 adds file deletion, encryption key export/import, daemon lifecycle management, and peer visibility. Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
 
-Design decisions should keep the decentralized storage trajectory in mind.
+Design decisions should keep the decentralized storage trajectory in mind. See [ROADMAP.md](ROADMAP.md) for the full development roadmap and production readiness plan.
 
 ## Build Commands
 
@@ -41,6 +41,7 @@ Output: `relay-server/build/relay-server`
 ### Dependencies
 - **MsQuic**: Git submodule at `msquic/` — init with `git submodule update --init --recursive`, then build separately
 - **libsodium**: Pre-built Windows x64 binaries in `deps/libsodium/`; on Linux install `libsodium-dev`
+- **OpenSSL**: Required on Linux for TLS cert generation and peer certificate verification; install `libssl-dev`
 - **BLAKE3**: Portable C sources in `deps/blake3/` (no SIMD assembly)
 - **Reed-Solomon**: GF(2^8) erasure coding codec in `deps/reed_solomon/` (rs.h/rs.c)
 - **EFF wordlist**: Bundled at `deps/eff_large_wordlist.txt` (7,776 words for ticket generation)
@@ -50,9 +51,14 @@ Output: `relay-server/build/relay-server`
 wormhole send <file|directory>         # Creates ticket, waits for receiver
 wormhole receive <ticket>              # Downloads to ~/Downloads (resumable)
 wormhole store <file>                  # Store file chunks via daemon
-wormhole get <hash> [-o <file>]        # Retrieve a chunk by hash
-wormhole files                         # List stored files
+wormhole get <hash> [-o <file>]        # Retrieve a stored file by ID
+wormhole delete <id>                   # Delete a stored file
+wormhole files [-v]                    # List stored files (-v for verbose)
 wormhole status                        # Show daemon status
+wormhole peers                         # List known DHT peers
+wormhole export-key <id>              # Export file encryption key (hex)
+wormhole import-key <id> <hex-key>    # Import file encryption key
+wormhole daemon start|stop|restart    # Manage daemon process
 wormhole config list                   # Show all settings
 wormhole config get <key>              # Get a config value
 wormhole config set <key> <val>        # Set a config value
@@ -67,27 +73,28 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 ### Three Components
 
 **Client** (`src/`) — Cross-platform QUIC-based file transfer app (Windows + Linux)
-- `wormhole.c` — Entry point, CLI (`send`/`receive`/`store`/`get`/`status`/`config`), MsQuic lifecycle, QUIC listener/connection setup, UDP hole-punch probes (WHPK), parallel connection racing, Ctrl+C cleanup
-- `wormholed.c` — Persistent daemon process: QUIC listener, chunk store, relay connection with auto-reconnect, peer discovery, chunk replication (3x target), DHT node bootstrap/polling, health checks, proof-of-storage challenge/response, storage ledger, named pipe IPC server
+- `wormhole.c` — Entry point, CLI (`send`/`receive`/`store`/`get`/`delete`/`files`/`status`/`peers`/`export-key`/`import-key`/`daemon`/`config`), MsQuic lifecycle, QUIC listener/connection setup, UDP hole-punch probes (WHPK), parallel connection racing, Ctrl+C cleanup
+- `wormholed.c` — Persistent daemon process: QUIC listener, chunk store, relay connection with auto-reconnect, peer discovery, chunk replication (4x target), DHT node bootstrap/polling (multi-bootstrap with exponential backoff), health checks (20-chunk sample, event-driven), proof-of-storage challenge/response, storage ledger, client-side encryption on store/retrieve, configurable auto-eviction, DHT store persistence, named pipe IPC server
 - `stream.c` — Chunk-based two-stream transfer protocol: control stream (manifest request/response, chunk request, transfer complete) and data stream (chunk frames). Progress bar with speed/ETA. Resumable transfers via `transfer_state.c`. Multi-file receive support.
 - `file_io.c` — Cross-platform file ops, 64-bit size support, Downloads folder integration
-- `crypto.c` — Self-signed TLS cert generation, Windows Certificate Store integration
+- `crypto.c` — Self-signed TLS cert generation with Ed25519 node ID embedded in CN (64 hex chars), peer certificate verification, Windows Certificate Store integration
 - `manifest.c` — File manifest serialization: v1 (single file), v2 (multi-file with per-file entries and chunk ranges), v3 (erasure coding metadata — ec_k, ec_m, stripe definitions with parity hashes)
 - `chunker.c` — Content-addressed chunking (Blake3 hashes, 256KB chunks), `Chunker_BuildManifestFromDirectory` for recursive directory transfer
 - `chunk_store.c` — Dedup chunk store (`ChunkStore_Has/Get/Put`), content-addressed by Blake3 hash. Replica metadata tracking (`ChunkStore_PutWithMeta`, `GetReplicaCount`, `SetReplicaLocation`). Storage quota enforcement with LRU eviction (`ChunkStore_Evict`) preferring highly-replicated chunks.
 - `transfer_state.c` — Resumable transfer state: saves/loads received-chunks bitfield to `~/.wormhole/transfers/<hash>.state`
-- `config.c` — Configuration management: INI-style `~/.wormhole/config` file with defaults (12 keys — see Key Configuration section)
-- `ipc.c` — IPC transport: named pipes on Windows (`\\.\pipe\wormhole`), Unix domain sockets on Linux (`~/.wormhole/wormhole.sock`). Server API for daemon, client API for CLI. Message framing: `[4B length][1B command][payload]`. Commands: STORE, GET, STATUS, SHUTDOWN, DHT_STATUS.
-- `erasure.c` — RS(4,2) erasure coding integration: stripe-based encoding (`ErasureCoding_Encode`), chunk reconstruction from parity (`ErasureCoding_ReconstructChunk`), EC_GROUP serialization for manifest v3
+- `config.c` — Configuration management: INI-style `~/.wormhole/config` file with defaults (14 keys — see Key Configuration section)
+- `ipc.c` — IPC transport: named pipes on Windows (`\\.\pipe\wormhole`), Unix domain sockets on Linux (`~/.wormhole/wormhole.sock`). Server API for daemon, client API for CLI. Message framing: `[4B length][1B command][payload]`. Commands: STORE (0x01), GET (0x02), STATUS (0x03), SHUTDOWN (0x04), DHT_STATUS (0x05), LIST_FILES (0x06), FILE_GET (0x07), FILE_DELETE (0x08), EXPORT_KEY (0x09), IMPORT_KEY (0x0A), PEER_LIST (0x0B).
+- `erasure.c` — RS(8,4) erasure coding integration: stripe-based encoding (`ErasureCoding_Encode`), chunk reconstruction from parity (`ErasureCoding_ReconstructChunk`), EC_GROUP serialization for manifest v3
 - `proof.c` — Proof-of-storage: `Proof_Compute` (Blake3(seed || chunk_data)), pre-cached proofs per chunk (`~/.wormhole/proofs/`), challenge/response verification
 - `health.c` — Chunk health monitoring: periodic DHT queries for chunk locations, proof-of-storage challenges to holders, recovery orchestration for under-replicated chunks
 - `incentives.c` — Storage ratio tracking: per-peer balance ledger (`STORAGE_LEDGER`), accept/reject storage based on reciprocity ratio (threshold 0.5), persisted to `~/.wormhole/storage_ledger.bin`
-- `file_registry.c` — File-level metadata tracking (`~/.wormhole/files/`): maps stored files to their chunks, tracks status (storing → replicating → safe → offloaded), supports lookup by hex prefix. Powers the `wormhole files` command.
+- `file_registry.c` — File-level metadata tracking (`~/.wormhole/files/`): maps stored files to their chunks, tracks status (storing → replicating → safe → offloaded), supports lookup by hex prefix, stores per-file encryption keys (v2 format), file deletion. Powers the `wormhole files` and `wormhole delete` commands.
+- `file_crypto.c` — Client-side file encryption using libsodium `crypto_secretstream` (XChaCha20-Poly1305). Streaming encrypt/decrypt with 64KB chunks. Files are encrypted before chunking so storage nodes cannot read user data.
 - `relay_forwarder.c` — Loopback UDP proxy for QUIC-over-relay fallback (when direct connections fail)
 - `dht/` — Kademlia DHT subsystem (UDP port 4568):
   - `dht_protocol.h` — Wire format: 102-byte header `[1B type][1B version][4B txn_id][32B sender_id][64B ed25519_sig]`, messages 0x20-0x27
   - `routing_table.c` — K-bucket routing table (K=20, 256 buckets), XOR distance, LRS eviction, persistence to `~/.wormhole/dht_routing_table.bin`
-  - `dht_node.c` — UDP transport, RPC dispatch (PING/PONG, FIND_NODE, FIND_VALUE, STORE), bootstrap, bucket refresh, pending RPC tracking
+  - `dht_node.c` — UDP transport, RPC dispatch (PING/PONG, FIND_NODE, FIND_VALUE, STORE), multi-bootstrap (up to 4 nodes, comma-separated config), bucket refresh, pending RPC tracking
   - `dht_store.c` — Local DHT value store: chunk hash → list of node locations (capacity 4096), 24h expiry, persistence
   - `dht_lookup.c` — Iterative Kademlia lookup (alpha=3, max 10 iterations), FIND_NODE and FIND_VALUE with shortlist convergence
 - `relay/` — Relay client subsystem:
@@ -114,7 +121,7 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 - Relay protocol: Binary packed structs, little-endian, 11 message types defined in `relay-server/relay_protocol.h`: REGISTER (0x01), REGISTERED (0x02), LOOKUP (0x03), PEER_INFO (0x04), FORWARD (0x05), KEEPALIVE (0x06), GOODBYE (0x07), CREATE_TICKET (0x08), TICKET_CREATED (0x09), FIND_PEERS (0x0A), PEERS_FOUND (0x0B). Relay also handles DHT bootstrap (PING/FIND_NODE only).
 - QUIC settings: Cubic congestion control (default), MTU 1200-1500 (PMTUD), 16MB stream / 64MB connection receive windows, 30s idle timeout, 10s keepalive
 - `MAX_ENDPOINTS 16` per peer, defined in `relay_protocol.h`, enforced client-side in `relay_client.c`
-- `REPLICATION_TARGET 3` — target copies per chunk for P2P storage durability
+- `REPLICATION_TARGET 4` — target copies per chunk for P2P storage durability
 - `MAX_FIND_PEERS 50` — cap on peer discovery responses
 
 ### Connection Flow
@@ -135,15 +142,17 @@ The relay server address is hardcoded in `src/wormhole.c`:
 Configurable settings in `~/.wormhole/config` (INI format, managed by `config.c`):
 - `relay_host`, `relay_port` — Relay server address
 - `max_storage_gb` — Storage quota (default 10)
-- `replication_target` — Chunk replication target (default 3)
+- `replication_target` — Chunk replication target (default 4)
 - `dht_enabled` — Enable DHT (default 1)
 - `dht_port` — DHT UDP port (default 4568)
+- `dht_bootstrap_nodes` — Comma-separated bootstrap host:port list (default empty = use relay)
 - `ec_enabled` — Enable erasure coding (default 1)
-- `ec_data_shards` — RS data shards per stripe (default 4)
-- `ec_parity_shards` — RS parity shards per stripe (default 2)
+- `ec_data_shards` — RS data shards per stripe (default 8)
+- `ec_parity_shards` — RS parity shards per stripe (default 4)
 - `health_check_interval_sec` — Health check period (default 1800)
 - `min_storage_ratio` — Minimum reciprocity ratio to accept storage (default 50, i.e. 0.50 stored as integer percent)
 - `proof_cache_count` — Pre-cached proofs per chunk (default 8)
+- `auto_evict_enabled` — Auto-evict local chunks after replication (default 0 = keep local copies)
 
 ## Testing
 
@@ -154,7 +163,7 @@ Configurable settings in `~/.wormhole/config` (INI format, managed by `config.c`
 cd src
 build.bat                               # Build main binaries first (generates .obj files)
 cd test
-test.bat                                # Build and run all 16 test executables
+test.bat                                # Build and run all 17 test executables
 ```
 
 **Linux:**
@@ -162,10 +171,10 @@ test.bat                                # Build and run all 16 test executables
 cd src
 make                                    # Build main binaries first
 cd test
-./test_linux.sh                         # Build and run all 16 test executables
+./test_linux.sh                         # Build and run all 17 test executables
 ```
 
-Test suite (`src/test/`), 16 executables:
+Test suite (`src/test/`), 17 executables:
 - `test_wire_format.c` — LE encoding/decoding (header-only, no link deps)
 - `test_manifest.c` — Manifest v1 create/serialize/validate + v2 multi-file (chunk ranges, roundtrip, empty file)
 - `test_chunk_store.c` — Chunk put/get/has/dedup + replica metadata (set/get/dedup/max) + LRU eviction (total size, prefers replicated)
@@ -173,7 +182,7 @@ Test suite (`src/test/`), 16 executables:
 - `test_config.c` — INI config defaults, get/set (string/uint64/case-insensitive/overflow), file roundtrip (comments, whitespace, empty lines)
 - `test_chunker.c` — File chunking (single/multi-chunk, deterministic hashing), directory chunking (multi-file, nested subdirs with '/' paths)
 - `test_reed_solomon.c` — GF(2^8) codec: encode/decode, 1-2 missing shards, partial stripes, 256KB shards
-- `test_erasure.c` — Stripe encoding, parity chunk storage, chunk reconstruction, EC metadata save/load roundtrip
+- `test_erasure.c` — Stripe encoding, parity chunk storage, chunk reconstruction, EC metadata save/load roundtrip, RS(8,4) encode/reconstruct/partial stripe tests
 - `test_routing_table.c` — XOR distance, bucket index, add/evict nodes, FindClosest, save/load, stale detection
 - `test_dht_protocol.c` — Wire format struct sizes, Ed25519 sign/verify roundtrip, tamper detection, MTU fit
 - `test_dht_store.c` — Put/get roundtrip, location merge, expiry, capacity limits, persistence
@@ -181,7 +190,8 @@ Test suite (`src/test/`), 16 executables:
 - `test_proof.c` — Proof computation determinism, wrong seed detection, pre-compute cache hit/miss
 - `test_incentives.c` — Balanced/unbalanced ledger, ratio enforcement, save/load roundtrip
 - `test_health.c` — EC-based chunk recovery, health check stats, degraded chunk detection, replication needs
-- `test_file_registry.c` — File registry save/load/update/list, hex prefix lookup
+- `test_file_registry.c` — File registry save/load/update/list/delete, hex prefix lookup
+- `test_file_crypto.c` — Encryption/decryption roundtrip (small/large/empty files), wrong key detection, ciphertext differs, null arg handling
 
 All tests use `greatest.h` (single-header test framework). Tests needing filesystem use `setup_test_home()`/`cleanup_test_home()` to redirect HOME to a temp directory.
 
@@ -228,43 +238,21 @@ Tests peer discovery, chunk replication across nodes, cross-node retrieval, and 
 
 ## Roadmap
 
-### Phase 1: Stabilize & Ship v1.0 ✅
-- Ephemeral receiver port, dead code cleanup
-- Cubic congestion control + PMTUD
-- Ctrl+C cleanup, periodic progress, error messages
-- Relay-forwarded QUIC fallback
-- Documentation
+See [ROADMAP.md](ROADMAP.md) for the full development roadmap.
 
-### Phase 2: Transfer Enhancements ✅
-- 2.1 Live progress bar with speed/ETA
-- 2.2 Resumable transfers (checkpoint + CHUNK_REQUEST)
-- 2.3 Multi-file directory transfer (manifest v2)
-- 2.4 Test framework + unit tests
+**Completed:** Phases 1-6 (core transfer, P2P storage, DHT, erasure coding, multi-platform, production readiness)
 
-### Phase 3: P2P Storage Foundation ✅
-- 3.1 Persistent daemon (wormholed) + IPC
-- 3.2 Peer discovery (FIND_PEERS relay protocol)
-- 3.3 Chunk replication (3x target)
-- 3.4 Storage quota + LRU eviction + config
+### Phase 6: Production Readiness (Complete)
+- 6A: Durability upgrade — R=4, RS(8,4) (13+ nines at 10% churn, 6x storage overhead) ✅
+- 6B: Configurable auto-eviction (local copies preserved by default, `auto_evict_enabled` config) ✅
+- 6C: DHT value store persistence (chunk locations survive restart, periodic save every 5 min) ✅
+- 6D: Multi-bootstrap resilience (up to 4 bootstrap nodes, exponential backoff 30s→300s) ✅
+- 6E: Enhanced health monitoring (20-chunk sample, 3 peers/chunk, event-driven checks) ✅
+- 6F: Client-side encryption (XChaCha20-Poly1305 via libsodium, encrypt-before-chunk, keys in file registry) ✅
+- 6G: TLS peer identity verification (Ed25519 node ID in cert CN, MITM prevention on replication) ✅
 
-### Phase 4: Decentralized Network ✅
-- 4.1 Kademlia DHT foundation (routing table, UDP transport, PING/FIND_NODE, relay bootstrap) ✅
-- 4.2 DHT storage & chunk discovery (FIND_VALUE/STORE, iterative lookup, chunk announcement) ✅
-- 4.3 Erasure coding (RS(4,2) codec, manifest v3, parity generation) ✅
-- 4.4 Verification & incentives (proof-of-storage, health checks, storage ratio tracking) ✅
-
-### Phase 4.5: Integration ✅
-- Wire erasure coding into daemon store path (`ErasureCoding_Encode` after chunking) ✅
-- Enforce storage ledger in CHUNK_STORE_REQUEST handling (`Ledger_ShouldAcceptStorage`) ✅
-- Connect DHT FIND_VALUE to health check recovery path (`Health_RecoverChunk`) ✅
-- Add `test_health.c` unit tests for health monitoring orchestration ✅
-- EC metadata save/load roundtrip unit tests ✅
-- End-to-end daemon smoke tests (`test_e2e.bat`) ✅
-
-### Phase 5: Multi-Platform (In Progress)
-- Linux client build system (Makefile) ✅
-- Linux unit tests (`test_linux.sh`, 16 test suites) ✅
-- Cross-platform IPC (Unix domain sockets on Linux) ✅
-- File registry (`wormhole files` command) ✅
-- Docker multi-node testing (5-node cluster, `docker/test_multi_node.sh`) ✅
-- Multi-node replication test (`test_multi_node.bat` for Windows) ✅
+### Phase 7: Usability & Management (Current)
+- 7A: File deletion — `wormhole delete <id>` removes chunks, EC metadata, DHT entries, registry entry ✅
+- 7B: Key export/import — `wormhole export-key <id>` / `wormhole import-key <id> <key>` for encryption key backup ✅
+- 7C: Daemon lifecycle — `wormhole daemon start|stop|restart|status` for process management ✅
+- 7D: Peer visibility — `wormhole peers` lists DHT peers, `wormhole files -v` shows verbose file info ✅

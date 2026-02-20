@@ -27,6 +27,8 @@ typedef struct {
     uint32_t    replicated_count;               // Chunks at replication target
     uint64_t    store_time;                     // Unix timestamp when stored
     FILE_STATUS status;                         // Current lifecycle status
+    uint8_t     encryption_key[32];             // Per-file encryption key (local only, never sent)
+    BOOLEAN     encrypted;                      // Whether file is encrypted
 } FILE_REG_ENTRY;
 
 // Create the ~/.wormhole/files/ directory.
@@ -41,6 +43,12 @@ BOOLEAN FileRegistry_Init(void);
 // Returns TRUE on success.
 BOOLEAN FileRegistry_Save(const FILE_MANIFEST *manifest, const char *filename,
                            FILE_STATUS status);
+
+// Save a file entry with encryption key.
+// Same as FileRegistry_Save, but also stores the 32-byte encryption key.
+BOOLEAN FileRegistry_SaveEncrypted(const FILE_MANIFEST *manifest, const char *filename,
+                                     FILE_STATUS status,
+                                     const uint8_t encryption_key[32]);
 
 // Load a file entry by its full manifest hash.
 // entry_out: filled with metadata on success
@@ -60,6 +68,11 @@ BOOLEAN FileRegistry_UpdateStatus(const uint8_t manifest_hash[WH_HASH_SIZE],
 // max_entries: capacity of entries_out
 // Returns number of entries written.
 uint32_t FileRegistry_List(FILE_REG_ENTRY *entries_out, uint32_t max_entries);
+
+// Delete a file entry by its manifest hash.
+// Removes: ~/.wormhole/files/<hex64>.file
+// Returns TRUE if deleted (or didn't exist).
+BOOLEAN FileRegistry_Delete(const uint8_t manifest_hash[WH_HASH_SIZE]);
 
 // Find a file entry by hex prefix (like git short hashes, min 8 chars).
 // entry_out: filled with metadata on success

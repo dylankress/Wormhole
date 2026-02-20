@@ -175,6 +175,38 @@ BOOLEAN DhtStore_Has(const DHT_VALUE_STORE *store, const uint8_t key[32])
     return result;
 }
 
+BOOLEAN DhtStore_Remove(DHT_VALUE_STORE *store, const uint8_t key[32])
+{
+    if (!store || !key) return FALSE;
+
+#ifdef _WIN32
+    EnterCriticalSection(&store->lock);
+#else
+    pthread_mutex_lock(&store->lock);
+#endif
+
+    int idx = FindEntry(store, key);
+    BOOLEAN found = FALSE;
+    if (idx >= 0)
+    {
+        // Swap with last entry and decrement count
+        if ((uint32_t)idx < store->count - 1)
+        {
+            store->entries[idx] = store->entries[store->count - 1];
+        }
+        memset(&store->entries[store->count - 1], 0, sizeof(DHT_VALUE_ENTRY));
+        store->count--;
+        found = TRUE;
+    }
+
+#ifdef _WIN32
+    LeaveCriticalSection(&store->lock);
+#else
+    pthread_mutex_unlock(&store->lock);
+#endif
+    return found;
+}
+
 void DhtStore_ExpireOld(DHT_VALUE_STORE *store)
 {
     if (!store) return;

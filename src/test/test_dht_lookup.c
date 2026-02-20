@@ -3,8 +3,8 @@
 // Unit tests for dht_lookup.c — Iterative Kademlia lookup.
 //
 
-#include "greatest.h"
 #include "../dht/dht_lookup.h"
+#include "greatest.h"
 #include <string.h>
 
 GREATEST_MAIN_DEFS();

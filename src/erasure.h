@@ -11,8 +11,8 @@
 #include <stdint.h>
 
 // Default erasure coding parameters
-#define EC_DEFAULT_DATA_SHARDS   4
-#define EC_DEFAULT_PARITY_SHARDS 2
+#define EC_DEFAULT_DATA_SHARDS   8
+#define EC_DEFAULT_PARITY_SHARDS 4
 
 // Maximum parity shards per stripe
 #define EC_MAX_PARITY 16
