@@ -204,7 +204,7 @@ TEST test_find_by_prefix(void)
     // Build hex prefix from manifest hash (first 8 chars = 4 bytes)
     char prefix[9];
     for (int i = 0; i < 4; i++)
-        sprintf(prefix + i * 2, "%02x", m->manifest_hash[i]);
+        snprintf(prefix + i * 2, 3, "%02x", m->manifest_hash[i]);
     prefix[8] = '\0';
 
     FILE_REG_ENTRY entry;

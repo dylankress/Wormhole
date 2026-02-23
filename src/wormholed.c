@@ -44,6 +44,7 @@
 // Daemon Configuration
 //=============================================================================
 
+#define WORMHOLE_VERSION        "0.8.0"
 #define DAEMON_DEFAULT_PORT     WORMHOLE_DEFAULT_PORT   // 4567
 #define DAEMON_RELAY_HOST       "wormholerelay.com"
 #define DAEMON_RELAY_PORT       443
@@ -1035,7 +1036,7 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
 
         const uint8_t *hash = payload;
         char hex[17];
-        for (int i = 0; i < 8; i++) sprintf(hex + i * 2, "%02x", hash[i]);
+        for (int i = 0; i < 8; i++) snprintf(hex + i * 2, 3, "%02x", hash[i]);
         hex[16] = '\0';
         LOG("[daemon] CHUNK_QUERY for %s...\n", hex);
 
@@ -1121,7 +1122,7 @@ static void Daemon_HandlePeerMessage(HQUIC stream, uint8_t msg_type,
             {
                 BOOLEAN ok = ChunkStore_SetReplicaLocation(hash, peer_id);
                 char h8[17], p8[17];
-                for (int x = 0; x < 8; x++) { sprintf(h8 + x*2, "%02x", hash[x]); sprintf(p8 + x*2, "%02x", peer_id[x]); }
+                for (int x = 0; x < 8; x++) { snprintf(h8 + x*2, 3, "%02x", hash[x]); snprintf(p8 + x*2, 3, "%02x", peer_id[x]); }
                 h8[16] = p8[16] = '\0';
                 LOG("[daemon] SetReplicaLocation(%s..., peer=%s...): %s\n", h8, p8, ok ? "OK" : "FAILED");
                 WH_MUTEX_LOCK(g_daemon.ledger_lock);
@@ -3104,7 +3105,7 @@ static void Daemon_OnPeersFound(void *context, const DISCOVERED_PEER *peers, uin
         char hex[9];
         for (int j = 0; j < 4; j++)
         {
-            sprintf(hex + j * 2, "%02x", peers[i].peer_id[j]);
+            snprintf(hex + j * 2, 3, "%02x", peers[i].peer_id[j]);
         }
         LOG("[daemon]   Peer %u: %s... (%u endpoints)\n",
             i, hex, peers[i].endpoint_count);
@@ -3449,7 +3450,7 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
                 CreateDirectoryA(ec_dir, NULL);
                 char hex[65];
                 for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-                    sprintf(hex + hi * 2, "%02x", item->ec_meta.manifest_hash[hi]);
+                    snprintf(hex + hi * 2, 3, "%02x", item->ec_meta.manifest_hash[hi]);
                 hex[64] = '\0';
                 snprintf(ec_path, sizeof(ec_path), "%s\\%s.ec", ec_dir, hex);
             }
@@ -3461,7 +3462,7 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
                 mkdir(ec_dir, 0700);
                 char hex[65];
                 for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-                    sprintf(hex + hi * 2, "%02x", item->ec_meta.manifest_hash[hi]);
+                    snprintf(hex + hi * 2, 3, "%02x", item->ec_meta.manifest_hash[hi]);
                 hex[64] = '\0';
                 snprintf(ec_path, sizeof(ec_path), "%s/%s.ec", ec_dir, hex);
             }
@@ -3500,7 +3501,7 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
                 if (i == 0)
                 {
                     char h8[17];
-                    for (int x = 0; x < 8; x++) sprintf(h8 + x*2, "%02x", manifest->chunks[i].hash[x]);
+                    for (int x = 0; x < 8; x++) snprintf(h8 + x*2, 3, "%02x", manifest->chunks[i].hash[x]);
                     h8[16] = '\0';
                     LOG("[worker] Checking replicas: first chunk=%s... count=%u\n", h8, remote_copies);
                 }
@@ -4181,7 +4182,7 @@ static uint32_t Daemon_HandleIpcCommand(
                 snprintf(ec_dir_get, sizeof(ec_dir_get), "%s\\.wormhole\\ec", home_get);
                 char hex_get[65];
                 for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-                    sprintf(hex_get + hi * 2, "%02x", manifest_hash[hi]);
+                    snprintf(hex_get + hi * 2, 3, "%02x", manifest_hash[hi]);
                 hex_get[64] = '\0';
                 snprintf(ec_path_get, sizeof(ec_path_get), "%s\\%s.ec", ec_dir_get, hex_get);
                 ec_group_get = ErasureCoding_LoadMetadata(ec_path_get, &ec_manifest_get);
@@ -4193,7 +4194,7 @@ static uint32_t Daemon_HandleIpcCommand(
                 snprintf(ec_dir_get, sizeof(ec_dir_get), "%s/.wormhole/ec", home_get);
                 char hex_get[65];
                 for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-                    sprintf(hex_get + hi * 2, "%02x", manifest_hash[hi]);
+                    snprintf(hex_get + hi * 2, 3, "%02x", manifest_hash[hi]);
                 hex_get[64] = '\0';
                 snprintf(ec_path_get, sizeof(ec_path_get), "%s/%s.ec", ec_dir_get, hex_get);
                 ec_group_get = ErasureCoding_LoadMetadata(ec_path_get, &ec_manifest_get);
@@ -4423,7 +4424,7 @@ static uint32_t Daemon_HandleIpcCommand(
             {
                 char hex_del[65];
                 for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-                    sprintf(hex_del + hi * 2, "%02x", manifest_hash[hi]);
+                    snprintf(hex_del + hi * 2, 3, "%02x", manifest_hash[hi]);
                 hex_del[64] = '\0';
                 snprintf(ec_path, sizeof(ec_path), "%s\\.wormhole\\ec\\%s.ec", home_del, hex_del);
 
@@ -4459,7 +4460,7 @@ static uint32_t Daemon_HandleIpcCommand(
             {
                 char hex_del[65];
                 for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-                    sprintf(hex_del + hi * 2, "%02x", manifest_hash[hi]);
+                    snprintf(hex_del + hi * 2, 3, "%02x", manifest_hash[hi]);
                 hex_del[64] = '\0';
                 snprintf(ec_path, sizeof(ec_path), "%s/.wormhole/ec/%s.ec", home_del, hex_del);
 
@@ -4708,6 +4709,11 @@ int main(int argc, char *argv[])
         else if (strcmp(argv[i], "--help") == 0)
         {
             Daemon_PrintUsage();
+            return 0;
+        }
+        else if (strcmp(argv[i], "--version") == 0)
+        {
+            printf("wormholed version %s\n", WORMHOLE_VERSION);
             return 0;
         }
         else

@@ -1,0 +1,15 @@
+[Unit]
+Description=Wormhole Persistent Node Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wormholed
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/wormholed.log
+StandardError=append:/var/log/wormholed.log
+
+[Install]
+WantedBy=multi-user.target

@@ -388,6 +388,121 @@ TEST test_store_lru_eviction_at_capacity(void)
     PASS();
 }
 
+TEST test_store_load_overflow_locations(void)
+{
+    // Bug: if an entry has location_count > DHT_STORE_MAX_LOCATIONS on disk,
+    // the load code must skip excess locations so subsequent entries aren't corrupted.
+    setup_test_dir();
+
+    char path[512];
+    snprintf(path, sizeof(path), "%s%coverflow_store.bin",
+             test_dir,
+#ifdef _WIN32
+             '\\'
+#else
+             '/'
+#endif
+    );
+
+    // Manually write a store file with an entry that has 20 locations (exceeds max 16),
+    // followed by a second normal entry. Verify both load correctly.
+    FILE *fh = fopen(path, "wb");
+    ASSERT(fh != NULL);
+
+    // Header: [4B magic][4B version][4B count=2]
+    uint8_t header[12];
+    header[0] = 0x44; header[1] = 0x48; header[2] = 0x56; header[3] = 0x53; // "DHVS" LE
+    header[4] = 1; header[5] = 0; header[6] = 0; header[7] = 0; // version 1
+    header[8] = 2; header[9] = 0; header[10] = 0; header[11] = 0; // count 2
+    fwrite(header, 1, 12, fh);
+
+    // Entry 1: key=0xAA..., 20 locations
+    uint8_t key1[32]; memset(key1, 0xAA, 32);
+    fwrite(key1, 1, 32, fh);
+    // stored_at (8 bytes LE)
+    uint8_t ts[8]; memset(ts, 0, 8); ts[0] = 100;
+    fwrite(ts, 1, 8, fh);
+    // last_refreshed (8 bytes LE) — set to recent time so it doesn't expire
+    uint64_t recent = (uint64_t)time(NULL);
+    for (int b = 0; b < 8; b++) ts[b] = (uint8_t)(recent >> (b * 8));
+    fwrite(ts, 1, 8, fh);
+    // location_count = 20
+    uint8_t lc[4] = {20, 0, 0, 0};
+    fwrite(lc, 1, 4, fh);
+    // 20 locations, each 51 bytes: [32B node_id][1B addr_type][16B addr][2B port]
+    for (int j = 0; j < 20; j++)
+    {
+        uint8_t loc[51];
+        memset(loc, 0, 51);
+        memset(loc, (uint8_t)(j + 1), 32); // node_id
+        loc[32] = 0x04; // addr_type IPv4
+        loc[33] = 10; loc[34] = 0; loc[35] = 0; loc[36] = (uint8_t)(j + 1); // addr
+        uint16_t port = (uint16_t)(5000 + j);
+        loc[49] = (uint8_t)(port & 0xFF);
+        loc[50] = (uint8_t)(port >> 8);
+        fwrite(loc, 1, 51, fh);
+    }
+
+    // Entry 2: key=0xBB..., 1 location (normal entry that must survive)
+    uint8_t key2[32]; memset(key2, 0xBB, 32);
+    fwrite(key2, 1, 32, fh);
+    // stored_at
+    memset(ts, 0, 8); ts[0] = 200;
+    fwrite(ts, 1, 8, fh);
+    // last_refreshed
+    for (int b = 0; b < 8; b++) ts[b] = (uint8_t)(recent >> (b * 8));
+    fwrite(ts, 1, 8, fh);
+    // location_count = 1
+    uint8_t lc2[4] = {1, 0, 0, 0};
+    fwrite(lc2, 1, 4, fh);
+    // 1 location
+    uint8_t loc2[51];
+    memset(loc2, 0, 51);
+    memset(loc2, 0x99, 32); // node_id
+    loc2[32] = 0x04;
+    loc2[33] = 192; loc2[34] = 168; loc2[35] = 1; loc2[36] = 1;
+    loc2[49] = (uint8_t)(7777 & 0xFF);
+    loc2[50] = (uint8_t)(7777 >> 8);
+    fwrite(loc2, 1, 51, fh);
+
+    fclose(fh);
+
+    // Load and verify
+    static DHT_VALUE_STORE store;
+    DhtStore_Init(&store);
+    ASSERT(DhtStore_Load(&store, path));
+
+    // Both entries should be loaded
+    ASSERT_EQ(DhtStore_GetCount(&store), 2u);
+
+    // Entry 1: capped to 16 locations
+    ASSERT(DhtStore_Has(&store, key1));
+    DHT_LOCATION out[DHT_STORE_MAX_LOCATIONS];
+    uint32_t count = DhtStore_Get(&store, key1, out, DHT_STORE_MAX_LOCATIONS);
+    ASSERT_EQ(count, (uint32_t)DHT_STORE_MAX_LOCATIONS);
+
+    // Entry 2: must be intact (not corrupted by overflow)
+    ASSERT(DhtStore_Has(&store, key2));
+    DHT_LOCATION out2[4];
+    uint32_t count2 = DhtStore_Get(&store, key2, out2, 4);
+    ASSERT_EQ(count2, 1u);
+    ASSERT_EQ(out2[0].port, 7777);
+    // Verify node_id
+    uint8_t expected_node[32];
+    memset(expected_node, 0x99, 32);
+    ASSERT_MEM_EQ(out2[0].node_id, expected_node, 32);
+
+    // Cleanup
+    remove(path);
+#ifdef _WIN32
+    _rmdir(test_dir);
+#else
+    rmdir(test_dir);
+#endif
+
+    PASS();
+}
+
 // ============================================================================
 // Test suite
 // ============================================================================
@@ -406,6 +521,7 @@ SUITE(dht_store_suite)
     RUN_TEST(test_store_remove_middle);
     RUN_TEST(test_store_save_load);
     RUN_TEST(test_store_lru_eviction_at_capacity);
+    RUN_TEST(test_store_load_overflow_locations);
 }
 
 int main(int argc, char **argv)

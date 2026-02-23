@@ -52,7 +52,7 @@ wormhole send <file|directory>         # Creates ticket, waits for receiver
 wormhole receive <ticket>              # Downloads to ~/Downloads (resumable)
 wormhole store <file>                  # Store file chunks via daemon
 wormhole get <hash> [-o <file>]        # Retrieve a stored file by ID
-wormhole delete <id>                   # Delete a stored file
+wormhole delete <id> [-f]              # Delete a stored file (-f skips prompt)
 wormhole files [-v]                    # List stored files (-v for verbose)
 wormhole status                        # Show daemon status
 wormhole peers                         # List known DHT peers
@@ -223,7 +223,7 @@ REM Windows — 3-node localhost cluster (requires relay connectivity)
 cd src\test
 test_multi_node.bat
 ```
-Tests peer discovery, chunk replication across nodes, cross-node retrieval, node failure handling, EC recovery (data + parity), security permissions, config bounds validation, and storage quota enforcement. 20 total tests covering Phases 6-7 and hardening.
+Tests peer discovery, chunk replication across nodes, cross-node retrieval, node failure handling, EC recovery (data + parity), security permissions, config bounds validation, and storage quota enforcement. 22 total tests covering Phases 6-7, hardening, and post-Phase 7 improvements.
 
 ## Deployment
 - Relay runs on a DigitalOcean droplet at `wormholerelay.com:443`

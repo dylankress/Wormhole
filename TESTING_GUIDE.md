@@ -181,7 +181,7 @@ docker compose up -d              # Start 5-node cluster
 docker compose down -v            # Tear down
 ```
 
-Tests: daemon health across 5 nodes, file store, DHT peer discovery, chunk replication to 3+ additional nodes (R=4), cross-node retrieval, node failure survival, EC recovery (data + parity chunks), security permissions, config bounds validation, and storage quota enforcement. 20 total tests covering Phase 6 (production readiness), Phase 7 (usability & management), and hardening.
+Tests: daemon health across 5 nodes, file store, DHT peer discovery, chunk replication to 3+ additional nodes (R=4), cross-node retrieval, node failure survival, EC recovery (data + parity chunks), security permissions, config bounds validation, and storage quota enforcement. 22 total tests covering Phase 6 (production readiness), Phase 7 (usability & management), hardening, and post-Phase 7 improvements.
 
 **Windows** (3-node localhost, requires relay connectivity):
 
@@ -1037,7 +1037,7 @@ Copy this table and fill in after each test run.
 |------|--------|-------|
 | Unit tests (17/17) | | |
 | E2E daemon tests | | |
-| Docker multi-node tests (20/20) | | |
+| Docker multi-node tests (22/22) | | |
 
 ### Direct File Transfer
 

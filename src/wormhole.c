@@ -33,6 +33,8 @@ HQUIC ClientConfiguration = NULL;
 #define DEFAULT_RELAY_HOST "wormholerelay.com"
 #define DEFAULT_RELAY_PORT 443
 
+#define WORMHOLE_VERSION "0.8.0"
+
 // IPC pipe name (set by --daemon flag, defaults to port-derived name)
 static char g_ipc_pipe[256] = {0};
 
@@ -134,7 +136,7 @@ static int cmd_send(const char *filepath);
 static int cmd_receive(const char *ticket);
 static int cmd_store(const char *filepath);
 static int cmd_get(int argc, char *argv[]);
-static int cmd_delete(const char *file_id);
+static int cmd_delete(const char *file_id, BOOLEAN force);
 static int cmd_export_key(const char *file_id);
 static int cmd_import_key(const char *file_id, const char *hex_key);
 static int cmd_files(int argc, char *argv[]);
@@ -1366,7 +1368,8 @@ static int cmd_send(const char* filepath)
 	
 	// Display ticket
 	Ticket_PrintForSharing(g_ticket, filename, filesize);
-	
+	printf("(ticket expires in 1 hour)\n");
+
 	LOG("\n[Send] Waiting for receiver (timeout: 30 minutes)...\n\n");
 
 	// Phase 1: Keep relay open - wait for receiver to look up ticket.
@@ -2359,7 +2362,7 @@ static int cmd_store(const char *filepath)
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
-		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Start it with: wormhole daemon start\n");
 		return 1;
 	}
 
@@ -2466,7 +2469,7 @@ static int cmd_get(int argc, char *argv[])
 	size_t id_len = strlen(file_id);
 	if (id_len < 8)
 	{
-		LOG_ERROR("Error: File ID must be at least 8 hex characters\n");
+		LOG_ERROR("Error: File ID must be at least 8 hex characters. Use 'wormhole files' to see stored file IDs.\n");
 		return 1;
 	}
 
@@ -2485,7 +2488,7 @@ static int cmd_get(int argc, char *argv[])
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
-		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Start it with: wormhole daemon start\n");
 		return 1;
 	}
 
@@ -2542,7 +2545,7 @@ static int cmd_get(int argc, char *argv[])
 		// Convert hash to hex and compare prefix
 		char hex[65];
 		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-			sprintf(hex + hi * 2, "%02x", hash[hi]);
+			snprintf(hex + hi * 2, 3, "%02x", hash[hi]);
 		hex[64] = '\0';
 
 		#ifdef _WIN32
@@ -2560,14 +2563,14 @@ static int cmd_get(int argc, char *argv[])
 
 	if (matches == 0)
 	{
-		LOG_ERROR("Error: No file found with ID prefix: %s\n", file_id);
+		LOG_ERROR("Error: No file found matching '%s'. Use 'wormhole files' to list stored files.\n", file_id);
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
 	}
 	if (matches > 1)
 	{
-		LOG_ERROR("Error: Ambiguous file ID: %s (matches %u files)\n", file_id, matches);
+		LOG_ERROR("Error: Ambiguous file ID '%s' matches %u files. Use a longer prefix.\n", file_id, matches);
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
@@ -2650,12 +2653,12 @@ static int cmd_get(int argc, char *argv[])
 	return 0;
 }
 
-static int cmd_delete(const char *file_id)
+static int cmd_delete(const char *file_id, BOOLEAN force)
 {
 	size_t id_len = strlen(file_id);
 	if (id_len < 8)
 	{
-		LOG_ERROR("Error: File ID must be at least 8 hex characters\n");
+		LOG_ERROR("Error: File ID must be at least 8 hex characters. Use 'wormhole files' to see stored file IDs.\n");
 		return 1;
 	}
 
@@ -2672,7 +2675,7 @@ static int cmd_delete(const char *file_id)
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
-		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Start it with: wormhole daemon start\n");
 		return 1;
 	}
 
@@ -2727,7 +2730,7 @@ static int cmd_delete(const char *file_id)
 
 		char hex[65];
 		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-			sprintf(hex + hi * 2, "%02x", hash[hi]);
+			snprintf(hex + hi * 2, 3, "%02x", hash[hi]);
 		hex[64] = '\0';
 
 		#ifdef _WIN32
@@ -2745,17 +2748,34 @@ static int cmd_delete(const char *file_id)
 
 	if (matches == 0)
 	{
-		LOG_ERROR("Error: No file found with ID prefix: %s\n", file_id);
+		LOG_ERROR("Error: No file found matching '%s'. Use 'wormhole files' to list stored files.\n", file_id);
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
 	}
 	if (matches > 1)
 	{
-		LOG_ERROR("Error: Ambiguous file ID: %s (matches %u files)\n", file_id, matches);
+		LOG_ERROR("Error: Ambiguous file ID '%s' matches %u files. Use a longer prefix.\n", file_id, matches);
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
+	}
+
+	// Confirm deletion
+	char size_str[32];
+	FormatSize(matched_size, size_str, sizeof(size_str));
+	if (!force)
+	{
+		printf("Delete %s (%s)? [y/N] ", matched_filename, size_str);
+		fflush(stdout);
+		char confirm[8];
+		if (!fgets(confirm, sizeof(confirm), stdin) || (confirm[0] != 'y' && confirm[0] != 'Y'))
+		{
+			printf("Cancelled.\n");
+			free(response);
+			IpcClient_Disconnect(client);
+			return 0;
+		}
 	}
 
 	// Send FILE_DELETE with the full manifest hash
@@ -2772,8 +2792,6 @@ static int cmd_delete(const char *file_id)
 		return 1;
 	}
 
-	char size_str[32];
-	FormatSize(matched_size, size_str, sizeof(size_str));
 	printf("Deleted %s (%s)\n", matched_filename, size_str);
 
 	free(response);
@@ -2786,14 +2804,14 @@ static int cmd_export_key(const char *file_id)
 	size_t id_len = strlen(file_id);
 	if (id_len < 8)
 	{
-		LOG_ERROR("Error: File ID must be at least 8 hex characters\n");
+		LOG_ERROR("Error: File ID must be at least 8 hex characters. Use 'wormhole files' to see stored file IDs.\n");
 		return 1;
 	}
 
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
-		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Start it with: wormhole daemon start\n");
 		return 1;
 	}
 
@@ -2847,7 +2865,7 @@ static int cmd_export_key(const char *file_id)
 
 		char hex[65];
 		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-			sprintf(hex + hi * 2, "%02x", hash[hi]);
+			snprintf(hex + hi * 2, 3, "%02x", hash[hi]);
 		hex[64] = '\0';
 
 		#ifdef _WIN32
@@ -2864,14 +2882,14 @@ static int cmd_export_key(const char *file_id)
 
 	if (matches == 0)
 	{
-		LOG_ERROR("Error: No file found with ID prefix: %s\n", file_id);
+		LOG_ERROR("Error: No file found matching '%s'. Use 'wormhole files' to list stored files.\n", file_id);
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
 	}
 	if (matches > 1)
 	{
-		LOG_ERROR("Error: Ambiguous file ID: %s (matches %u files)\n", file_id, matches);
+		LOG_ERROR("Error: Ambiguous file ID '%s' matches %u files. Use a longer prefix.\n", file_id, matches);
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
@@ -2918,7 +2936,7 @@ static int cmd_import_key(const char *file_id, const char *hex_key)
 	size_t id_len = strlen(file_id);
 	if (id_len < 8)
 	{
-		LOG_ERROR("Error: File ID must be at least 8 hex characters\n");
+		LOG_ERROR("Error: File ID must be at least 8 hex characters. Use 'wormhole files' to see stored file IDs.\n");
 		return 1;
 	}
 
@@ -2945,7 +2963,7 @@ static int cmd_import_key(const char *file_id, const char *hex_key)
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
-		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Start it with: wormhole daemon start\n");
 		return 1;
 	}
 
@@ -2999,7 +3017,7 @@ static int cmd_import_key(const char *file_id, const char *hex_key)
 
 		char hex[65];
 		for (int hi = 0; hi < WH_HASH_SIZE; hi++)
-			sprintf(hex + hi * 2, "%02x", hash[hi]);
+			snprintf(hex + hi * 2, 3, "%02x", hash[hi]);
 		hex[64] = '\0';
 
 		#ifdef _WIN32
@@ -3016,14 +3034,14 @@ static int cmd_import_key(const char *file_id, const char *hex_key)
 
 	if (matches == 0)
 	{
-		LOG_ERROR("Error: No file found with ID prefix: %s\n", file_id);
+		LOG_ERROR("Error: No file found matching '%s'. Use 'wormhole files' to list stored files.\n", file_id);
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
 	}
 	if (matches > 1)
 	{
-		LOG_ERROR("Error: Ambiguous file ID: %s (matches %u files)\n", file_id, matches);
+		LOG_ERROR("Error: Ambiguous file ID '%s' matches %u files. Use a longer prefix.\n", file_id, matches);
 		free(response);
 		IpcClient_Disconnect(client);
 		return 1;
@@ -3081,7 +3099,7 @@ static int cmd_files(int argc, char *argv[])
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
-		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Start it with: wormhole daemon start\n");
 		return 1;
 	}
 
@@ -3157,7 +3175,7 @@ static int cmd_files(int argc, char *argv[])
 
 		char id_str[9];
 		for (int hi = 0; hi < 4; hi++)
-			sprintf(id_str + hi * 2, "%02x", hash[hi]);
+			snprintf(id_str + hi * 2, 3, "%02x", hash[hi]);
 		id_str[8] = '\0';
 
 		char size_str[32];
@@ -3201,7 +3219,7 @@ static int cmd_status(void)
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
-		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Start it with: wormhole daemon start\n");
 		return 1;
 	}
 
@@ -3420,7 +3438,7 @@ static int cmd_peers(void)
 	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
 	if (!client)
 	{
-		LOG_ERROR("Error: Cannot connect to wormhole daemon. Is wormholed running?\n");
+		LOG_ERROR("Error: Cannot connect to wormhole daemon. Start it with: wormhole daemon start\n");
 		return 1;
 	}
 
@@ -3473,7 +3491,7 @@ static int cmd_peers(void)
 		// Format node ID (8-char hex prefix)
 		char id_str[9];
 		for (int hi = 0; hi < 4; hi++)
-			sprintf(id_str + hi * 2, "%02x", node_id[hi]);
+			snprintf(id_str + hi * 2, 3, "%02x", node_id[hi]);
 		id_str[8] = '\0';
 
 		// Format address
@@ -3600,15 +3618,35 @@ static int cmd_daemon(int argc, char *argv[])
 		if (last_slash) *(last_slash + 1) = '\0';
 		snprintf(cmd_line, sizeof(cmd_line), "%swormholed.exe", exe_path);
 
+		// Redirect stdout/stderr to log file
+		char log_path[MAX_PATH];
+		snprintf(log_path, sizeof(log_path), "%s\\.wormhole\\wormholed.log", home);
+
+		SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
+		HANDLE hLog = CreateFileA(log_path, FILE_APPEND_DATA,
+			FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+			OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
 		STARTUPINFOA si = { sizeof(si) };
+		if (hLog != INVALID_HANDLE_VALUE)
+		{
+			si.dwFlags = STARTF_USESTDHANDLES;
+			si.hStdOutput = hLog;
+			si.hStdError = hLog;
+			si.hStdInput = NULL;
+		}
+
 		PROCESS_INFORMATION pi;
-		if (!CreateProcessA(cmd_line, NULL, NULL, NULL, FALSE,
+		if (!CreateProcessA(cmd_line, NULL, NULL, NULL,
+			hLog != INVALID_HANDLE_VALUE ? TRUE : FALSE,
 			DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
 			NULL, NULL, &si, &pi))
 		{
 			LOG_ERROR("Error: Failed to start daemon\n");
+			if (hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
 			return 1;
 		}
+		if (hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
 
 		// Write PID file
 		FILE *pf = fopen(pid_path, "w");
@@ -3708,7 +3746,7 @@ static void PrintUsage(void)
 	LOG("  wormhole receive <ticket>           Receive a file using a ticket\n");
 	LOG("  wormhole store <file>               Store file via daemon\n");
 	LOG("  wormhole get <id> [-o <file>]       Retrieve a stored file by ID\n");
-	LOG("  wormhole delete <id>                Delete a stored file\n");
+	LOG("  wormhole delete <id> [-f]           Delete a stored file\n");
 	LOG("  wormhole files [-v]                 List stored files\n");
 	LOG("  wormhole status                     Show daemon status\n");
 	LOG("  wormhole peers                      List known peers\n");
@@ -3718,7 +3756,8 @@ static void PrintUsage(void)
 	LOG("  wormhole config list                Show all settings\n");
 	LOG("  wormhole config get <key>           Get a config value\n");
 	LOG("  wormhole config set <key> <val>     Set a config value\n");
-	LOG("  wormhole --help                     Show this help message\n\n");
+	LOG("  wormhole --help                     Show this help message\n");
+	LOG("  wormhole --version                  Show version\n\n");
 	LOG("Global options:\n");
 	LOG("  --daemon <port>   Connect to daemon on specified port (default: %u)\n\n", WORMHOLE_DEFAULT_PORT);
 	LOG("Examples:\n");
@@ -3755,6 +3794,12 @@ int main(int argc, char *argv[])
 	{
 		PrintUsage();
 		return 1;
+	}
+
+	if (strcmp(argv[1], "--version") == 0)
+	{
+		printf("wormhole version %s\n", WORMHOLE_VERSION);
+		return 0;
 	}
 
 	// First pass: handle --daemon flag (sets IPC pipe name)
@@ -3822,13 +3867,22 @@ int main(int argc, char *argv[])
 	}
 	else if (strcmp(cmd, "delete") == 0)
 	{
-		if (cmd_start + 1 >= argc)
+		BOOLEAN force = FALSE;
+		const char *del_id = NULL;
+		for (int i = cmd_start + 1; i < argc; i++)
+		{
+			if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0)
+				force = TRUE;
+			else if (!del_id)
+				del_id = argv[i];
+		}
+		if (!del_id)
 		{
 			LOG_ERROR("ERROR: Missing file ID\n");
 			PrintUsage();
 			return 1;
 		}
-		return cmd_delete(argv[cmd_start + 1]);
+		return cmd_delete(del_id, force);
 	}
 	else if (strcmp(cmd, "export-key") == 0)
 	{

@@ -492,7 +492,7 @@ if [ -n "$DEL_ID" ]; then
         PRE_DEL_CHUNKS=$(exec_node node5 sh -c 'ls /root/.wormhole/store/ 2>/dev/null | wc -l') || true
 
         # Delete the file
-        DEL_OUTPUT=$(exec_node node5 wormhole delete "$DEL_ID" 2>&1) || true
+        DEL_OUTPUT=$(exec_node node5 wormhole delete "$DEL_ID" -f 2>&1) || true
         echo "  Delete output: ${DEL_OUTPUT}"
 
         # Verify file no longer in file list
@@ -688,6 +688,38 @@ else
     fail "Could not set max_storage_gb=1 (got: ${QUOTA_VAL:-empty})"
 fi
 
+# ─── Test 21: --version flag ──────────────────────────────────────────
+echo ""
+echo "Test 21: --version flag"
+VER_OUTPUT=$(exec_node node1 wormhole --version 2>&1) || true
+VERD_OUTPUT=$(exec_node node1 wormholed --version 2>&1) || true
+
+if echo "$VER_OUTPUT" | grep -q "wormhole version"; then
+    if echo "$VERD_OUTPUT" | grep -q "wormholed version"; then
+        pass "Both binaries report version"
+    else
+        fail "wormholed --version: ${VERD_OUTPUT}"
+    fi
+else
+    fail "wormhole --version: ${VER_OUTPUT}"
+fi
+
+# ─── Test 22: Improved error messages ─────────────────────────────────
+echo ""
+echo "Test 22: Improved error messages"
+# Stop daemon on node5 temporarily to test connection error message
+exec_node node5 sh -c 'pkill wormholed 2>/dev/null' || true
+sleep 2
+ERR_OUTPUT=$(docker compose exec -T node5 wormhole status 2>&1) || true
+if echo "$ERR_OUTPUT" | grep -q "wormhole daemon start"; then
+    pass "Error message includes remediation hint"
+else
+    fail "Error message missing hint: ${ERR_OUTPUT}"
+fi
+# Restart daemon on node5
+docker compose exec -d node5 sh -c 'wormholed --no-relay > /tmp/wormholed.log 2>&1'
+wait_for_daemon node5 30 || true
+
 # ─── Summary ─────────────────────────────────────────────────────────
 echo ""
 echo "============================================"
@@ -715,6 +747,10 @@ echo "  1.1 Dir Permissions (0700):   Test 18"
 echo "  1.2 IPC Socket (0600):        Test 18"
 echo "  3.3 Config Bounds:            Test 19"
 echo "  3.5 Storage Quota:            Test 20"
+echo ""
+echo "Post-Phase 7 Coverage:"
+echo "  --version flag:               Test 21"
+echo "  Error messages:               Test 22"
 echo ""
 
 if [ "$FAIL" -gt 0 ]; then

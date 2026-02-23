@@ -187,9 +187,9 @@ Lists all files stored via the daemon, showing filename, size, chunk count, repl
 
 ### Delete a stored file
 ```
-wormhole delete <id>
+wormhole delete <id> [-f]
 ```
-Removes a stored file: deletes chunks from local store, cleans up EC metadata, removes DHT announcements, and deletes the file registry entry. Accepts full or prefix file IDs.
+Removes a stored file: deletes chunks from local store, cleans up EC metadata, removes DHT announcements, and deletes the file registry entry. Accepts full or prefix file IDs. Use `-f` to skip the confirmation prompt.
 
 ### Export/import encryption keys
 ```

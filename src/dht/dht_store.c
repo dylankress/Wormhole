@@ -407,9 +407,17 @@ BOOLEAN DhtStore_Load(DHT_VALUE_STORE *store, const char *path)
 
         uint8_t lc[4];
         if (fread(lc, 1, 4, fh) != 4) break;
-        tmp.location_count = ReadUint32LE(lc);
-        if (tmp.location_count > DHT_STORE_MAX_LOCATIONS)
+        uint32_t raw_location_count = ReadUint32LE(lc);
+        uint32_t excess = 0;
+        if (raw_location_count > DHT_STORE_MAX_LOCATIONS)
+        {
+            excess = raw_location_count - DHT_STORE_MAX_LOCATIONS;
             tmp.location_count = DHT_STORE_MAX_LOCATIONS;
+        }
+        else
+        {
+            tmp.location_count = raw_location_count;
+        }
 
         for (uint32_t j = 0; j < tmp.location_count; j++)
         {
@@ -420,6 +428,13 @@ BOOLEAN DhtStore_Load(DHT_VALUE_STORE *store, const char *path)
             uint8_t port_buf[2];
             if (fread(port_buf, 1, 2, fh) != 2) { entry_ok = FALSE; break; }
             loc->port = ReadUint16LE(port_buf);
+        }
+
+        // Skip excess locations to keep file pointer in sync (51 bytes each)
+        for (uint32_t j = 0; j < excess && entry_ok; j++)
+        {
+            uint8_t skip[51];
+            if (fread(skip, 1, 51, fh) != 51) { entry_ok = FALSE; break; }
         }
 
         if (!entry_ok) break;
