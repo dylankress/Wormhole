@@ -19,6 +19,19 @@ extern const QUIC_API_TABLE *MsQuic;
 #define SEND_POOL_SIZE 32  // Pre-allocated send buffer slots
 
 //=============================================================================
+// Progress callback (optional — for daemon-mediated transfers)
+//=============================================================================
+
+// Called when transfer progress changes. Return FALSE to cancel the transfer.
+typedef BOOLEAN (*StreamProgressCallback)(
+    uint32_t chunks_done, uint32_t total_chunks,
+    uint64_t bytes_done, uint64_t bytes_total,
+    double speed_bps,       // Instantaneous speed in bytes/sec
+    double eta_seconds,     // Estimated time remaining
+    void *user_context
+);
+
+//=============================================================================
 // Pre-allocated send buffer pool (eliminates per-chunk malloc/free)
 //=============================================================================
 
@@ -78,6 +91,10 @@ typedef struct {
     // Points to server context's transfer_complete flag (wormhole.c)
     BOOLEAN        *transfer_complete_flag;
 
+    // Progress callback (NULL = use built-in PrintProgressBar)
+    StreamProgressCallback progress_cb;
+    void                  *progress_cb_ctx;
+
     // Atomic stream shutdown tracking
     volatile int32_t streams_shutdown;
     volatile int32_t expected_streams;
@@ -128,6 +145,10 @@ typedef struct {
     BOOLEAN         transfer_complete_pending; // Set when TRANSFER_COMPLETE sent, awaiting SEND_COMPLETE
 
     void           *user_context;           // RECEIVE_CLIENT_CONTEXT from wormhole.c
+
+    // Progress callback (NULL = use built-in PrintProgressBar)
+    StreamProgressCallback progress_cb;
+    void                  *progress_cb_ctx;
 
     // Atomic stream shutdown tracking
     volatile int32_t streams_shutdown;

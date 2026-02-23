@@ -70,7 +70,7 @@ DEP_SOURCES = \
 	$(RS_ROOT)/rs.c
 
 CLIENT_SOURCES  = wormhole.c $(SHARED_SOURCES) $(DEP_SOURCES)
-DAEMON_SOURCES  = wormholed.c $(SHARED_SOURCES) $(DEP_SOURCES)
+DAEMON_SOURCES  = wormholed.c transfer_mgr.c $(SHARED_SOURCES) $(DEP_SOURCES)
 
 # Object files go into build/
 CLIENT_OBJS = $(patsubst %.c,$(BUILDDIR)/%.o,$(notdir $(CLIENT_SOURCES)))

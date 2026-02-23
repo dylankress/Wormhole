@@ -2351,6 +2351,296 @@ static void FormatSize(uint64_t bytes, char *buf, size_t buf_len)
 		snprintf(buf, buf_len, "%llu B", (unsigned long long)bytes);
 }
 
+//=============================================================================
+// Daemon-mediated send/receive (CLI is thin client, daemon does the work)
+//=============================================================================
+
+static int cmd_send_via_daemon(const char *filepath)
+{
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to daemon. Use --direct or start daemon first.\n");
+		return 1;
+	}
+
+	// Subscribe to events for progress
+	if (!IpcClient_Subscribe(client, IPC_EVENT_MASK_PROGRESS | IPC_EVENT_MASK_TRANSFER))
+	{
+		LOG_ERROR("Error: Failed to subscribe to daemon events\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	// Build SEND payload: [2B path_len][filepath]
+	uint32_t path_len = (uint32_t)strlen(filepath);
+	uint32_t payload_size = 2 + path_len;
+	uint8_t *payload = (uint8_t *)malloc(payload_size);
+	if (!payload)
+	{
+		LOG_ERROR("Error: Out of memory\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+	WriteUint16LE(payload, (uint16_t)path_len);
+	memcpy(payload + 2, filepath, path_len);
+
+	uint8_t response[512];
+	uint32_t resp_size = 0;
+	uint32_t op_id = (uint32_t)time(NULL); // Simple unique ID
+
+	BOOLEAN ok = IpcClient_SendCommandV2(client, IPC_CMD_SEND, op_id,
+		payload, payload_size, response, sizeof(response), &resp_size);
+	free(payload);
+
+	if (!ok || resp_size < 1 || response[0] != IPC_STATUS_OK)
+	{
+		char errmsg[256] = {0};
+		uint8_t status = 0;
+		if (resp_size > 0)
+			IpcReadErrorResponse(response, resp_size, &status, errmsg, sizeof(errmsg));
+		LOG_ERROR("Error: Send failed%s%s\n", errmsg[0] ? ": " : "", errmsg);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t transfer_id = 0;
+	if (resp_size >= 5)
+		transfer_id = ReadUint32LE(response + 1);
+
+	printf("Transfer started (ID: %u). Waiting for ticket...\n", transfer_id);
+
+	// Poll for transfer events — wait for ticket, then progress, then completion
+	BOOLEAN got_ticket = FALSE;
+	BOOLEAN transfer_done = FALSE;
+	time_t last_status_check = time(NULL);
+
+	while (!transfer_done && !g_shutdown_requested)
+	{
+		uint8_t event_type = 0;
+		uint32_t event_op_id = 0;
+		uint8_t event_buf[512];
+		uint32_t event_size = 0;
+
+		if (IpcClient_ReadEvent(client, &event_type, &event_op_id,
+			event_buf, sizeof(event_buf), &event_size, 1000))
+		{
+			if (event_type == IPC_EVENT_TRANSFER && event_size >= 7)
+			{
+				uint32_t eid = ReadUint32LE(event_buf);
+				if (eid == transfer_id)
+				{
+					uint8_t state = event_buf[5];
+					(void)event_buf[6]; // ev_status — reserved for future use
+
+					if (state == 4) // TRANSFER_STATE_TRANSFERRING
+					{
+						if (!got_ticket)
+						{
+							// Query for ticket
+							uint8_t ts_payload[4];
+							WriteUint32LE(ts_payload, transfer_id);
+							uint8_t ts_resp[512];
+							uint32_t ts_size = 0;
+							if (IpcClient_SendCommandV2(client, IPC_CMD_TRANSFER_STATUS, 0,
+								ts_payload, 4, ts_resp, sizeof(ts_resp), &ts_size) &&
+								ts_size > 30 && ts_resp[0] == IPC_STATUS_OK)
+							{
+								// Parse ticket from response
+								uint32_t off = 1 + 4 + 1 + 1 + 8 + 8 + 4 + 4; // skip fixed fields
+								if (off < ts_size) {
+									uint8_t tl = ts_resp[off++];
+									if (tl > 0 && off + tl <= ts_size) {
+										char ticket[64] = {0};
+										memcpy(ticket, ts_resp + off, tl);
+										printf("\nTicket: %s\n\n", ticket);
+										printf("On the receiving end, run:\n");
+										printf("  wormhole receive %s\n\n", ticket);
+										got_ticket = TRUE;
+									}
+								}
+							}
+						}
+					}
+					else if (state == 5 || state == 6 || state == 7)
+					{
+						// COMPLETED / FAILED / CANCELLED
+						transfer_done = TRUE;
+						if (state == 5)
+							printf("\nTransfer completed successfully.\n");
+						else if (state == 7)
+							printf("\nTransfer cancelled.\n");
+						else {
+							// Parse error message
+							printf("\nTransfer failed.\n");
+						}
+					}
+				}
+			}
+			else if (event_type == IPC_EVENT_PROGRESS && event_op_id == transfer_id)
+			{
+				// Progress event — could print a progress bar here
+				if (event_size >= IPC_PROGRESS_PAYLOAD_SIZE)
+				{
+					uint64_t bytes_done = ReadUint64LE(event_buf + 4);
+					uint64_t bytes_total = ReadUint64LE(event_buf + 12);
+					uint32_t chunks_done = ReadUint32LE(event_buf + 20);
+					uint32_t chunks_total = ReadUint32LE(event_buf + 24);
+
+					if (bytes_total > 0)
+					{
+						double pct = 100.0 * (double)bytes_done / (double)bytes_total;
+						printf("\rSending: %u/%u chunks (%.1f%%)     ",
+							chunks_done, chunks_total, pct);
+						fflush(stdout);
+						if (chunks_done == chunks_total)
+							printf("\n");
+					}
+				}
+			}
+		}
+
+		// Periodic status check if no events
+		time_t now = time(NULL);
+		if (now - last_status_check >= 5 && !got_ticket)
+		{
+			last_status_check = now;
+			// Check if ticket is ready
+			uint8_t ts_payload[4];
+			WriteUint32LE(ts_payload, transfer_id);
+			uint8_t ts_resp[512];
+			uint32_t ts_size = 0;
+			if (IpcClient_SendCommandV2(client, IPC_CMD_TRANSFER_STATUS, 0,
+				ts_payload, 4, ts_resp, sizeof(ts_resp), &ts_size) &&
+				ts_size > 30 && ts_resp[0] == IPC_STATUS_OK)
+			{
+				uint32_t off = 1 + 4 + 1 + 1 + 8 + 8 + 4 + 4;
+				if (off < ts_size) {
+					uint8_t tl = ts_resp[off++];
+					if (tl > 0 && off + tl <= ts_size) {
+						char ticket[64] = {0};
+						memcpy(ticket, ts_resp + off, tl);
+						printf("\nTicket: %s\n\n", ticket);
+						printf("On the receiving end, run:\n");
+						printf("  wormhole receive %s\n\n", ticket);
+						got_ticket = TRUE;
+					}
+				}
+			}
+		}
+	}
+
+	IpcClient_Disconnect(client);
+	return transfer_done ? 0 : 1;
+}
+
+static int cmd_receive_via_daemon(const char *ticket)
+{
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+	if (!client)
+	{
+		LOG_ERROR("Error: Cannot connect to daemon. Use --direct or start daemon first.\n");
+		return 1;
+	}
+
+	// Subscribe to events for progress
+	if (!IpcClient_Subscribe(client, IPC_EVENT_MASK_PROGRESS | IPC_EVENT_MASK_TRANSFER))
+	{
+		LOG_ERROR("Error: Failed to subscribe to daemon events\n");
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	// Build RECEIVE payload: [1B ticket_len][ticket]
+	uint8_t ticket_len = (uint8_t)strlen(ticket);
+	uint32_t payload_size = 1 + ticket_len;
+	uint8_t payload[128];
+	payload[0] = ticket_len;
+	memcpy(payload + 1, ticket, ticket_len);
+
+	uint8_t response[512];
+	uint32_t resp_size = 0;
+	uint32_t op_id = (uint32_t)time(NULL);
+
+	BOOLEAN ok = IpcClient_SendCommandV2(client, IPC_CMD_RECEIVE, op_id,
+		payload, payload_size, response, sizeof(response), &resp_size);
+
+	if (!ok || resp_size < 1 || response[0] != IPC_STATUS_OK)
+	{
+		char errmsg[256] = {0};
+		uint8_t status = 0;
+		if (resp_size > 0)
+			IpcReadErrorResponse(response, resp_size, &status, errmsg, sizeof(errmsg));
+		LOG_ERROR("Error: Receive failed%s%s\n", errmsg[0] ? ": " : "", errmsg);
+		IpcClient_Disconnect(client);
+		return 1;
+	}
+
+	uint32_t transfer_id = 0;
+	if (resp_size >= 5)
+		transfer_id = ReadUint32LE(response + 1);
+
+	printf("Connecting to sender...\n");
+
+	// Poll for transfer events
+	BOOLEAN transfer_done = FALSE;
+
+	while (!transfer_done && !g_shutdown_requested)
+	{
+		uint8_t event_type = 0;
+		uint32_t event_op_id = 0;
+		uint8_t event_buf[512];
+		uint32_t event_size = 0;
+
+		if (IpcClient_ReadEvent(client, &event_type, &event_op_id,
+			event_buf, sizeof(event_buf), &event_size, 1000))
+		{
+			if (event_type == IPC_EVENT_TRANSFER && event_size >= 7)
+			{
+				uint32_t eid = ReadUint32LE(event_buf);
+				if (eid == transfer_id)
+				{
+					uint8_t state = event_buf[5];
+
+					if (state == 5) {
+						transfer_done = TRUE;
+						printf("\nTransfer completed successfully.\n");
+					} else if (state == 6) {
+						transfer_done = TRUE;
+						printf("\nTransfer failed.\n");
+					} else if (state == 7) {
+						transfer_done = TRUE;
+						printf("\nTransfer cancelled.\n");
+					}
+				}
+			}
+			else if (event_type == IPC_EVENT_PROGRESS && event_op_id == transfer_id)
+			{
+				if (event_size >= IPC_PROGRESS_PAYLOAD_SIZE)
+				{
+					uint64_t bytes_done = ReadUint64LE(event_buf + 4);
+					uint64_t bytes_total = ReadUint64LE(event_buf + 12);
+					uint32_t chunks_done = ReadUint32LE(event_buf + 20);
+					uint32_t chunks_total = ReadUint32LE(event_buf + 24);
+
+					if (bytes_total > 0)
+					{
+						double pct = 100.0 * (double)bytes_done / (double)bytes_total;
+						printf("\rReceiving: %u/%u chunks (%.1f%%)     ",
+							chunks_done, chunks_total, pct);
+						fflush(stdout);
+						if (chunks_done == chunks_total)
+							printf("\n");
+					}
+				}
+			}
+		}
+	}
+
+	IpcClient_Disconnect(client);
+	return transfer_done ? 0 : 1;
+}
+
 static int cmd_store(const char *filepath)
 {
 	if (!FileExists(filepath))
@@ -3328,6 +3618,54 @@ static int cmd_status(void)
 		}
 	}
 
+	// Check heartbeat freshness and query uptime
+	{
+		// Query uptime via heartbeat IPC
+		uint32_t hb_response_size = 0;
+		BOOLEAN hb_ok = IpcClient_SendCommand(client, IPC_CMD_HEARTBEAT,
+			NULL, 0, response, IPC_MAX_MESSAGE_SIZE, &hb_response_size);
+		if (hb_ok && hb_response_size >= 9 && response[0] == IPC_STATUS_OK)
+		{
+			uint64_t uptime_sec = ReadUint64LE(response + 1);
+			uint64_t days = uptime_sec / 86400;
+			uint64_t hours = (uptime_sec % 86400) / 3600;
+			uint64_t mins = (uptime_sec % 3600) / 60;
+			if (days > 0)
+				LOG("  Uptime:        %llud %lluh %llum\n",
+					(unsigned long long)days, (unsigned long long)hours, (unsigned long long)mins);
+			else if (hours > 0)
+				LOG("  Uptime:        %lluh %llum\n",
+					(unsigned long long)hours, (unsigned long long)mins);
+			else
+				LOG("  Uptime:        %llum %llus\n",
+					(unsigned long long)mins, (unsigned long long)(uptime_sec % 60));
+		}
+
+		// Check heartbeat file freshness
+		char hb_path[MAX_PATH];
+		BOOLEAN hb_stale = FALSE;
+#ifdef _WIN32
+		const char *home_hb = getenv("USERPROFILE");
+		if (home_hb) snprintf(hb_path, sizeof(hb_path), "%s\\.wormhole\\wormholed.heartbeat", home_hb);
+#else
+		const char *home_hb = getenv("HOME");
+		if (home_hb) snprintf(hb_path, sizeof(hb_path), "%s/.wormhole/wormholed.heartbeat", home_hb);
+#endif
+		if (home_hb) {
+			FILE *hf = fopen(hb_path, "r");
+			if (hf) {
+				long long hb_time = 0;
+				if (fscanf(hf, "%lld", &hb_time) == 1) {
+					long long age = (long long)time(NULL) - hb_time;
+					if (age > 30) hb_stale = TRUE;
+				}
+				fclose(hf);
+			}
+		}
+		if (hb_stale)
+			LOG("  WARNING:       Daemon heartbeat is stale (>30s), may be unresponsive\n");
+	}
+
 	LOG("\n");
 
 	free(response);
@@ -3343,6 +3681,175 @@ static int cmd_config(int argc, char *argv[])
 		LOG_ERROR("Usage: wormhole config <list|get|set> [key] [value]\n");
 		return 1;
 	}
+
+	// Try IPC to daemon first — if connected, use daemon's live config
+	IPC_CLIENT *client = IpcClient_ConnectTo(g_ipc_pipe);
+
+	if (client && strcmp(argv[1], "list") == 0)
+	{
+		uint8_t *response = (uint8_t *)malloc(IPC_MAX_MESSAGE_SIZE);
+		if (!response)
+		{
+			IpcClient_Disconnect(client);
+			LOG_ERROR("Error: Out of memory\n");
+			return 1;
+		}
+
+		uint32_t resp_size = 0;
+		if (!IpcClient_SendCommand(client, IPC_CMD_CONFIG_LIST, NULL, 0,
+				response, IPC_MAX_MESSAGE_SIZE, &resp_size) ||
+			resp_size < 5 || response[0] != IPC_STATUS_OK)
+		{
+			free(response);
+			IpcClient_Disconnect(client);
+			LOG_ERROR("Error: Failed to list config from daemon\n");
+			return 1;
+		}
+
+		uint32_t count = ReadUint32LE(response + 1);
+		LOG("\nWormhole Configuration (live from daemon)\n");
+		LOG("════════════════════════════════════════════\n");
+
+		uint32_t off = 5;
+		for (uint32_t i = 0; i < count && off < resp_size; i++)
+		{
+			uint8_t key_len = response[off++];
+			if (off + key_len > resp_size) break;
+			char key[CONFIG_MAX_KEY_LEN];
+			uint8_t kc = key_len < CONFIG_MAX_KEY_LEN - 1 ? key_len : CONFIG_MAX_KEY_LEN - 1;
+			memcpy(key, response + off, kc); key[kc] = '\0';
+			off += key_len;
+
+			if (off >= resp_size) break;
+			uint8_t val_len = response[off++];
+			if (off + val_len > resp_size) break;
+			char val[CONFIG_MAX_VALUE_LEN];
+			uint8_t vc = val_len < CONFIG_MAX_VALUE_LEN - 1 ? val_len : CONFIG_MAX_VALUE_LEN - 1;
+			memcpy(val, response + off, vc); val[vc] = '\0';
+			off += val_len;
+
+			uint8_t hot = (off < resp_size) ? response[off++] : 0;
+			LOG("  %-25s = %s%s\n", key, val, hot ? "" : "  (restart required)");
+		}
+		LOG("\n");
+
+		free(response);
+		IpcClient_Disconnect(client);
+		return 0;
+	}
+
+	if (client && strcmp(argv[1], "get") == 0)
+	{
+		if (argc < 3)
+		{
+			IpcClient_Disconnect(client);
+			LOG_ERROR("Usage: wormhole config get <key>\n");
+			return 1;
+		}
+
+		uint8_t payload[256];
+		uint8_t key_len = (uint8_t)strlen(argv[2]);
+		payload[0] = key_len;
+		memcpy(payload + 1, argv[2], key_len);
+
+		uint8_t response[512];
+		uint32_t resp_size = 0;
+		if (!IpcClient_SendCommand(client, IPC_CMD_CONFIG_GET, payload, 1 + key_len,
+				response, sizeof(response), &resp_size) || resp_size < 1)
+		{
+			IpcClient_Disconnect(client);
+			LOG_ERROR("Error: Failed to get config from daemon\n");
+			return 1;
+		}
+
+		if (response[0] == IPC_STATUS_NOT_FOUND)
+		{
+			IpcClient_Disconnect(client);
+			LOG_ERROR("Key not found: %s\n", argv[2]);
+			return 1;
+		}
+		if (response[0] != IPC_STATUS_OK || resp_size < 2)
+		{
+			IpcClient_Disconnect(client);
+			LOG_ERROR("Error: Daemon returned error for key '%s'\n", argv[2]);
+			return 1;
+		}
+
+		uint8_t vl = response[1];
+		if ((uint32_t)(2 + vl) > resp_size) vl = (uint8_t)(resp_size - 2);
+		char val[CONFIG_MAX_VALUE_LEN];
+		uint8_t vc = vl < CONFIG_MAX_VALUE_LEN - 1 ? vl : CONFIG_MAX_VALUE_LEN - 1;
+		memcpy(val, response + 2, vc); val[vc] = '\0';
+		printf("%s\n", val);
+
+		IpcClient_Disconnect(client);
+		return 0;
+	}
+
+	if (client && strcmp(argv[1], "set") == 0)
+	{
+		if (argc < 4)
+		{
+			IpcClient_Disconnect(client);
+			LOG_ERROR("Usage: wormhole config set <key> <value>\n");
+			return 1;
+		}
+
+		uint8_t payload[512];
+		uint8_t key_len = (uint8_t)strlen(argv[2]);
+		uint8_t val_len = (uint8_t)strlen(argv[3]);
+		payload[0] = key_len;
+		memcpy(payload + 1, argv[2], key_len);
+		payload[1 + key_len] = val_len;
+		memcpy(payload + 1 + key_len + 1, argv[3], val_len);
+		uint32_t pay_size = 1 + key_len + 1 + val_len;
+
+		uint8_t response[512];
+		uint32_t resp_size = 0;
+		if (!IpcClient_SendCommand(client, IPC_CMD_CONFIG_SET, payload, pay_size,
+				response, sizeof(response), &resp_size) || resp_size < 1)
+		{
+			IpcClient_Disconnect(client);
+			LOG_ERROR("Error: Failed to set config via daemon\n");
+			return 1;
+		}
+
+		if (response[0] != IPC_STATUS_OK)
+		{
+			// Try to read structured error message
+			char errmsg[256] = {0};
+			if (resp_size >= 3)
+			{
+				uint16_t msg_len = (uint16_t)response[1] | ((uint16_t)response[2] << 8);
+				if (msg_len > 0 && (uint32_t)(3 + msg_len) <= resp_size)
+				{
+					uint16_t copy = msg_len < sizeof(errmsg) - 1 ? msg_len : (uint16_t)(sizeof(errmsg) - 1);
+					memcpy(errmsg, response + 3, copy);
+					errmsg[copy] = '\0';
+				}
+			}
+			IpcClient_Disconnect(client);
+			if (errmsg[0])
+				LOG_ERROR("Error: %s\n", errmsg);
+			else
+				LOG_ERROR("Error: Failed to set config value\n");
+			return 1;
+		}
+
+		LOG("Config updated: %s = %s\n", argv[2], argv[3]);
+
+		// Check restart_required flag
+		if (resp_size >= 2 && response[1] == 1)
+		{
+			LOG("Note: Restart daemon for '%s' to take effect (wormhole daemon restart)\n", argv[2]);
+		}
+
+		IpcClient_Disconnect(client);
+		return 0;
+	}
+
+	// Daemon not running (or unknown subcommand) — fall back to direct file access
+	if (client) IpcClient_Disconnect(client);
 
 	WORMHOLE_CONFIG *config = Config_LoadDefault();
 	if (!config)
@@ -3573,7 +4080,7 @@ static int cmd_daemon(int argc, char *argv[])
 			{
 				printf("Daemon stopped\n");
 
-				// Clean up PID file
+				// Clean up PID file and lifecycle files
 				char pid_path[MAX_PATH];
 #ifdef _WIN32
 				const char *home = getenv("USERPROFILE");
@@ -3582,7 +4089,19 @@ static int cmd_daemon(int argc, char *argv[])
 				const char *home = getenv("HOME");
 				if (home) snprintf(pid_path, sizeof(pid_path), "%s/.wormhole/wormholed.pid", home);
 #endif
-				if (home) remove(pid_path);
+				if (home) {
+					remove(pid_path);
+					char ready_path[MAX_PATH], hb_path[MAX_PATH];
+#ifdef _WIN32
+					snprintf(ready_path, sizeof(ready_path), "%s\\.wormhole\\wormholed.ready", home);
+					snprintf(hb_path, sizeof(hb_path), "%s\\.wormhole\\wormholed.heartbeat", home);
+#else
+					snprintf(ready_path, sizeof(ready_path), "%s/.wormhole/wormholed.ready", home);
+					snprintf(hb_path, sizeof(hb_path), "%s/.wormhole/wormholed.heartbeat", home);
+#endif
+					remove(ready_path);
+					remove(hb_path);
+				}
 				return 0;
 			}
 			IpcClient_Disconnect(check);
@@ -3593,13 +4112,64 @@ static int cmd_daemon(int argc, char *argv[])
 	}
 	else if (strcmp(subcmd, "start") == 0)
 	{
-		// Check if daemon already running
+		// Check if daemon already running via IPC
 		IPC_CLIENT *check = IpcClient_ConnectTo(g_ipc_pipe);
 		if (check)
 		{
 			IpcClient_Disconnect(check);
 			printf("Daemon is already running.\n");
 			return 0;
+		}
+
+		// Stale PID detection: if PID file exists but process is dead, clean up
+		{
+			char stale_pid_path[MAX_PATH];
+#ifdef _WIN32
+			const char *home_stale = getenv("USERPROFILE");
+			if (home_stale) snprintf(stale_pid_path, sizeof(stale_pid_path),
+				"%s\\.wormhole\\wormholed.pid", home_stale);
+#else
+			const char *home_stale = getenv("HOME");
+			if (home_stale) snprintf(stale_pid_path, sizeof(stale_pid_path),
+				"%s/.wormhole/wormholed.pid", home_stale);
+#endif
+			if (home_stale) {
+				FILE *pf_check = fopen(stale_pid_path, "r");
+				if (pf_check) {
+					long stale_pid = 0;
+					if (fscanf(pf_check, "%ld", &stale_pid) == 1 && stale_pid > 0) {
+#ifdef _WIN32
+						HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)stale_pid);
+						if (hProc) {
+							CloseHandle(hProc);
+							// Process exists but IPC failed — shouldn't happen, but leave PID file
+						} else {
+							fclose(pf_check);
+							remove(stale_pid_path);
+							// Also clean up stale readiness file
+							char stale_ready[MAX_PATH];
+							snprintf(stale_ready, sizeof(stale_ready),
+								"%s\\.wormhole\\wormholed.ready", home_stale);
+							remove(stale_ready);
+							goto pid_cleaned;
+						}
+#else
+						if (kill((pid_t)stale_pid, 0) != 0) {
+							fclose(pf_check);
+							remove(stale_pid_path);
+							// Also clean up stale readiness file
+							char stale_ready[MAX_PATH];
+							snprintf(stale_ready, sizeof(stale_ready),
+								"%s/.wormhole/wormholed.ready", home_stale);
+							remove(stale_ready);
+							goto pid_cleaned;
+						}
+#endif
+					}
+					fclose(pf_check);
+					pid_cleaned: ;
+				}
+			}
 		}
 
 		// Spawn wormholed as a detached background process
@@ -3652,7 +4222,22 @@ static int cmd_daemon(int argc, char *argv[])
 		FILE *pf = fopen(pid_path, "w");
 		if (pf) { fprintf(pf, "%lu", (unsigned long)pi.dwProcessId); fclose(pf); }
 
-		printf("Daemon started (PID: %lu)\n", (unsigned long)pi.dwProcessId);
+		// Wait up to 5 seconds for readiness file
+		{
+			char ready_path[MAX_PATH];
+			snprintf(ready_path, sizeof(ready_path), "%s\\.wormhole\\wormholed.ready", home);
+			BOOLEAN ready = FALSE;
+			for (int ri = 0; ri < 50; ri++) {
+				WH_SLEEP_MS(100);
+				DWORD attr = GetFileAttributesA(ready_path);
+				if (attr != INVALID_FILE_ATTRIBUTES) { ready = TRUE; break; }
+			}
+			if (ready)
+				printf("Daemon started (PID: %lu)\n", (unsigned long)pi.dwProcessId);
+			else
+				printf("Daemon spawned (PID: %lu), may still be starting...\n", (unsigned long)pi.dwProcessId);
+		}
+
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
 #else
@@ -3696,21 +4281,24 @@ static int cmd_daemon(int argc, char *argv[])
 			_exit(127);
 		}
 
-		// Parent: write PID file and wait briefly for startup
+		// Parent: write PID file and wait for readiness
 		FILE *pf = fopen(pid_path, "w");
 		if (pf) { fprintf(pf, "%d", pid); fclose(pf); }
 
-		// Wait briefly then verify daemon started
-		WH_SLEEP_MS(1000);
-		IPC_CLIENT *verify = IpcClient_ConnectTo(g_ipc_pipe);
-		if (verify)
+		// Wait up to 5 seconds for readiness file
 		{
-			IpcClient_Disconnect(verify);
-			printf("Daemon started (PID: %d)\n", pid);
-		}
-		else
-		{
-			printf("Daemon spawned (PID: %d), waiting for startup...\n", pid);
+			char ready_path[MAX_PATH];
+			snprintf(ready_path, sizeof(ready_path), "%s/.wormhole/wormholed.ready", home);
+			BOOLEAN ready = FALSE;
+			for (int ri = 0; ri < 50; ri++) {
+				WH_SLEEP_MS(100);
+				struct stat st;
+				if (stat(ready_path, &st) == 0) { ready = TRUE; break; }
+			}
+			if (ready)
+				printf("Daemon started (PID: %d)\n", pid);
+			else
+				printf("Daemon spawned (PID: %d), may still be starting...\n", pid);
 		}
 #endif
 		return 0;
@@ -3759,10 +4347,12 @@ static void PrintUsage(void)
 	LOG("  wormhole --help                     Show this help message\n");
 	LOG("  wormhole --version                  Show version\n\n");
 	LOG("Global options:\n");
-	LOG("  --daemon <port>   Connect to daemon on specified port (default: %u)\n\n", WORMHOLE_DEFAULT_PORT);
+	LOG("  --daemon <port>   Connect to daemon on specified port (default: %u)\n", WORMHOLE_DEFAULT_PORT);
+	LOG("  --direct          Bypass daemon for send/receive (standalone mode)\n\n");
 	LOG("Examples:\n");
 	LOG("  wormhole send document.pdf\n");
 	LOG("  wormhole send ./my-project/\n");
+	LOG("  wormhole send --direct largefile.zip\n");
 	LOG("  wormhole receive 7-guitar-battery\n");
 	LOG("  wormhole store myfile.bin\n");
 	LOG("  wormhole get a1b2c3d4 -o recovered.bin\n\n");
@@ -3832,7 +4422,29 @@ int main(int argc, char *argv[])
 			PrintUsage();
 			return 1;
 		}
-		return cmd_send(argv[cmd_start + 1]);
+		// Check for --direct flag
+		BOOLEAN direct_mode = FALSE;
+		const char *send_filepath = NULL;
+		for (int i = cmd_start + 1; i < argc; i++) {
+			if (strcmp(argv[i], "--direct") == 0)
+				direct_mode = TRUE;
+			else if (!send_filepath)
+				send_filepath = argv[i];
+		}
+		if (!send_filepath) {
+			LOG_ERROR("ERROR: Missing filename or directory\n");
+			PrintUsage();
+			return 1;
+		}
+		if (direct_mode)
+			return cmd_send(send_filepath);
+		// Try daemon first, fall back to direct
+		IPC_CLIENT *probe = IpcClient_ConnectTo(g_ipc_pipe);
+		if (probe) {
+			IpcClient_Disconnect(probe);
+			return cmd_send_via_daemon(send_filepath);
+		}
+		return cmd_send(send_filepath);
 	}
 	else if (strcmp(cmd, "receive") == 0)
 	{
@@ -3842,7 +4454,29 @@ int main(int argc, char *argv[])
 			PrintUsage();
 			return 1;
 		}
-		return cmd_receive(argv[cmd_start + 1]);
+		// Check for --direct flag
+		BOOLEAN direct_mode = FALSE;
+		const char *recv_ticket = NULL;
+		for (int i = cmd_start + 1; i < argc; i++) {
+			if (strcmp(argv[i], "--direct") == 0)
+				direct_mode = TRUE;
+			else if (!recv_ticket)
+				recv_ticket = argv[i];
+		}
+		if (!recv_ticket) {
+			LOG_ERROR("ERROR: Missing ticket\n");
+			PrintUsage();
+			return 1;
+		}
+		if (direct_mode)
+			return cmd_receive(recv_ticket);
+		// Try daemon first, fall back to direct
+		IPC_CLIENT *probe = IpcClient_ConnectTo(g_ipc_pipe);
+		if (probe) {
+			IpcClient_Disconnect(probe);
+			return cmd_receive_via_daemon(recv_ticket);
+		}
+		return cmd_receive(recv_ticket);
 	}
 	else if (strcmp(cmd, "store") == 0)
 	{

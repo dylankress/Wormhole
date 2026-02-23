@@ -266,9 +266,22 @@ if errorlevel 1 (
     echo   COMPILE FAILED
     set /a FAIL_COUNT+=1
     set /a TOTAL+=1
-    goto :summary
+    goto :test_ipc_v2
 )
 call :run_test test_file_crypto.exe
+
+:test_ipc_v2
+REM ===================================================================
+echo.
+echo --- test_ipc_v2 ---
+cl %CFLAGS% %INCLUDES% test_ipc_v2.c %BUILD%\ipc.obj %BUILD%\config.obj /Fe:test_ipc_v2.exe /link ws2_32.lib advapi32.lib
+if errorlevel 1 (
+    echo   COMPILE FAILED
+    set /a FAIL_COUNT+=1
+    set /a TOTAL+=1
+    goto :summary
+)
+call :run_test test_ipc_v2.exe
 
 :summary
 REM ===================================================================

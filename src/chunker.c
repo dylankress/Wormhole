@@ -434,8 +434,9 @@ FILE_MANIFEST *Chunker_BuildManifestFromDirectory(const char *dir_path)
 // Single-pass: chunk + hash + store
 //=============================================================================
 
-FILE_MANIFEST *Chunker_BuildManifestAndStore(const char *file_path,
-                                              uint32_t *stored_count)
+FILE_MANIFEST *Chunker_BuildManifestAndStoreWithProgress(
+    const char *file_path, uint32_t *stored_count,
+    ChunkerProgressCallback progress_cb, void *progress_ctx)
 {
     if (!file_path) return NULL;
     if (stored_count) *stored_count = 0;
@@ -494,6 +495,7 @@ FILE_MANIFEST *Chunker_BuildManifestAndStore(const char *file_path,
     }
 
     uint32_t stored = 0;
+    uint64_t bytes_done = 0;
     for (uint32_t i = 0; i < manifest->chunk_count; i++)
     {
         // Calculate how much to read for this chunk
@@ -525,6 +527,21 @@ FILE_MANIFEST *Chunker_BuildManifestAndStore(const char *file_path,
         {
             stored++;
         }
+
+        bytes_done += bytes_read;
+
+        // Report progress if callback provided
+        if (progress_cb)
+        {
+            if (!progress_cb(i, manifest->chunk_count, bytes_done, file_size, progress_ctx))
+            {
+                LOG("[Chunker] Operation cancelled at chunk %u/%u\n", i + 1, manifest->chunk_count);
+                free(chunk_buf);
+                CloseFile(fh);
+                Manifest_Destroy(manifest);
+                return NULL;
+            }
+        }
     }
 
     free(chunk_buf);
@@ -539,4 +556,10 @@ FILE_MANIFEST *Chunker_BuildManifestAndStore(const char *file_path,
         stored, manifest->chunk_count, file_path);
 
     return manifest;
+}
+
+FILE_MANIFEST *Chunker_BuildManifestAndStore(const char *file_path,
+                                              uint32_t *stored_count)
+{
+    return Chunker_BuildManifestAndStoreWithProgress(file_path, stored_count, NULL, NULL);
 }

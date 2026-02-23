@@ -32,6 +32,7 @@
 #include "erasure.h"
 #include "file_registry.h"
 #include "file_crypto.h"
+#include "transfer_mgr.h"
 #include "../deps/blake3/blake3.h"
 
 // POSIX includes for Linux EC recovery directory scan
@@ -56,9 +57,9 @@
 //=============================================================================
 
 const QUIC_API_TABLE *MsQuic = NULL;
-static HQUIC DaemonRegistration = NULL;
-static HQUIC DaemonServerConfig = NULL;
-static HQUIC DaemonClientConfig = NULL;
+HQUIC DaemonRegistration = NULL;  // Non-static: used by transfer_mgr.c
+HQUIC DaemonServerConfig = NULL;  // Non-static: used by transfer_mgr.c
+HQUIC DaemonClientConfig = NULL;  // Non-static: used by transfer_mgr.c
 static HQUIC DaemonListener = NULL;
 
 //=============================================================================
@@ -247,6 +248,14 @@ static WORK_ITEM *WorkQueue_Pop(void)
     }
     WH_MUTEX_UNLOCK(g_work_queue.lock);
     return item;
+}
+
+static BOOLEAN WorkQueue_HasPending(void)
+{
+    WH_MUTEX_LOCK(g_work_queue.lock);
+    BOOLEAN has = (g_work_queue.head != NULL) ? TRUE : FALSE;
+    WH_MUTEX_UNLOCK(g_work_queue.lock);
+    return has;
 }
 
 static void WorkQueue_Shutdown(void)
@@ -438,6 +447,15 @@ static BOOLEAN Daemon_ConnectRelay(void);
 static uint32_t Daemon_HandleIpcCommand(
     uint8_t command, const uint8_t *payload, uint32_t payload_size,
     uint8_t *response_out, uint32_t response_capacity, void *context);
+
+// v2 handler wrapper (adds op_id and client_index)
+static uint32_t Daemon_HandleIpcCommandV2(
+    uint8_t command, uint32_t op_id, const uint8_t *payload, uint32_t payload_size,
+    uint8_t *response_out, uint32_t response_capacity, void *context,
+    int client_index);
+
+// Daemon start time for uptime reporting
+static double g_daemon_start_time = 0;
 
 static QUIC_STATUS QUIC_API Daemon_ListenerCallback(
     HQUIC Listener, void *Context, QUIC_LISTENER_EVENT *Event);
@@ -3100,6 +3118,14 @@ static void Daemon_OnPeersFound(void *context, const DISCOVERED_PEER *peers, uin
     WH_MUTEX_UNLOCK(g_daemon.peers_lock);
 
     LOG("[daemon] Peer discovery: found %u active peers\n", count);
+
+    // Push peer change event to subscribed clients
+    {
+        uint8_t pc_evt[4];
+        WriteUint32LE(pc_evt, (uint32_t)count);
+        IpcServer_PushEvent(IPC_EVENT_PEER_CHANGE, 0, pc_evt, 4);
+    }
+
     for (uint16_t i = 0; i < count; i++)
     {
         char hex[9];
@@ -3517,6 +3543,16 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
             {
                 LOG("[worker] File %s safely replicated to network\n", entry.filename);
 
+                // Push file status event: REPLICATING → SAFE
+                {
+                    uint8_t fs_evt[36];
+                    memcpy(fs_evt, item->check_repl.manifest_hash, WH_HASH_SIZE);
+                    fs_evt[32] = FILE_STATUS_SAFE;
+                    WriteUint16LE(fs_evt + 33, (uint16_t)replicated);
+                    fs_evt[35] = 0; // padding
+                    IpcServer_PushEvent(IPC_EVENT_FILE_STATUS, 0, fs_evt, 36);
+                }
+
                 // Only auto-evict if enabled in config (default: disabled)
                 if (Config_GetUint64(g_daemon.config, "auto_evict_enabled",
                         CONFIG_DEFAULT_AUTO_EVICT))
@@ -3590,6 +3626,31 @@ static void Daemon_EnforceQuota(uint64_t additional_bytes)
             WH_ATOMIC_ADD64(&g_daemon.storage_used, -(LONGLONG)freed);
         }
     }
+}
+
+//=============================================================================
+// Progress Reporting — thread-local op_id for v2 handler bridge
+//=============================================================================
+
+// Set by v2 handler before delegating to v1, so progress callbacks can find
+// the current operation. Each IPC client runs in its own thread, so this is safe.
+static WH_THREAD_LOCAL uint32_t g_current_op_id = 0;
+
+// Progress callback for STORE operations — bridges chunker progress to IPC events
+static int StoreProgressCallback(
+    uint32_t chunk_index, uint32_t total_chunks,
+    uint64_t bytes_done, uint64_t bytes_total,
+    void *user_context)
+{
+    UNREFERENCED_PARAMETER(user_context);
+    uint32_t op_id = g_current_op_id;
+    if (op_id != 0) {
+        if (IpcServer_IsOpCancelled(op_id))
+            return 0;  // Cancel the store operation
+        IpcServer_UpdateProgress(op_id, bytes_done, bytes_total,
+                                 chunk_index + 1, total_chunks);
+    }
+    return 1;
 }
 
 //=============================================================================
@@ -3676,9 +3737,10 @@ static uint32_t Daemon_HandleIpcCommand(
             }
         }
 
-        // Single-pass: read + hash + store chunks
+        // Single-pass: read + hash + store chunks (with progress if v2 op active)
         uint32_t stored = 0;
-        FILE_MANIFEST *manifest = Chunker_BuildManifestAndStore(chunk_source, &stored);
+        FILE_MANIFEST *manifest = Chunker_BuildManifestAndStoreWithProgress(
+            chunk_source, &stored, StoreProgressCallback, NULL);
 
         // Clean up temp encrypted file
         if (file_encrypted)
@@ -4315,6 +4377,18 @@ static uint32_t Daemon_HandleIpcCommand(
 
             fwrite(chunk_buf, 1, chunk_size, out_fh);
             bytes_written += chunk_size;
+
+            // Report progress and check for cancellation
+            if (g_current_op_id != 0) {
+                if (IpcServer_IsOpCancelled(g_current_op_id)) {
+                    LOG("[daemon] FILE_GET: cancelled by client\n");
+                    success = FALSE;
+                    break;
+                }
+                IpcServer_UpdateProgress(g_current_op_id,
+                    bytes_written, manifest->file_size,
+                    i + 1, manifest->chunk_count);
+            }
         }
 
         free(chunk_buf);
@@ -4605,6 +4679,161 @@ static uint32_t Daemon_HandleIpcCommand(
         return pl_off;
     }
 
+    //--- CONFIG_LIST: enumerate all config entries ---
+    case IPC_CMD_CONFIG_LIST:
+    {
+        // Response: [1B status][4B count][per entry: 1B key_len + key + 1B val_len + value + 1B hot_reloadable]
+        response_out[0] = IPC_STATUS_OK;
+        uint32_t cl_off = 5;  // skip status + count placeholder
+
+        uint32_t entry_count = 0;
+        for (uint32_t i = 0; i < g_daemon.config->count; i++)
+        {
+            const char *key = g_daemon.config->entries[i].key;
+            const char *val = g_daemon.config->entries[i].value;
+            uint8_t key_len = (uint8_t)strlen(key);
+            uint8_t val_len = (uint8_t)strlen(val);
+            uint32_t need = 1 + key_len + 1 + val_len + 1;
+
+            if (cl_off + need > response_capacity) break;
+
+            response_out[cl_off++] = key_len;
+            memcpy(response_out + cl_off, key, key_len); cl_off += key_len;
+            response_out[cl_off++] = val_len;
+            memcpy(response_out + cl_off, val, val_len); cl_off += val_len;
+            response_out[cl_off++] = Config_IsHotReloadable(key) ? 1 : 0;
+            entry_count++;
+        }
+
+        WriteUint32LE(response_out + 1, entry_count);
+        return cl_off;
+    }
+
+    //--- CONFIG_GET: look up a single config key ---
+    case IPC_CMD_CONFIG_GET:
+    {
+        // Payload: [1B key_len][key_bytes]
+        if (payload_size < 1)
+        {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Missing key");
+        }
+
+        uint8_t cg_key_len = payload[0];
+        if (cg_key_len == 0 || 1 + cg_key_len > payload_size)
+        {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Invalid key length");
+        }
+
+        char cg_key[CONFIG_MAX_KEY_LEN];
+        uint8_t cg_copy = cg_key_len < CONFIG_MAX_KEY_LEN - 1 ? cg_key_len : CONFIG_MAX_KEY_LEN - 1;
+        memcpy(cg_key, payload + 1, cg_copy);
+        cg_key[cg_copy] = '\0';
+
+        const char *cg_val = Config_GetString(g_daemon.config, cg_key, NULL);
+        if (!cg_val)
+        {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_NOT_FOUND, "Key not found");
+        }
+
+        // Response: [1B status][1B val_len][value_bytes][1B hot_reloadable]
+        uint8_t cg_val_len = (uint8_t)strlen(cg_val);
+        uint32_t cg_need = 1 + 1 + cg_val_len + 1;
+        if (cg_need > response_capacity)
+        {
+            response_out[0] = IPC_STATUS_OK;
+            return 1;
+        }
+
+        response_out[0] = IPC_STATUS_OK;
+        response_out[1] = cg_val_len;
+        memcpy(response_out + 2, cg_val, cg_val_len);
+        response_out[2 + cg_val_len] = Config_IsHotReloadable(cg_key) ? 1 : 0;
+        return cg_need;
+    }
+
+    //--- CONFIG_SET: update a config value ---
+    case IPC_CMD_CONFIG_SET:
+    {
+        // Payload: [1B key_len][key_bytes][1B val_len][value_bytes]
+        if (payload_size < 2)
+        {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Missing key/value");
+        }
+
+        uint8_t cs_key_len = payload[0];
+        if (cs_key_len == 0 || 1 + cs_key_len + 1 > payload_size)
+        {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Invalid key length");
+        }
+
+        char cs_key[CONFIG_MAX_KEY_LEN];
+        uint8_t cs_kcopy = cs_key_len < CONFIG_MAX_KEY_LEN - 1 ? cs_key_len : CONFIG_MAX_KEY_LEN - 1;
+        memcpy(cs_key, payload + 1, cs_kcopy);
+        cs_key[cs_kcopy] = '\0';
+
+        uint8_t cs_val_len = payload[1 + cs_key_len];
+        if (1 + cs_key_len + 1 + cs_val_len > payload_size)
+        {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Invalid value length");
+        }
+
+        char cs_val[CONFIG_MAX_VALUE_LEN];
+        uint8_t cs_vcopy = cs_val_len < CONFIG_MAX_VALUE_LEN - 1 ? cs_val_len : CONFIG_MAX_VALUE_LEN - 1;
+        memcpy(cs_val, payload + 1 + cs_key_len + 1, cs_vcopy);
+        cs_val[cs_vcopy] = '\0';
+
+        // Validate
+        if (!Config_ValidateValue(cs_key, cs_val))
+        {
+            char cs_err[128];
+            snprintf(cs_err, sizeof(cs_err), "Invalid value '%s' for key '%s'", cs_val, cs_key);
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, cs_err);
+        }
+
+        BOOLEAN cs_hot = Config_IsHotReloadable(cs_key);
+
+        // Apply the change to the in-memory config
+        if (!Config_Set(g_daemon.config, cs_key, cs_val))
+        {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Failed to set config value");
+        }
+
+        // Save to disk
+        Config_Save(g_daemon.config);
+
+        // Apply immediate effects for hot-reloadable keys
+        if (cs_hot)
+        {
+#ifdef _WIN32
+            if (_stricmp(cs_key, "max_storage_gb") == 0)
+#else
+            if (strcasecmp(cs_key, "max_storage_gb") == 0)
+#endif
+            {
+                uint64_t new_gb = Config_GetUint64(g_daemon.config, "max_storage_gb",
+                                                    CONFIG_DEFAULT_MAX_STORAGE_GB);
+                g_daemon.max_storage_bytes = new_gb * 1024ULL * 1024ULL * 1024ULL;
+                LOG("[daemon] max_storage_bytes updated to %llu\n",
+                    (unsigned long long)g_daemon.max_storage_bytes);
+            }
+        }
+
+        // Response: [1B status][1B restart_required]
+        response_out[0] = IPC_STATUS_OK;
+        response_out[1] = cs_hot ? 0 : 1;
+        LOG("[daemon] Config set: %s = %s (restart_required=%d)\n",
+            cs_key, cs_val, cs_hot ? 0 : 1);
+        return 2;
+    }
+
     //--- SHUTDOWN: clean daemon shutdown ---
     case IPC_CMD_SHUTDOWN:
     {
@@ -4614,11 +4843,245 @@ static uint32_t Daemon_HandleIpcCommand(
         return 1;
     }
 
+    //--- HEARTBEAT: lightweight ping with uptime ---
+    case IPC_CMD_HEARTBEAT:
+    {
+        if (response_capacity < 9) {
+            response_out[0] = IPC_STATUS_ERROR;
+            return 1;
+        }
+        double uptime = WH_TIMER_NOW() - g_daemon_start_time;
+        response_out[0] = IPC_STATUS_OK;
+        WriteUint64LE(response_out + 1, (uint64_t)uptime);
+        return 9;
+    }
+
+    //--- SEND: initiate a daemon-managed file send ---
+    case IPC_CMD_SEND:
+    {
+        // Payload: [2B path_len][filepath]
+        if (payload_size < 2) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Missing file path");
+        }
+
+        uint16_t path_len = ReadUint16LE(payload);
+        if (path_len == 0 || 2 + path_len > payload_size) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Invalid path length");
+        }
+
+        char send_path[MAX_PATH];
+        uint16_t cp = path_len < MAX_PATH - 1 ? path_len : MAX_PATH - 1;
+        memcpy(send_path, payload + 2, cp);
+        send_path[cp] = '\0';
+
+        if (!FileExists(send_path)) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_NOT_FOUND, "File not found");
+        }
+
+        LOG("[daemon] SEND request: %s\n", send_path);
+
+        uint32_t tid = TransferMgr_Send(g_current_op_id, send_path);
+        if (tid == 0) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_BUSY, "Too many active transfers");
+        }
+
+        // Response: [1B OK][4B transfer_id]
+        response_out[0] = IPC_STATUS_OK;
+        WriteUint32LE(response_out + 1, tid);
+        return 5;
+    }
+
+    //--- RECEIVE: initiate a daemon-managed file receive ---
+    case IPC_CMD_RECEIVE:
+    {
+        // Payload: [1B ticket_len][ticket][2B output_dir_len][output_dir] (output_dir optional)
+        if (payload_size < 1) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Missing ticket");
+        }
+
+        uint8_t ticket_len = payload[0];
+        if (ticket_len == 0 || 1 + ticket_len > payload_size) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Invalid ticket");
+        }
+
+        char recv_ticket[TRANSFER_TICKET_MAX_LEN];
+        uint8_t tc = ticket_len < sizeof(recv_ticket) - 1
+            ? ticket_len : (uint8_t)(sizeof(recv_ticket) - 1);
+        memcpy(recv_ticket, payload + 1, tc);
+        recv_ticket[tc] = '\0';
+
+        // Optional output directory
+        char *recv_output_dir = NULL;
+        char recv_dir_buf[MAX_PATH];
+        if (1 + ticket_len + 2 <= payload_size) {
+            uint16_t dir_len = ReadUint16LE(payload + 1 + ticket_len);
+            if (dir_len > 0 && 1 + ticket_len + 2 + dir_len <= payload_size) {
+                uint16_t dc = dir_len < MAX_PATH - 1 ? dir_len : MAX_PATH - 1;
+                memcpy(recv_dir_buf, payload + 1 + ticket_len + 2, dc);
+                recv_dir_buf[dc] = '\0';
+                recv_output_dir = recv_dir_buf;
+            }
+        }
+
+        LOG("[daemon] RECEIVE request: ticket=%s\n", recv_ticket);
+
+        uint32_t tid = TransferMgr_Receive(g_current_op_id, recv_ticket, recv_output_dir);
+        if (tid == 0) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_BUSY, "Too many active transfers");
+        }
+
+        // Response: [1B OK][4B transfer_id]
+        response_out[0] = IPC_STATUS_OK;
+        WriteUint32LE(response_out + 1, tid);
+        return 5;
+    }
+
+    //--- TRANSFER_STATUS: query a specific transfer ---
+    case IPC_CMD_TRANSFER_STATUS:
+    {
+        // Payload: [4B transfer_id]
+        if (payload_size < 4) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_ERROR, "Missing transfer ID");
+        }
+
+        uint32_t query_id = ReadUint32LE(payload);
+        ACTIVE_TRANSFER xfer_status;
+        if (!TransferMgr_GetStatus(query_id, &xfer_status)) {
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                         IPC_STATUS_NOT_FOUND, "Transfer not found");
+        }
+
+        // Response: [1B OK][4B transfer_id][1B direction][1B state]
+        //           [8B bytes_transferred][8B bytes_total]
+        //           [4B chunks_transferred][4B chunks_total]
+        //           [1B ticket_len][ticket][1B filename_len][filename]
+        //           [2B error_msg_len][error_msg]
+        uint32_t off = 0;
+        response_out[off++] = IPC_STATUS_OK;
+        WriteUint32LE(response_out + off, xfer_status.transfer_id); off += 4;
+        response_out[off++] = (uint8_t)xfer_status.direction;
+        response_out[off++] = (uint8_t)WH_ATOMIC_LOAD(&xfer_status.state);
+        WriteUint64LE(response_out + off, xfer_status.bytes_transferred); off += 8;
+        WriteUint64LE(response_out + off, xfer_status.bytes_total); off += 8;
+        WriteUint32LE(response_out + off, xfer_status.chunks_transferred); off += 4;
+        WriteUint32LE(response_out + off, xfer_status.chunks_total); off += 4;
+
+        uint8_t tl = (uint8_t)strlen(xfer_status.ticket);
+        response_out[off++] = tl;
+        if (tl > 0) { memcpy(response_out + off, xfer_status.ticket, tl); off += tl; }
+
+        uint8_t fl = (uint8_t)strlen(xfer_status.filename);
+        response_out[off++] = fl;
+        if (fl > 0) { memcpy(response_out + off, xfer_status.filename, fl); off += fl; }
+
+        uint16_t el = (uint16_t)strlen(xfer_status.error_msg);
+        WriteUint16LE(response_out + off, el); off += 2;
+        if (el > 0) { memcpy(response_out + off, xfer_status.error_msg, el); off += el; }
+
+        return off;
+    }
+
+    //--- TRANSFER_LIST: list all active/recent transfers ---
+    case IPC_CMD_TRANSFER_LIST:
+    {
+        ACTIVE_TRANSFER xfer_list[TRANSFER_MAX_CONCURRENT];
+        uint32_t xfer_count = TransferMgr_List(xfer_list, TRANSFER_MAX_CONCURRENT);
+
+        // Response: [1B OK][4B count][per transfer: 4B id + 1B dir + 1B state + 8B bytes + 8B total + 1B ticket_len + ticket + 1B fname_len + fname]
+        uint32_t off = 0;
+        response_out[off++] = IPC_STATUS_OK;
+        WriteUint32LE(response_out + off, xfer_count); off += 4;
+
+        for (uint32_t i = 0; i < xfer_count; i++) {
+            if (off + 64 > response_capacity) break;
+
+            WriteUint32LE(response_out + off, xfer_list[i].transfer_id); off += 4;
+            response_out[off++] = (uint8_t)xfer_list[i].direction;
+            response_out[off++] = (uint8_t)WH_ATOMIC_LOAD(&xfer_list[i].state);
+            WriteUint64LE(response_out + off, xfer_list[i].bytes_transferred); off += 8;
+            WriteUint64LE(response_out + off, xfer_list[i].bytes_total); off += 8;
+
+            uint8_t tl = (uint8_t)strlen(xfer_list[i].ticket);
+            response_out[off++] = tl;
+            if (tl > 0 && off + tl < response_capacity) {
+                memcpy(response_out + off, xfer_list[i].ticket, tl); off += tl;
+            }
+
+            uint8_t fl = (uint8_t)strlen(xfer_list[i].filename);
+            response_out[off++] = fl;
+            if (fl > 0 && off + fl < response_capacity) {
+                memcpy(response_out + off, xfer_list[i].filename, fl); off += fl;
+            }
+        }
+
+        return off;
+    }
+
     default:
         LOG_ERROR("[daemon] Unknown IPC command: 0x%02x\n", command);
         response_out[0] = IPC_STATUS_ERROR;
         return 1;
     }
+}
+
+//=============================================================================
+// v2 IPC Handler — wraps v1 handler, adds op_id awareness
+//=============================================================================
+
+static uint32_t Daemon_HandleIpcCommandV2(
+    uint8_t command, uint32_t op_id, const uint8_t *payload, uint32_t payload_size,
+    uint8_t *response_out, uint32_t response_capacity, void *context,
+    int client_index)
+{
+    UNREFERENCED_PARAMETER(client_index);
+
+    // For commands that support progress tracking, register the operation
+    BOOLEAN track_progress = FALSE;
+    if (op_id != 0 && (command == IPC_CMD_STORE || command == IPC_CMD_FILE_GET ||
+                        command == IPC_CMD_SEND || command == IPC_CMD_RECEIVE)) {
+        if (IpcServer_RegisterOp(op_id, command)) {
+            track_progress = TRUE;
+        } else {
+            // Too many concurrent operations
+            return IpcWriteErrorResponse(response_out, response_capacity,
+                                          IPC_STATUS_BUSY, "Too many concurrent operations");
+        }
+    }
+
+    // Set thread-local op_id so progress callbacks in v1 handler can find it
+    g_current_op_id = op_id;
+
+    // Delegate to v1 handler for actual command processing
+    uint32_t result = Daemon_HandleIpcCommand(
+        command, payload, payload_size,
+        response_out, response_capacity, context
+    );
+
+    // Clear thread-local op_id
+    g_current_op_id = 0;
+
+    // If we tracked progress, emit completion event and unregister
+    if (track_progress) {
+        uint8_t complete_buf[8];
+        complete_buf[0] = (result > 0 && response_out[0] == IPC_STATUS_OK)
+            ? IPC_STATUS_OK : IPC_STATUS_ERROR;
+        WriteUint32LE(complete_buf + 1, op_id);
+        // error_msg_len = 0
+        complete_buf[5] = 0;
+        complete_buf[6] = 0;
+        IpcServer_PushEvent(IPC_EVENT_OP_COMPLETE, op_id, complete_buf, 7);
+        IpcServer_UnregisterOp(op_id);
+    }
+
+    return result;
 }
 
 //=============================================================================
@@ -4816,6 +5279,39 @@ int main(int argc, char *argv[])
         LOG("[daemon] PeerID: %s\n", peer_hex);
     }
 
+    // Log rotation — rotate if > 10MB
+    {
+        char log_path[MAX_PATH];
+#ifdef _WIN32
+        const char *home_log = getenv("USERPROFILE");
+        if (home_log) snprintf(log_path, sizeof(log_path), "%s\\.wormhole\\wormholed.log", home_log);
+        if (home_log) {
+            WIN32_FILE_ATTRIBUTE_DATA fad;
+            if (GetFileAttributesExA(log_path, GetFileExInfoStandard, &fad)) {
+                ULONGLONG log_size = ((ULONGLONG)fad.nFileSizeHigh << 32) | fad.nFileSizeLow;
+                if (log_size > 10 * 1024 * 1024) {
+                    char old_path[MAX_PATH];
+                    snprintf(old_path, sizeof(old_path), "%s.old", log_path);
+                    remove(old_path);
+                    rename(log_path, old_path);
+                }
+            }
+        }
+#else
+        const char *home_log = getenv("HOME");
+        if (home_log) snprintf(log_path, sizeof(log_path), "%s/.wormhole/wormholed.log", home_log);
+        if (home_log) {
+            struct stat log_stat;
+            if (stat(log_path, &log_stat) == 0 && log_stat.st_size > 10 * 1024 * 1024) {
+                char old_path[MAX_PATH];
+                snprintf(old_path, sizeof(old_path), "%s.old", log_path);
+                remove(old_path);
+                rename(log_path, old_path);
+            }
+        }
+#endif
+    }
+
     Daemon_PrintBanner();
 
     // Step 1: Initialize chunk store
@@ -4858,7 +5354,8 @@ int main(int argc, char *argv[])
     char ipc_pipe_name[256];
     snprintf(ipc_pipe_name, sizeof(ipc_pipe_name), "%s%u",
              IPC_PIPE_PREFIX, g_daemon.listen_port);
-    if (!IpcServer_Start(Daemon_HandleIpcCommand, &g_daemon, ipc_pipe_name))
+    if (!IpcServer_StartV2(Daemon_HandleIpcCommandV2, Daemon_HandleIpcCommand,
+                           &g_daemon, ipc_pipe_name))
     {
         LOG_ERROR("[daemon] Failed to start IPC server\n");
         goto cleanup;
@@ -4876,6 +5373,9 @@ int main(int argc, char *argv[])
         LOG_ERROR("[daemon] Failed to start work queue\n");
         goto cleanup;
     }
+
+    // Step 5d: Initialize transfer manager
+    TransferMgr_Init(&g_daemon.keypair);
 
     // Step 6: Optionally connect to relay
     if (g_daemon.relay_enabled)
@@ -4984,7 +5484,30 @@ int main(int argc, char *argv[])
             LOG("[daemon] Starting with fresh ledger\n");
     }
 
+    // Record start time for uptime reporting
+    g_daemon_start_time = WH_TIMER_NOW();
+
     LOG("[daemon] Daemon is running. Press Ctrl+C to stop.\n");
+
+    // Write readiness signal file (indicates all subsystems initialized)
+    {
+        char ready_path[MAX_PATH];
+#ifdef _WIN32
+        const char *home_r = getenv("USERPROFILE");
+        if (home_r) snprintf(ready_path, sizeof(ready_path), "%s\\.wormhole\\wormholed.ready", home_r);
+        if (home_r) {
+            FILE *rf = fopen(ready_path, "w");
+            if (rf) { fprintf(rf, "%lu\n", (unsigned long)GetCurrentProcessId()); fclose(rf); }
+        }
+#else
+        const char *home_r = getenv("HOME");
+        if (home_r) snprintf(ready_path, sizeof(ready_path), "%s/.wormhole/wormholed.ready", home_r);
+        if (home_r) {
+            FILE *rf = fopen(ready_path, "w");
+            if (rf) { fprintf(rf, "%d\n", (int)getpid()); fclose(rf); }
+        }
+#endif
+    }
 
     // Main loop: poll relay + DHT + check shutdown flag
     time_t last_keepalive = time(NULL);
@@ -4995,6 +5518,7 @@ int main(int argc, char *argv[])
     time_t last_dht_bootstrap_retry = time(NULL);
     time_t last_replication_check = time(NULL);
     time_t last_dht_store_save = time(NULL);
+    time_t last_heartbeat_write = time(NULL);
     uint32_t dht_bootstrap_retries = 0;
     uint32_t dht_bootstrap_backoff_sec = 5;
 #define DHT_BOOTSTRAP_RETRY_SEC   10
@@ -5032,6 +5556,27 @@ int main(int argc, char *argv[])
         {
             // No relay client at all — just sleep to avoid busy-loop
             WH_SLEEP_MS(100);
+        }
+
+        // Write heartbeat file every 10 seconds
+        {
+            time_t now_hb = time(NULL);
+            if (now_hb - last_heartbeat_write >= 10)
+            {
+                char hb_path[MAX_PATH];
+#ifdef _WIN32
+                const char *home_hb = getenv("USERPROFILE");
+                if (home_hb) snprintf(hb_path, sizeof(hb_path), "%s\\.wormhole\\wormholed.heartbeat", home_hb);
+#else
+                const char *home_hb = getenv("HOME");
+                if (home_hb) snprintf(hb_path, sizeof(hb_path), "%s/.wormhole/wormholed.heartbeat", home_hb);
+#endif
+                if (home_hb) {
+                    FILE *hf = fopen(hb_path, "w");
+                    if (hf) { fprintf(hf, "%lld\n", (long long)time(NULL)); fclose(hf); }
+                }
+                last_heartbeat_write = now_hb;
+            }
         }
 
         // Poll DHT for incoming messages (non-blocking)
@@ -5184,6 +5729,14 @@ int main(int argc, char *argv[])
                         stats.chunks_checked, stats.chunks_healthy,
                         stats.chunks_degraded, stats.chunks_critical);
                     fflush(stdout);
+
+                    // Push health event to subscribed clients
+                    uint8_t health_evt[16];
+                    WriteUint32LE(health_evt, stats.chunks_checked);
+                    WriteUint32LE(health_evt + 4, stats.chunks_healthy);
+                    WriteUint32LE(health_evt + 8, stats.chunks_degraded);
+                    WriteUint32LE(health_evt + 12, stats.chunks_critical);
+                    IpcServer_PushEvent(IPC_EVENT_HEALTH, 0, health_evt, 16);
                 }
 
                 // Replication pass: replicate degraded chunks to peers
@@ -5554,6 +6107,23 @@ int main(int argc, char *argv[])
     LOG("[daemon] Shutting down...\n");
 
 cleanup:
+    // Graceful shutdown: wait up to 5s for active operations to finish
+    WH_ATOMIC_SET(&g_daemon.shutdown_requested, 1);
+    {
+        BOOLEAN has_active = FALSE;
+        for (int gi = 0; gi < 50; gi++)
+        {
+            has_active = WorkQueue_HasPending();
+            if (!has_active) break;
+            WH_SLEEP_MS(100);
+        }
+        if (has_active)
+            LOG("[daemon] Shutdown grace period expired, forcing cleanup\n");
+    }
+
+    // Stop active transfers
+    TransferMgr_Shutdown();
+
     // Stop background work queue
     WorkQueue_Shutdown();
 
@@ -5626,6 +6196,25 @@ cleanup:
     WH_MUTEX_DESTROY(g_daemon.dht_lock);
     WH_MUTEX_DESTROY(g_daemon.peers_lock);
     WH_MUTEX_DESTROY(g_daemon.retry_lock);
+
+    // Clean up readiness and heartbeat files
+    {
+        char ready_path[MAX_PATH], hb_path[MAX_PATH];
+#ifdef _WIN32
+        const char *home_cl = getenv("USERPROFILE");
+        if (home_cl) {
+            snprintf(ready_path, sizeof(ready_path), "%s\\.wormhole\\wormholed.ready", home_cl);
+            snprintf(hb_path, sizeof(hb_path), "%s\\.wormhole\\wormholed.heartbeat", home_cl);
+        }
+#else
+        const char *home_cl = getenv("HOME");
+        if (home_cl) {
+            snprintf(ready_path, sizeof(ready_path), "%s/.wormhole/wormholed.ready", home_cl);
+            snprintf(hb_path, sizeof(hb_path), "%s/.wormhole/wormholed.heartbeat", home_cl);
+        }
+#endif
+        if (home_cl) { remove(ready_path); remove(hb_path); }
+    }
 
     LOG("[daemon] Shutdown complete\n");
     return 0;

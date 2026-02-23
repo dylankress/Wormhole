@@ -80,6 +80,7 @@ cl /Zi /Od /W4 /MD ^
 	/I .. ^
 	/DBLAKE3_NO_SSE2 /DBLAKE3_NO_SSE41 /DBLAKE3_NO_AVX2 /DBLAKE3_NO_AVX512 /DQUIC_API_ENABLE_PREVIEW_FEATURES ^
 	..\wormholed.c ^
+	..\transfer_mgr.c ^
 	..\stream.c ^
 	..\file_io.c ^
 	..\crypto.c ^

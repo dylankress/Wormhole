@@ -119,6 +119,9 @@ static inline double WH_TIMER_NOW(void)
 #define PATH_SEP '\\'
 #define PATH_SEP_STR "\\"
 
+// --- Thread-local storage ---
+#define WH_THREAD_LOCAL     __declspec(thread)
+
 // --- Init-once ---
 #define WH_ONCE             INIT_ONCE
 #define WH_ONCE_INIT        INIT_ONCE_STATIC_INIT
@@ -268,6 +271,9 @@ static inline double WH_TIMER_NOW(void)
 // --- Path separator ---
 #define PATH_SEP '/'
 #define PATH_SEP_STR "/"
+
+// --- Thread-local storage ---
+#define WH_THREAD_LOCAL     __thread
 
 // --- Init-once ---
 #define WH_ONCE             pthread_once_t

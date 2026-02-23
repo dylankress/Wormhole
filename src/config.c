@@ -348,3 +348,29 @@ BOOLEAN Config_SetUint64(WORMHOLE_CONFIG *config, const char *key, uint64_t valu
     snprintf(buf, sizeof(buf), "%llu", (unsigned long long)value);
     return Config_Set(config, key, buf);
 }
+
+BOOLEAN Config_IsHotReloadable(const char *key)
+{
+    if (!key) return FALSE;
+
+    // Keys that are safe to change while daemon is running
+    static const char *hot_keys[] = {
+        "health_check_interval_sec",
+        "min_storage_ratio",
+        "proof_cache_count",
+        "max_storage_gb",
+        "replication_target",
+        "auto_evict_enabled",
+    };
+
+    for (size_t i = 0; i < sizeof(hot_keys) / sizeof(hot_keys[0]); i++)
+    {
+#ifdef _WIN32
+        if (_stricmp(key, hot_keys[i]) == 0) return TRUE;
+#else
+        if (strcasecmp(key, hot_keys[i]) == 0) return TRUE;
+#endif
+    }
+
+    return FALSE;
+}

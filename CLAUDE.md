@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wormhole is a decentralized P2P file storage platform written in C — a privacy-respecting alternative to Dropbox/Google Drive. Peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without centralized cloud providers. Built on QUIC (via MsQuic) with a Kademlia DHT for decentralized discovery and a UDP relay server for NAT traversal. Also supports direct peer-to-peer file transfer via ticket codes like "3-guitar-battery".
 
-**Current focus:** Phase 7 (Usability & Management). Phases 1-6 complete. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (17 unit test suites + E2E daemon tests). Phase 7 adds file deletion, encryption key export/import, daemon lifecycle management, and peer visibility. Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
+**Phases 1-8 complete.** Phase 9 (Qt GUI) is next. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (18 unit test suites + E2E daemon tests). Phase 8 added IPC v2 protocol (subscriptions, structured errors, operation tracking, cancellation), progress reporting for long-running operations, daemon-mediated send/receive with `--direct` fallback, config management via IPC, daemon lifecycle hardening (readiness signal, heartbeat, stale PID, log rotation), and real-time push events (peer/file/health/transfer). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
 
 Design decisions should keep the decentralized storage trajectory in mind. See [ROADMAP.md](ROADMAP.md) for the full development roadmap and production readiness plan.
 
@@ -48,8 +48,10 @@ Output: `relay-server/build/relay-server`
 
 ## Usage
 ```
-wormhole send <file|directory>         # Creates ticket, waits for receiver
-wormhole receive <ticket>              # Downloads to ~/Downloads (resumable)
+wormhole send <file|directory>         # Creates ticket, waits for receiver (via daemon if running)
+wormhole receive <ticket>              # Downloads to ~/Downloads (via daemon if running, resumable)
+wormhole send --direct <file>          # Direct send (standalone, bypasses daemon)
+wormhole receive --direct <ticket>     # Direct receive (standalone, bypasses daemon)
 wormhole store <file>                  # Store file chunks via daemon
 wormhole get <hash> [-o <file>]        # Retrieve a stored file by ID
 wormhole delete <id> [-f]              # Delete a stored file (-f skips prompt)
@@ -59,12 +61,13 @@ wormhole peers                         # List known DHT peers
 wormhole export-key <id>              # Export file encryption key (hex)
 wormhole import-key <id> <hex-key>    # Import file encryption key
 wormhole daemon start|stop|restart    # Manage daemon process
-wormhole config list                   # Show all settings
+wormhole config list                   # Show all settings (via daemon if running)
 wormhole config get <key>              # Get a config value
-wormhole config set <key> <val>        # Set a config value
+wormhole config set <key> <val>        # Set a config value (hot-reload where safe)
 
 Global flags:
   --daemon <port>                        # Connect to daemon on specified port (default 4567)
+  --direct                               # Bypass daemon for send/receive (standalone mode)
 ```
 On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 
@@ -74,16 +77,17 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 
 **Client** (`src/`) — Cross-platform QUIC-based file transfer app (Windows + Linux)
 - `wormhole.c` — Entry point, CLI (`send`/`receive`/`store`/`get`/`delete`/`files`/`status`/`peers`/`export-key`/`import-key`/`daemon`/`config`), MsQuic lifecycle, QUIC listener/connection setup, UDP hole-punch probes (WHPK), parallel connection racing, Ctrl+C cleanup
-- `wormholed.c` — Persistent daemon process: QUIC listener, chunk store, relay connection with auto-reconnect, peer discovery, chunk replication (4x target), DHT node bootstrap/polling (multi-bootstrap with exponential backoff), health checks (20-chunk sample, event-driven), proof-of-storage challenge/response, storage ledger, client-side encryption on store/retrieve, configurable auto-eviction, DHT store persistence, named pipe IPC server
-- `stream.c` — Chunk-based two-stream transfer protocol: control stream (manifest request/response, chunk request, transfer complete) and data stream (chunk frames). Progress bar with speed/ETA. Resumable transfers via `transfer_state.c`. Multi-file receive support.
+- `wormholed.c` — Persistent daemon process: QUIC listener, chunk store, relay connection with auto-reconnect, peer discovery, chunk replication (4x target), DHT node bootstrap/polling (multi-bootstrap with exponential backoff), health checks (20-chunk sample, event-driven), proof-of-storage challenge/response, storage ledger, client-side encryption on store/retrieve, configurable auto-eviction, DHT store persistence, IPC v1+v2 server (named pipes on Windows, Unix sockets on Linux), transfer manager integration, readiness signal, heartbeat, log rotation
+- `transfer_mgr.c` — Daemon-mediated send/receive: manages up to 8 concurrent transfers (ACTIVE_TRANSFER), per-transfer relay client and QUIC connection, send/receive thread functions, progress callback bridging to IPC events, cancel support
+- `stream.c` — Chunk-based two-stream transfer protocol: control stream (manifest request/response, chunk request, transfer complete) and data stream (chunk frames). Progress bar with speed/ETA (or StreamProgressCallback for daemon mode). Resumable transfers via `transfer_state.c`. Multi-file receive support.
 - `file_io.c` — Cross-platform file ops, 64-bit size support, Downloads folder integration
 - `crypto.c` — Self-signed TLS cert generation with Ed25519 node ID embedded in CN (64 hex chars), peer certificate verification, Windows Certificate Store integration
 - `manifest.c` — File manifest serialization: v1 (single file), v2 (multi-file with per-file entries and chunk ranges), v3 (erasure coding metadata — ec_k, ec_m, stripe definitions with parity hashes)
-- `chunker.c` — Content-addressed chunking (Blake3 hashes, 256KB chunks), `Chunker_BuildManifestFromDirectory` for recursive directory transfer
+- `chunker.c` — Content-addressed chunking (Blake3 hashes, 256KB chunks), `Chunker_BuildManifestFromDirectory` for recursive directory transfer, `Chunker_BuildManifestAndStoreWithProgress` for progress-reporting store operations
 - `chunk_store.c` — Dedup chunk store (`ChunkStore_Has/Get/Put`), content-addressed by Blake3 hash. Replica metadata tracking (`ChunkStore_PutWithMeta`, `GetReplicaCount`, `SetReplicaLocation`). Storage quota enforcement with LRU eviction (`ChunkStore_Evict`) preferring highly-replicated chunks.
 - `transfer_state.c` — Resumable transfer state: saves/loads received-chunks bitfield to `~/.wormhole/transfers/<hash>.state`
-- `config.c` — Configuration management: INI-style `~/.wormhole/config` file with defaults (14 keys — see Key Configuration section)
-- `ipc.c` — IPC transport: named pipes on Windows (`\\.\pipe\wormhole`), Unix domain sockets on Linux (`~/.wormhole/wormhole.sock`). Server API for daemon, client API for CLI. Message framing: `[4B length][1B command][payload]`. Commands: STORE (0x01), GET (0x02), STATUS (0x03), SHUTDOWN (0x04), DHT_STATUS (0x05), LIST_FILES (0x06), FILE_GET (0x07), FILE_DELETE (0x08), EXPORT_KEY (0x09), IMPORT_KEY (0x0A), PEER_LIST (0x0B).
+- `config.c` — Configuration management: INI-style `~/.wormhole/config` file with defaults (14 keys — see Key Configuration section). Hot-reload classification (`Config_IsHotReloadable`), value validation (`Config_ValidateValue`).
+- `ipc.c` — IPC transport: named pipes on Windows (`\\.\pipe\wormhole`), Unix domain sockets on Linux (`~/.wormhole/wormhole.sock`). Server API for daemon, client API for CLI. Message framing: `[4B length][1B command][payload]`. v1 commands: STORE (0x01), GET (0x02), STATUS (0x03), SHUTDOWN (0x04), DHT_STATUS (0x05), LIST_FILES (0x06), FILE_GET (0x07), FILE_DELETE (0x08), EXPORT_KEY (0x09), IMPORT_KEY (0x0A), PEER_LIST (0x0B). v2 extensions: SUBSCRIBE (0x0C), CANCEL (0x0D), SEND (0x0E), RECEIVE (0x0F), TRANSFER_STATUS (0x10), TRANSFER_LIST (0x11), CONFIG_LIST (0x12), CONFIG_GET (0x13), CONFIG_SET (0x14), HEARTBEAT (0x15), EVENT (0xE0). v2 adds operation IDs, structured errors, subscriber management, and push events.
 - `erasure.c` — RS(8,4) erasure coding integration: stripe-based encoding (`ErasureCoding_Encode`), chunk reconstruction from parity (`ErasureCoding_ReconstructChunk`), parity regeneration (`ErasureCoding_RegenerateStripeParity`), EC_GROUP serialization for manifest v3
 - `proof.c` — Proof-of-storage: `Proof_Compute` (Blake3(seed || chunk_data)), pre-cached proofs per chunk (`~/.wormhole/proofs/`), challenge/response verification
 - `health.c` — Chunk health monitoring: periodic DHT queries for chunk locations, proof-of-storage challenges to holders, recovery orchestration for under-replicated data chunks and missing parity chunks
@@ -123,6 +127,7 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 - `MAX_ENDPOINTS 16` per peer, defined in `relay_protocol.h`, enforced client-side in `relay_client.c`
 - `REPLICATION_TARGET 4` — target copies per chunk for P2P storage durability
 - `MAX_FIND_PEERS 50` — cap on peer discovery responses
+- IPC v2 protocol: backward-compatible extension — connection starts in v1 mode, switches to v2 on SUBSCRIBE. v2 adds `[4B op_id]` to requests, structured error responses `[1B status][2B msg_len][msg]`, push events `[1B event_type][payload]`, operation cancellation. Max 8 subscribers, max 16 concurrent operations, 10 events/sec throttle.
 
 ### Connection Flow
 1. Sender registers with relay, gets ticket
@@ -163,7 +168,7 @@ Configurable settings in `~/.wormhole/config` (INI format, managed by `config.c`
 cd src
 build.bat                               # Build main binaries first (generates .obj files)
 cd test
-test.bat                                # Build and run all 17 test executables
+test.bat                                # Build and run all 18 test executables
 ```
 
 **Linux:**
@@ -171,10 +176,10 @@ test.bat                                # Build and run all 17 test executables
 cd src
 make                                    # Build main binaries first
 cd test
-./test_linux.sh                         # Build and run all 17 test executables
+./test_linux.sh                         # Build and run all 18 test executables
 ```
 
-Test suite (`src/test/`), 17 executables:
+Test suite (`src/test/`), 18 executables:
 - `test_wire_format.c` — LE encoding/decoding (header-only, no link deps)
 - `test_manifest.c` — Manifest v1 create/serialize/validate + v2 multi-file (chunk ranges, roundtrip, empty file)
 - `test_chunk_store.c` — Chunk put/get/has/dedup + replica metadata (set/get/dedup/max) + LRU eviction (total size, prefers replicated)
@@ -192,6 +197,7 @@ Test suite (`src/test/`), 17 executables:
 - `test_health.c` — EC-based chunk recovery, health check stats, degraded chunk detection, replication needs
 - `test_file_registry.c` — File registry save/load/update/list/delete, hex prefix lookup
 - `test_file_crypto.c` — Encryption/decryption roundtrip (small/large/empty files), wrong key detection, ciphertext differs, null arg handling
+- `test_ipc_v2.c` — IPC v2 protocol: error response write/read roundtrip, truncation, operation registry (register/get/cancel/unregister/full), v2 constants and backward compatibility
 
 All tests use `greatest.h` (single-header test framework). Tests needing filesystem use `setup_test_home()`/`cleanup_test_home()` to redirect HOME to a temp directory.
 
@@ -240,19 +246,22 @@ Tests peer discovery, chunk replication across nodes, cross-node retrieval, node
 
 See [ROADMAP.md](ROADMAP.md) for the full development roadmap.
 
-**Completed:** Phases 1-6 (core transfer, P2P storage, DHT, erasure coding, multi-platform, production readiness)
+**Completed:** Phases 1-8 (core transfer, P2P storage, DHT, erasure coding, multi-platform, production readiness, usability, GUI foundation)
 
-### Phase 6: Production Readiness (Complete)
-- 6A: Durability upgrade — R=4, RS(8,4) (13+ nines at 10% churn, 6x storage overhead) ✅
-- 6B: Configurable auto-eviction (local copies preserved by default, `auto_evict_enabled` config) ✅
-- 6C: DHT value store persistence (chunk locations survive restart, periodic save every 5 min) ✅
-- 6D: Multi-bootstrap resilience (up to 4 bootstrap nodes, exponential backoff 30s→300s) ✅
-- 6E: Enhanced health monitoring (20-chunk sample, 3 peers/chunk, event-driven checks) ✅
-- 6F: Client-side encryption (XChaCha20-Poly1305 via libsodium, encrypt-before-chunk, keys in file registry) ✅
-- 6G: TLS peer identity verification (Ed25519 node ID in cert CN, MITM prevention on replication) ✅
-
-### Phase 7: Usability & Management (Current)
+### Phase 7: Usability & Management (Complete)
 - 7A: File deletion — `wormhole delete <id>` removes chunks, EC metadata, DHT entries, registry entry ✅
 - 7B: Key export/import — `wormhole export-key <id>` / `wormhole import-key <id> <key>` for encryption key backup ✅
 - 7C: Daemon lifecycle — `wormhole daemon start|stop|restart|status` for process management ✅
 - 7D: Peer visibility — `wormhole peers` lists DHT peers, `wormhole files -v` shows verbose file info ✅
+
+### Phase 8: GUI Foundation (Complete)
+- 8A: IPC Protocol v2 — subscriptions, structured errors, operation IDs, cancellation ✅
+- 8B: Progress Reporting — chunker + FILE_GET progress callbacks, operation registry, cancellation ✅
+- 8C: Send/Receive via Daemon — transfer_mgr.c, daemon-mediated transfers, `--direct` fallback ✅
+- 8D: Config via IPC — CONFIG_LIST/GET/SET commands, hot-reload classification, value validation ✅
+- 8E: Daemon Lifecycle Hardening — readiness signal, heartbeat, stale PID detection, log rotation ✅
+- 8F: Push Notification Events — peer change, file status, health, transfer events ✅
+
+### Phase 9: GUI Implementation (Planned)
+- Qt 6 (C++) cross-platform GUI as thin IPC client to daemon
+- See ROADMAP.md for sub-phases 9A-9E

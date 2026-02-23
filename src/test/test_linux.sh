@@ -57,7 +57,7 @@ run_test() {
 rm -f test_*.o test_wire_format test_manifest test_chunk_store test_transfer_state \
       test_config test_chunker test_reed_solomon test_erasure test_routing_table \
       test_dht_protocol test_dht_store test_dht_lookup test_proof test_incentives \
-      test_health test_file_registry test_file_crypto
+      test_health test_file_registry test_file_crypto test_ipc_v2
 
 echo "============================================"
 echo "  Wormhole Unit Tests (Linux)"
@@ -130,6 +130,10 @@ run_test test_file_registry \
 # 17. test_file_crypto
 run_test test_file_crypto \
     test_file_crypto.c ../file_crypto.c
+
+# 18. test_ipc_v2
+run_test test_ipc_v2 \
+    test_ipc_v2.c ../ipc.c ../config.c
 
 echo ""
 echo "============================================"

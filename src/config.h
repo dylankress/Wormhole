@@ -83,5 +83,9 @@ BOOLEAN Config_SetUint64(WORMHOLE_CONFIG *config, const char *key, uint64_t valu
 // Returns TRUE if the value is acceptable, FALSE if out of range.
 BOOLEAN Config_ValidateValue(const char *key, const char *value);
 
+// Check if a config key can be hot-reloaded (changed without daemon restart).
+// Returns TRUE for safe keys, FALSE for keys requiring restart.
+BOOLEAN Config_IsHotReloadable(const char *key);
+
 // Get the default config file path (~/.wormhole/config).
 BOOLEAN Config_GetDefaultPath(char *path, size_t path_len);

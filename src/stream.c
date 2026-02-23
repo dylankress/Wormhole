@@ -627,10 +627,31 @@ static BOOLEAN SendNextDataChunk(CHUNK_SEND_CONTEXT *ctx)
         uint64_t progress_total_bytes = ctx->total_needed_bytes > 0
             ? ctx->total_needed_bytes : ctx->manifest->file_size;
 
-        PrintProgressBar(ctx->chunks_sent_count, progress_total_chunks,
-                         ctx->bytes_sent, progress_total_bytes,
-                         &ctx->start_time, &ctx->last_progress_time,
-                         &ctx->last_progress_bytes, "Sending");
+        if (ctx->progress_cb) {
+            // Calculate speed for callback
+            double now = WH_TIMER_NOW();
+            double speed = 0.0;
+            if (ctx->last_progress_time != 0.0) {
+                double interval = now - ctx->last_progress_time;
+                if (interval > 0.0)
+                    speed = (double)(ctx->bytes_sent - ctx->last_progress_bytes) / interval;
+            }
+            double eta = 0.0;
+            double elapsed = now - ctx->start_time;
+            if (elapsed > 0.0 && ctx->bytes_sent > 0) {
+                double avg = (double)ctx->bytes_sent / elapsed;
+                if (avg > 0.0)
+                    eta = (double)(progress_total_bytes - ctx->bytes_sent) / avg;
+            }
+            ctx->progress_cb(ctx->chunks_sent_count, progress_total_chunks,
+                             ctx->bytes_sent, progress_total_bytes,
+                             speed, eta, ctx->progress_cb_ctx);
+        } else {
+            PrintProgressBar(ctx->chunks_sent_count, progress_total_chunks,
+                             ctx->bytes_sent, progress_total_bytes,
+                             &ctx->start_time, &ctx->last_progress_time,
+                             &ctx->last_progress_bytes, "Sending");
+        }
     }
 
     if (is_last)
@@ -1669,10 +1690,30 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
         }
 
         // Live progress bar
-        PrintProgressBar(ctx->chunks_received_count, ctx->total_chunks,
-                         ctx->bytes_received, ctx->manifest->file_size,
-                         &ctx->start_time, &ctx->last_progress_time,
-                         &ctx->last_progress_bytes, "Receiving");
+        if (ctx->progress_cb) {
+            double now = WH_TIMER_NOW();
+            double speed = 0.0;
+            if (ctx->last_progress_time != 0.0) {
+                double interval = now - ctx->last_progress_time;
+                if (interval > 0.0)
+                    speed = (double)(ctx->bytes_received - ctx->last_progress_bytes) / interval;
+            }
+            double eta = 0.0;
+            double elapsed = now - ctx->start_time;
+            if (elapsed > 0.0 && ctx->bytes_received > 0) {
+                double avg = (double)ctx->bytes_received / elapsed;
+                if (avg > 0.0)
+                    eta = (double)(ctx->manifest->file_size - ctx->bytes_received) / avg;
+            }
+            ctx->progress_cb(ctx->chunks_received_count, ctx->total_chunks,
+                             ctx->bytes_received, ctx->manifest->file_size,
+                             speed, eta, ctx->progress_cb_ctx);
+        } else {
+            PrintProgressBar(ctx->chunks_received_count, ctx->total_chunks,
+                             ctx->bytes_received, ctx->manifest->file_size,
+                             &ctx->start_time, &ctx->last_progress_time,
+                             &ctx->last_progress_bytes, "Receiving");
+        }
 
         // Periodic state save (every 100 chunks or 5 seconds)
         if (ctx->chunks_received_count < ctx->total_chunks)

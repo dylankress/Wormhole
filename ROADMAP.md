@@ -37,7 +37,7 @@
 
 ### Phase 5: Multi-Platform ✅
 - Linux client build system (Makefile)
-- Linux unit tests (`test_linux.sh`, 17 test suites)
+- Linux unit tests (`test_linux.sh`, 18 test suites)
 - Cross-platform IPC (Unix domain sockets on Linux)
 - File registry (`wormhole files` command)
 - Docker multi-node testing (5-node cluster)
@@ -138,3 +138,194 @@ Changes:
 | 4 | 7D: Peer visibility | Small-Medium | Observability |
 
 All 4 sub-phases are independent. Suggested order is by impact.
+
+---
+
+## Phase 8: GUI Foundation ✅
+
+### Why This Phase Exists
+
+Phases 1-7 built a functionally complete decentralized storage system, but the daemon-client interface has critical gaps that would force a GUI into ugly workarounds:
+
+- **IPC too limited** — only 3 status codes, no error messages, no async notifications, no progress reporting, no cancellation
+- **Send/receive bypasses daemon** — ~300+ lines of blocking code in wormhole.c with printf progress bars and global state
+- **No config via IPC** — GUI would need to parse `~/.wormhole/config` directly
+- **Daemon lifecycle gaps** — no readiness signal, no health heartbeat, stale PID files on crash
+
+Fixing these first creates a clean, natural GUI integration point. After Phase 8, the CLI becomes a thin IPC client — identical architecture to what a GUI would use.
+
+---
+
+### Phase 8A: IPC Protocol v2 — Subscriptions, Errors, and Operations ✅
+
+**Effort**: Medium | **Impact**: Foundation for all GUI features
+
+Extend IPC to support everything a GUI needs:
+
+1. **Protocol versioning** — 2-byte version header so v1 clients still work unchanged
+2. **Structured errors** — `[1B status][2B error_msg_len][error_msg_utf8]` when status != OK
+3. **Operation IDs** — 4-byte client-assigned ID in every request/response for correlation
+4. **Subscription mode** — `IPC_CMD_SUBSCRIBE` (0x0C): client specifies event types, daemon keeps connection open and pushes events:
+   - `EVENT_PROGRESS` — bytes/chunks transferred, speed, ETA
+   - `EVENT_OP_COMPLETE` — operation finished with success/failure
+   - `EVENT_PEER_CHANGE` — peer connected/disconnected
+   - `EVENT_FILE_STATUS` — replication status changed
+   - `EVENT_HEALTH` — health check results
+5. **Cancellation** — `IPC_CMD_CANCEL` (0x0D) with operation ID
+
+Changes:
+- `src/ipc.h` — v2 constants, event types, IPC_CMD_SUBSCRIBE/CANCEL, structured error helpers
+- `src/ipc.c` — v2 framing (backward-compatible), subscription tracking, event push delivery
+- `src/wormholed.c` — Subscribe/cancel handlers, event emission helpers
+- `src/wormhole.c` — v2 client helpers for subscription and error parsing
+- `src/test/test_ipc_v2.c` — v2 framing, error parsing, subscription delivery, cancel roundtrip
+
+---
+
+### Phase 8B: Progress Reporting for Daemon Operations ✅
+
+**Effort**: Medium | **Impact**: Real-time feedback for GUI and CLI
+
+Wire progress reporting into every long-running daemon operation:
+
+1. **Progress context struct** — `OPERATION_PROGRESS` with op_id, cancelled flag, bytes/chunks done/total, timestamps
+2. **FILE_GET progress** — emit events after each chunk retrieval, check cancel flag in loop
+3. **STORE progress** — add progress callback to chunker API for per-chunk reporting
+4. **Background work progress** — replication batch and erasure encoding emit progress events
+5. **Operation registry** — array of active operations (max 16), enables cancel-by-ID
+6. **Event throttling** — max 10 progress events/second per operation
+
+Changes:
+- `src/ipc.h` — `OPERATION_PROGRESS` struct, operation registry API
+- `src/ipc.c` — Operation registry management, throttled event emission
+- `src/wormholed.c` — Progress hooks in STORE and FILE_GET handlers, work queue progress
+- `src/chunker.h/c` — Progress callback parameter for `Chunker_BuildManifestAndStore`
+- `src/wormhole.c` — Subscribe + display progress bar for store/get operations
+
+---
+
+### Phase 8C: Send/Receive via Daemon ✅
+
+**Effort**: Large | **Impact**: Transfers persist beyond CLI/GUI lifetime
+
+Move send/receive into the daemon so transfers persist beyond CLI/GUI lifetime:
+
+1. **New IPC commands:**
+   - `IPC_CMD_SEND` (0x0E) — daemon creates ticket, manages relay/QUIC, pushes progress
+   - `IPC_CMD_RECEIVE` (0x0F) — daemon looks up sender, races connections, receives file
+   - `IPC_CMD_TRANSFER_STATUS` (0x10) — query active transfers
+   - `IPC_CMD_TRANSFER_LIST` (0x11) — list all active/recent transfers
+2. **New module: `transfer_mgr.h/c`** — manages ACTIVE_TRANSFER structs (max 8 concurrent), each with its own relay client instance, QUIC connection, progress tracking
+3. **Relay client per transfer** — separate from daemon's storage relay client
+4. **Connection racing in daemon** — port `ParallelConnectPeers()` logic from wormhole.c
+5. **Stream progress callback** — replace `PrintProgressBar()` printf calls with callback; CLI sets callback to print, daemon sets callback to emit IPC events
+6. **CLI becomes thin client** — `cmd_send()` → IPC_CMD_SEND + subscribe + progress bar
+7. **Preserve `--direct` flag** — standalone send/receive without daemon for quick one-off transfers
+
+Changes:
+- New `src/transfer_mgr.h`, `src/transfer_mgr.c` — transfer lifecycle management
+- `src/stream.h/c` — Progress callback in CHUNK_SEND_CONTEXT/CHUNK_RECEIVE_CONTEXT
+- `src/ipc.h` — Transfer IPC commands (0x0E-0x11)
+- `src/wormholed.c` — Transfer command handlers, transfer manager integration
+- `src/wormhole.c` — Thin client send/receive via IPC, `--direct` flag bypass
+- `src/Makefile`, `src/build.bat` — Add transfer_mgr.c to build
+
+---
+
+### Phase 8D: Config via IPC ✅
+
+**Effort**: Small | **Impact**: GUI can manage settings without file parsing
+
+1. **New IPC commands:**
+   - `IPC_CMD_CONFIG_LIST` (0x12) — returns all config entries
+   - `IPC_CMD_CONFIG_GET` (0x13) — get single value
+   - `IPC_CMD_CONFIG_SET` (0x14) — set value with validation, response includes `restart_required` flag
+2. **Hot-reload classification** — safe settings (health_check_interval, min_storage_ratio) apply immediately; unsafe settings (dht_port, ec_data_shards) require restart
+3. **CLI update** — `wormhole config` uses IPC when daemon running, direct file access when not
+
+Changes:
+- `src/ipc.h` — Config IPC commands (0x12-0x14), hot-reload flag
+- `src/config.h/c` — `Config_IsHotReloadable()` classification function
+- `src/wormholed.c` — Config list/get/set handlers, live config update for safe keys
+- `src/wormhole.c` — Config commands use IPC when daemon is running
+
+---
+
+### Phase 8E: Daemon Lifecycle Hardening ✅
+
+**Effort**: Small-Medium | **Impact**: Reliable daemon management
+
+1. **Readiness signal** — daemon writes `~/.wormhole/wormholed.ready` after all subsystems init; CLI waits for file with timeout
+2. **Health heartbeat** — daemon updates `~/.wormhole/wormholed.heartbeat` every 10s; `daemon status` checks freshness
+3. **Stale PID detection** — check if PID process actually exists before declaring "daemon already running"
+4. **Log rotation** — on startup, rotate log if > 10MB (keep one backup)
+5. **Graceful shutdown timeout** — 5-second grace period for active operations
+6. **Heartbeat IPC** — `IPC_CMD_HEARTBEAT` (0x15) lightweight ping returning uptime
+
+Changes:
+- `src/wormholed.c` — Readiness file, heartbeat thread, log rotation, graceful shutdown
+- `src/wormhole.c` — Wait for readiness, check heartbeat in `daemon status`, stale PID recovery
+- `src/ipc.h` — `IPC_CMD_HEARTBEAT` (0x15)
+
+---
+
+### Phase 8F: Push Notification Events ✅
+
+**Effort**: Small | **Impact**: Real-time GUI visibility into network activity
+
+Wire remaining real-time events for GUI visibility:
+
+1. **Peer events** — DHT peer added/removed (hook `RoutingTable_AddNode`)
+2. **File status events** — replication status transitions (REPLICATING → SAFE)
+3. **Health events** — health check cycle summaries
+4. **Transfer events** — started, completed, failed
+
+Changes:
+- `src/ipc.h/c` — Event emission helpers for each event type
+- `src/wormholed.c` — Event hooks in replication, health check, file status update paths
+- `src/dht/routing_table.c` — Optional callback on node add/remove
+- `src/health.c` — Health check summary event emission
+
+---
+
+### Dependency Graph & Parallelism
+
+```
+8A (IPC v2)  [foundation]
+  ├──> 8B (Progress)         [depends on 8A]
+  │      └──> 8C (Send/Recv) [depends on 8A, 8B]
+  │                └──> 8F (Events) [depends on 8A, 8C]
+  ├──> 8D (Config)           [depends on 8A, parallel with 8B]
+  └──> 8E (Lifecycle)        [depends on 8A, parallel with 8B]
+```
+
+**Critical path:** 8A → 8B → 8C → 8F
+
+---
+
+## Phase 9: GUI Implementation — Qt (C++) (Planned)
+
+**Framework:** Qt 6 (C++) — native widgets, cross-platform (Windows + Linux), can call C functions directly via `extern "C"`, professional widget library.
+
+With Phase 8 complete, the GUI is a thin event-driven Qt client:
+- Connect to daemon via IPC (reuse existing `ipc.c` client API from C code)
+- Subscribe to events via IPC subscription channel
+- Dispatch commands (send, receive, store, get, delete, config)
+- Render progress, status, peer list, file list using Qt widgets
+
+### 9A: Qt Project Setup
+- CMake build integration, basic main window with daemon connection indicator and status bar
+
+### 9B: Send/Receive UI
+- File picker, ticket display/input, real-time QProgressBar, transfer queue view
+
+### 9C: Storage Management
+- File list (QTreeView), store via drag-and-drop, get/delete actions, replication status indicators
+
+### 9D: Settings & Network
+- Settings panel (QFormLayout with validation), peer list table, network status dashboard
+
+### 9E: System Integration
+- QSystemTrayIcon, minimize-to-tray, desktop notifications, background operation
+
+**Build integration:** New `gui/` directory with CMakeLists.txt. Links against Qt6 and existing C sources. The Qt app calls `IpcClient_Connect()`, `IpcClient_SendCommand()` etc. directly.
