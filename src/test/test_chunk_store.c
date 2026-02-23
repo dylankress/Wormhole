@@ -580,6 +580,73 @@ SUITE(eviction_suite)
 }
 
 // ============================================================================
+// Quota enforcement tests
+// ============================================================================
+
+TEST test_quota_enforcement(void)
+{
+    // Reset tracking to pick up current store size, then set quota
+    // to allow only 400 more bytes beyond what's already stored
+    ChunkStore_ResetQuotaTracking();
+    uint64_t existing = ChunkStore_GetTotalSize();
+    ChunkStore_SetQuotaBytes(existing + 400);
+
+    // Store a 200-byte chunk — should succeed
+    uint8_t d1[200];
+    memset(d1, 0xE0, sizeof(d1));
+    uint8_t h1[WH_HASH_SIZE];
+    compute_hash(d1, sizeof(d1), h1);
+    ASSERT(ChunkStore_Put(h1, d1, sizeof(d1)));
+
+    // Store another 200-byte chunk — should succeed (exactly at limit)
+    uint8_t d2[200];
+    memset(d2, 0xE1, sizeof(d2));
+    uint8_t h2[WH_HASH_SIZE];
+    compute_hash(d2, sizeof(d2), h2);
+    ASSERT(ChunkStore_Put(h2, d2, sizeof(d2)));
+
+    // Store a 200-byte chunk — should fail (would exceed quota by 200)
+    uint8_t d3[200];
+    memset(d3, 0xE2, sizeof(d3));
+    uint8_t h3[WH_HASH_SIZE];
+    compute_hash(d3, sizeof(d3), h3);
+    ASSERT_FALSE(ChunkStore_Put(h3, d3, sizeof(d3)));
+    ASSERT_FALSE(ChunkStore_Has(h3));
+
+    // Reset quota override
+    ChunkStore_SetQuotaBytes(0);
+    ChunkStore_ResetQuotaTracking();
+    PASS();
+}
+
+TEST test_quota_allows_dedup(void)
+{
+    // Reset tracking and set quota to allow 200 more bytes
+    ChunkStore_ResetQuotaTracking();
+    uint64_t existing = ChunkStore_GetTotalSize();
+    ChunkStore_SetQuotaBytes(existing + 200);
+
+    uint8_t d1[200];
+    memset(d1, 0xF0, sizeof(d1));
+    uint8_t h1[WH_HASH_SIZE];
+    compute_hash(d1, sizeof(d1), h1);
+    ASSERT(ChunkStore_Put(h1, d1, sizeof(d1)));
+
+    // Put same chunk again — should succeed (dedup, no new storage)
+    ASSERT(ChunkStore_Put(h1, d1, sizeof(d1)));
+
+    ChunkStore_SetQuotaBytes(0);
+    ChunkStore_ResetQuotaTracking();
+    PASS();
+}
+
+SUITE(quota_suite)
+{
+    RUN_TEST(test_quota_enforcement);
+    RUN_TEST(test_quota_allows_dedup);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -592,5 +659,6 @@ int main(void)
     RUN_SUITE(chunk_store_suite);
     RUN_SUITE(replica_suite);
     RUN_SUITE(eviction_suite);
+    RUN_SUITE(quota_suite);
     GREATEST_MAIN_END();
 }

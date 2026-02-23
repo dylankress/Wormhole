@@ -14,10 +14,11 @@
 
 CC      ?= gcc
 CFLAGS  = -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu11 \
-          -D_GNU_SOURCE \
+          -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 \
+          -fstack-protector-strong -fPIE \
           -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 \
           -DQUIC_API_ENABLE_PREVIEW_FEATURES
-LDFLAGS = -lmsquic -lsodium -lcrypto -lpthread -lm
+LDFLAGS = -pie -Wl,-z,relro,-z,now -lmsquic -lsodium -lcrypto -lpthread -lm
 
 # Paths — adjust MSQUIC_BUILD if your build directory differs
 MSQUIC_ROOT  = ../msquic

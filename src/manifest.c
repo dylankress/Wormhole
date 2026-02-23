@@ -60,8 +60,44 @@
 // Helper: compute body size for a manifest
 //=============================================================================
 
+// Validate a relative path for path traversal, absolute paths, null bytes.
+// Returns 0 for valid, -1 for invalid.
+static int ValidateManifestPath(const char *path, uint16_t path_len)
+{
+    if (!path || path_len == 0) return -1;
+
+    for (uint16_t i = 0; i < path_len; i++)
+    {
+        if (path[i] == '\0') return -1;
+    }
+
+    if (path[0] == '/' || path[0] == '\\') return -1;
+    if (path_len >= 2 && path[1] == ':') return -1;
+
+    for (uint16_t i = 0; i < path_len; i++)
+    {
+        if (i == 0 || path[i - 1] == '/' || path[i - 1] == '\\')
+        {
+            if (i + 1 < path_len && path[i] == '.' && path[i + 1] == '.')
+            {
+                if (i + 2 == path_len || path[i + 2] == '/' || path[i + 2] == '\\')
+                    return -1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 static size_t ComputeBodySize(const FILE_MANIFEST *m)
 {
+    // Overflow guard: prevent chunk_count * MANIFEST_PER_CHUNK from wrapping
+    // (always false on 64-bit, protects 32-bit builds)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
+    if (m->chunk_count > SIZE_MAX / MANIFEST_PER_CHUNK) return SIZE_MAX;
+#pragma GCC diagnostic pop
+
     size_t size = MANIFEST_BODY_FIXED + m->filename_length +
                   (size_t)m->chunk_count * MANIFEST_PER_CHUNK;
 
@@ -404,6 +440,14 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
     uint32_t chunk_size = ReadUint32LE(p);  p += 4;
     uint32_t chunk_count = ReadUint32LE(p); p += 4;
 
+    // Sanity caps to prevent integer overflow and allocation DoS
+    if (chunk_count > 16 * 1024 * 1024) return NULL;  // 4TB max at 256KB chunks
+    // (always false on 64-bit, protects 32-bit builds)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
+    if (chunk_count > SIZE_MAX / sizeof(CHUNK_INFO)) return NULL;
+#pragma GCC diagnostic pop
+
     // Validate chunk_size and chunk_count to prevent div-by-zero and DoS
     if (chunk_size == 0 || chunk_size > WH_CHUNK_SIZE) return NULL;
     if (version == WH_MANIFEST_VERSION)
@@ -435,6 +479,8 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
     {
         if ((size_t)(p - data) + 4 > size) { free(filename); return NULL; }
         fc = ReadUint32LE(p); p += 4;
+
+        if (fc > 65536) { free(filename); return NULL; }
 
         if (fc > 0)
         {
@@ -476,6 +522,16 @@ FILE_MANIFEST *Manifest_Deserialize(const uint8_t *data, size_t size)
                 memcpy(files[i].relative_path, p, files[i].path_length);
                 files[i].relative_path[files[i].path_length] = '\0';
                 p += files[i].path_length;
+
+                // Defense-in-depth: reject path traversal in manifest
+                if (ValidateManifestPath(files[i].relative_path, files[i].path_length) != 0)
+                {
+                    for (uint32_t j = 0; j <= i; j++)
+                        if (files[j].relative_path) free(files[j].relative_path);
+                    free(files);
+                    free(filename);
+                    return NULL;
+                }
 
                 files[i].file_size = ReadUint64LE(p);    p += 8;
                 files[i].chunk_start = ReadUint32LE(p);  p += 4;

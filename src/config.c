@@ -78,6 +78,87 @@ static void Config_SetDefaults(WORMHOLE_CONFIG *config)
 }
 
 //=============================================================================
+// Validation
+//=============================================================================
+
+// Numeric config key bounds table
+typedef struct {
+    const char *key;
+    uint64_t    min;
+    uint64_t    max;
+} CONFIG_BOUNDS;
+
+static const CONFIG_BOUNDS g_numeric_bounds[] = {
+    { "max_storage_gb",           1,     1048576 },
+    { "replication_target",       1,     16      },
+    { "ec_data_shards",           2,     128     },
+    { "ec_parity_shards",        1,     64      },
+    { "dht_port",                1024,  65535   },
+    { "relay_port",              1,     65535   },
+    { "health_check_interval_sec", 60,  86400   },
+    { "min_storage_ratio",       0,     100     },
+    { "proof_cache_count",       1,     256     },
+};
+
+static const char *g_boolean_keys[] = {
+    "dht_enabled", "ec_enabled", "auto_evict_enabled",
+};
+
+static const char *g_string_keys[] = {
+    "relay_host", "dht_bootstrap_nodes",
+};
+
+BOOLEAN Config_ValidateValue(const char *key, const char *value)
+{
+    if (!key || !value) return FALSE;
+
+    // Check string keys — pass through
+    for (size_t i = 0; i < sizeof(g_string_keys) / sizeof(g_string_keys[0]); i++)
+    {
+#ifdef _WIN32
+        if (_stricmp(key, g_string_keys[i]) == 0) return TRUE;
+#else
+        if (strcasecmp(key, g_string_keys[i]) == 0) return TRUE;
+#endif
+    }
+
+    // Check boolean keys — only "0" or "1"
+    for (size_t i = 0; i < sizeof(g_boolean_keys) / sizeof(g_boolean_keys[0]); i++)
+    {
+#ifdef _WIN32
+        if (_stricmp(key, g_boolean_keys[i]) == 0)
+#else
+        if (strcasecmp(key, g_boolean_keys[i]) == 0)
+#endif
+        {
+            return (strcmp(value, "0") == 0 || strcmp(value, "1") == 0) ? TRUE : FALSE;
+        }
+    }
+
+    // Check numeric keys with bounds
+    for (size_t i = 0; i < sizeof(g_numeric_bounds) / sizeof(g_numeric_bounds[0]); i++)
+    {
+#ifdef _WIN32
+        if (_stricmp(key, g_numeric_bounds[i].key) == 0)
+#else
+        if (strcasecmp(key, g_numeric_bounds[i].key) == 0)
+#endif
+        {
+            char *endptr = NULL;
+            unsigned long long val = strtoull(value, &endptr, 10);
+            if (endptr == value || *endptr != '\0')
+                return FALSE;  // Not a valid number
+            if (val < g_numeric_bounds[i].min || val > g_numeric_bounds[i].max)
+                return FALSE;
+            return TRUE;
+        }
+    }
+
+    // Unknown key — allow (don't block custom keys)
+    return TRUE;
+}
+
+//=============================================================================
 // Public API
 //=============================================================================
 
@@ -113,7 +194,7 @@ WORMHOLE_CONFIG *Config_Load(const char *path)
     if (!fh)
     {
         // File doesn't exist, return config with defaults
-        LOG("[config] No config file at %s, using defaults\n", path);
+        LOG_ERROR("[config] No config file at %s, using defaults\n", path);
         return config;
     }
 
@@ -153,7 +234,7 @@ WORMHOLE_CONFIG *Config_Load(const char *path)
     }
 
     fclose(fh);
-    LOG("[config] Loaded config from %s (%u entries)\n", path, config->count);
+    LOG_ERROR("[config] Loaded config from %s (%u entries)\n", path, config->count);
     return config;
 }
 
@@ -191,7 +272,7 @@ BOOLEAN Config_Save(const WORMHOLE_CONFIG *config)
     }
 
     fclose(fh);
-    LOG("[config] Saved config to %s\n", config->filepath);
+    LOG_ERROR("[config] Saved config to %s\n", config->filepath);
     return TRUE;
 }
 
@@ -230,6 +311,13 @@ const char *Config_GetString(const WORMHOLE_CONFIG *config, const char *key, con
 BOOLEAN Config_Set(WORMHOLE_CONFIG *config, const char *key, const char *value)
 {
     if (!config || !key || !value) return FALSE;
+
+    // Validate before setting
+    if (!Config_ValidateValue(key, value))
+    {
+        LOG_ERROR("[config] Invalid value '%s' for key '%s'\n", value, key);
+        return FALSE;
+    }
 
     // Check if key already exists
     CONFIG_ENTRY *entry = FindEntry(config, key);

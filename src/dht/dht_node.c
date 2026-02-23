@@ -64,7 +64,7 @@ static void EnsureWormholeDir(void)
     if (!home) return;
     char path[512];
     snprintf(path, sizeof(path), "%s/.wormhole", home);
-    mkdir(path, 0755);
+    mkdir(path, 0700);
 #endif
 }
 
@@ -474,6 +474,9 @@ static void HandleFindValueResponse(DHT_NODE *node, uint8_t *data, size_t len)
     DHT_HEADER *hdr = (DHT_HEADER *)data;
     uint8_t found = data[sizeof(DHT_HEADER)];
     uint8_t node_count = data[sizeof(DHT_HEADER) + 1];
+
+    // Cap node_count at DHT_K to prevent processing bogus responses
+    if (node_count > DHT_K) node_count = DHT_K;
 
     // Match pending RPC — save target_id (the key) before removing
     int rpc_idx = FindPendingRPC(node, hdr->txn_id);

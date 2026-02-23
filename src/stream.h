@@ -77,6 +77,10 @@ typedef struct {
 
     // Points to server context's transfer_complete flag (wormhole.c)
     BOOLEAN        *transfer_complete_flag;
+
+    // Atomic stream shutdown tracking
+    volatile int32_t streams_shutdown;
+    volatile int32_t expected_streams;
 } CHUNK_SEND_CONTEXT;
 
 //=============================================================================
@@ -124,6 +128,10 @@ typedef struct {
     BOOLEAN         transfer_complete_pending; // Set when TRANSFER_COMPLETE sent, awaiting SEND_COMPLETE
 
     void           *user_context;           // RECEIVE_CLIENT_CONTEXT from wormhole.c
+
+    // Atomic stream shutdown tracking
+    volatile int32_t streams_shutdown;
+    volatile int32_t expected_streams;
 } CHUNK_RECEIVE_CONTEXT;
 
 //=============================================================================

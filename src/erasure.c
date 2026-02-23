@@ -308,6 +308,121 @@ BOOLEAN ErasureCoding_ReconstructChunk(uint32_t chunk_index, const EC_GROUP *gro
 }
 
 //=============================================================================
+// Regenerate parity for a single stripe
+//=============================================================================
+
+BOOLEAN ErasureCoding_RegenerateStripeParity(uint32_t stripe_idx,
+                                              EC_GROUP *group,
+                                              const FILE_MANIFEST *manifest)
+{
+    if (!group || !manifest) return FALSE;
+    if (stripe_idx >= group->stripe_count) return FALSE;
+
+    uint8_t k = group->k;
+    uint8_t m = group->m;
+    EC_STRIPE *stripe = &group->stripes[stripe_idx];
+
+    // Create RS codec
+    RS_CODEC *codec = RS_Create(k, m);
+    if (!codec) return FALSE;
+
+    // Allocate shard buffers
+    uint8_t **data_shards = (uint8_t **)malloc(k * sizeof(uint8_t *));
+    uint8_t **parity_shards = (uint8_t **)malloc(m * sizeof(uint8_t *));
+    if (!data_shards || !parity_shards)
+    {
+        free(data_shards);
+        free(parity_shards);
+        RS_Destroy(codec);
+        return FALSE;
+    }
+
+    for (uint8_t i = 0; i < k; i++)
+    {
+        data_shards[i] = (uint8_t *)calloc(1, WH_CHUNK_SIZE);
+        if (!data_shards[i])
+        {
+            for (uint8_t j = 0; j < i; j++) free(data_shards[j]);
+            free(data_shards);
+            free(parity_shards);
+            RS_Destroy(codec);
+            return FALSE;
+        }
+    }
+
+    for (uint8_t i = 0; i < m; i++)
+    {
+        parity_shards[i] = (uint8_t *)malloc(WH_CHUNK_SIZE);
+        if (!parity_shards[i])
+        {
+            for (uint8_t j = 0; j < i; j++) free(parity_shards[j]);
+            for (uint8_t j = 0; j < k; j++) free(data_shards[j]);
+            free(data_shards);
+            free(parity_shards);
+            RS_Destroy(codec);
+            return FALSE;
+        }
+    }
+
+    // Load data chunks — all must be present
+    for (uint8_t i = 0; i < k; i++)
+    {
+        if (i < stripe->data_chunk_count)
+        {
+            uint32_t ci = stripe->data_chunk_start + i;
+            uint32_t read_size = 0;
+            if (!ChunkStore_Get(manifest->chunks[ci].hash, data_shards[i], &read_size))
+            {
+                LOG_ERROR("[erasure] Parity regen: missing data chunk %u\n", ci);
+                goto cleanup_fail;
+            }
+        }
+        // Else: padding shard stays zero (from calloc)
+    }
+
+    // Encode parity
+    if (!RS_Encode(codec, (const uint8_t *const *)data_shards,
+                    parity_shards, WH_CHUNK_SIZE))
+    {
+        LOG_ERROR("[erasure] RS_Encode failed for parity regen stripe %u\n", stripe_idx);
+        goto cleanup_fail;
+    }
+
+    // Hash and store each parity shard, update stripe metadata
+    for (uint8_t p = 0; p < m; p++)
+    {
+        blake3_hasher hasher;
+        blake3_hasher_init(&hasher);
+        blake3_hasher_update(&hasher, parity_shards[p], WH_CHUNK_SIZE);
+        blake3_hasher_finalize(&hasher, stripe->parity_hashes[p], WH_HASH_SIZE);
+
+        stripe->parity_sizes[p] = WH_CHUNK_SIZE;
+
+        if (!ChunkStore_Put(stripe->parity_hashes[p],
+                             parity_shards[p], WH_CHUNK_SIZE))
+        {
+            LOG_ERROR("[erasure] Failed to store regen parity %u for stripe %u\n", p, stripe_idx);
+            goto cleanup_fail;
+        }
+    }
+
+    for (uint8_t i = 0; i < k; i++) free(data_shards[i]);
+    for (uint8_t i = 0; i < m; i++) free(parity_shards[i]);
+    free(data_shards);
+    free(parity_shards);
+    RS_Destroy(codec);
+    return TRUE;
+
+cleanup_fail:
+    for (uint8_t i = 0; i < k; i++) free(data_shards[i]);
+    for (uint8_t i = 0; i < m; i++) free(parity_shards[i]);
+    free(data_shards);
+    free(parity_shards);
+    RS_Destroy(codec);
+    return FALSE;
+}
+
+//=============================================================================
 // Serialization
 //=============================================================================
 

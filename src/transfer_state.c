@@ -35,7 +35,7 @@ static BOOLEAN EnsureDir(const char *dir)
         return TRUE;
     return (GetLastError() == ERROR_ALREADY_EXISTS);
 #else
-    if (mkdir(dir, 0755) == 0)
+    if (mkdir(dir, 0700) == 0)
         return TRUE;
     return (errno == EEXIST);
 #endif

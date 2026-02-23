@@ -5,6 +5,21 @@
 
 #include "crypto.h"
 
+// Helper: validate that a string is exactly len hex characters [0-9a-fA-F]
+static BOOLEAN IsHexString(const char *str, size_t len)
+{
+	if (!str) return FALSE;
+	for (size_t i = 0; i < len; i++)
+	{
+		char c = str[i];
+		if (!((c >= '0' && c <= '9') ||
+		      (c >= 'a' && c <= 'f') ||
+		      (c >= 'A' && c <= 'F')))
+			return FALSE;
+	}
+	return str[len] == '\0';
+}
+
 // Helper: parse 64-hex-char CN and compare to expected node_id
 static BOOLEAN VerifyCN(const char *cn, const uint8_t expected_node_id[32])
 {
@@ -213,6 +228,13 @@ BOOLEAN GenerateSelfSignedCertWithNodeId(char *thumbprint_out, size_t thumbprint
 	for (int i = 0; i < 32; i++)
 		snprintf(hex + i * 2, 3, "%02x", node_id[i]);
 
+	// Validate hex string before using in shell command
+	if (!IsHexString(hex, 64))
+	{
+		LOG_ERROR("Invalid node ID hex string for cert generation\n");
+		return FALSE;
+	}
+
 	char output[4096];
 	memset(output, 0, sizeof(output));
 
@@ -382,6 +404,13 @@ BOOLEAN GenerateSelfSignedCertWithNodeId(char *cert_path_out, size_t path_size,
 	char hex[65];
 	for (int i = 0; i < 32; i++)
 		snprintf(hex + i * 2, 3, "%02x", node_id[i]);
+
+	// Validate hex string before using in shell command
+	if (!IsHexString(hex, 64))
+	{
+		LOG_ERROR("Invalid node ID hex string for cert generation\n");
+		return FALSE;
+	}
 
 	char cert_path[MAX_PATH], key_path[MAX_PATH];
 	if (!GetCertPaths(cert_path, sizeof(cert_path), key_path, sizeof(key_path)))

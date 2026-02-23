@@ -63,6 +63,7 @@ typedef struct {
     uint32_t            iteration;
     uint32_t            queries_in_flight;
     BOOLEAN             complete;
+    time_t              start_time;
 } DHT_ITERATIVE_LOOKUP;
 
 // ============================================================================
@@ -98,6 +99,10 @@ void DhtLookup_HandleResponse(DHT_ITERATIVE_LOOKUP *lookup,
 
 // Mark a node as failed (timeout)
 void DhtLookup_MarkFailed(DHT_ITERATIVE_LOOKUP *lookup, const uint8_t node_id[32]);
+
+// Check if the lookup has exceeded its wall-clock timeout (DHT_LOOKUP_TIMEOUT_SEC).
+// If timed out, sets complete = TRUE and returns TRUE. Otherwise returns FALSE.
+BOOLEAN DhtLookup_CheckTimeout(DHT_ITERATIVE_LOOKUP *lookup);
 
 // Check if the lookup is complete.
 // Complete when: value found, max iterations reached, or no closer unqueried nodes.

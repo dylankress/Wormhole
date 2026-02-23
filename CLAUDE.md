@@ -84,9 +84,9 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 - `transfer_state.c` — Resumable transfer state: saves/loads received-chunks bitfield to `~/.wormhole/transfers/<hash>.state`
 - `config.c` — Configuration management: INI-style `~/.wormhole/config` file with defaults (14 keys — see Key Configuration section)
 - `ipc.c` — IPC transport: named pipes on Windows (`\\.\pipe\wormhole`), Unix domain sockets on Linux (`~/.wormhole/wormhole.sock`). Server API for daemon, client API for CLI. Message framing: `[4B length][1B command][payload]`. Commands: STORE (0x01), GET (0x02), STATUS (0x03), SHUTDOWN (0x04), DHT_STATUS (0x05), LIST_FILES (0x06), FILE_GET (0x07), FILE_DELETE (0x08), EXPORT_KEY (0x09), IMPORT_KEY (0x0A), PEER_LIST (0x0B).
-- `erasure.c` — RS(8,4) erasure coding integration: stripe-based encoding (`ErasureCoding_Encode`), chunk reconstruction from parity (`ErasureCoding_ReconstructChunk`), EC_GROUP serialization for manifest v3
+- `erasure.c` — RS(8,4) erasure coding integration: stripe-based encoding (`ErasureCoding_Encode`), chunk reconstruction from parity (`ErasureCoding_ReconstructChunk`), parity regeneration (`ErasureCoding_RegenerateStripeParity`), EC_GROUP serialization for manifest v3
 - `proof.c` — Proof-of-storage: `Proof_Compute` (Blake3(seed || chunk_data)), pre-cached proofs per chunk (`~/.wormhole/proofs/`), challenge/response verification
-- `health.c` — Chunk health monitoring: periodic DHT queries for chunk locations, proof-of-storage challenges to holders, recovery orchestration for under-replicated chunks
+- `health.c` — Chunk health monitoring: periodic DHT queries for chunk locations, proof-of-storage challenges to holders, recovery orchestration for under-replicated data chunks and missing parity chunks
 - `incentives.c` — Storage ratio tracking: per-peer balance ledger (`STORAGE_LEDGER`), accept/reject storage based on reciprocity ratio (threshold 0.5), persisted to `~/.wormhole/storage_ledger.bin`
 - `file_registry.c` — File-level metadata tracking (`~/.wormhole/files/`): maps stored files to their chunks, tracks status (storing → replicating → safe → offloaded), supports lookup by hex prefix, stores per-file encryption keys (v2 format), file deletion. Powers the `wormhole files` and `wormhole delete` commands.
 - `file_crypto.c` — Client-side file encryption using libsodium `crypto_secretstream` (XChaCha20-Poly1305). Streaming encrypt/decrypt with 64KB chunks. Files are encrypted before chunking so storage nodes cannot read user data.
@@ -223,7 +223,7 @@ REM Windows — 3-node localhost cluster (requires relay connectivity)
 cd src\test
 test_multi_node.bat
 ```
-Tests peer discovery, chunk replication across nodes, cross-node retrieval, and node failure handling.
+Tests peer discovery, chunk replication across nodes, cross-node retrieval, node failure handling, EC recovery (data + parity), security permissions, config bounds validation, and storage quota enforcement. 20 total tests covering Phases 6-7 and hardening.
 
 ## Deployment
 - Relay runs on a DigitalOcean droplet at `wormholerelay.com:443`

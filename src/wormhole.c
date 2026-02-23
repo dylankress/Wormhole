@@ -3377,7 +3377,7 @@ static int cmd_config(int argc, char *argv[])
 		{
 			const char *val = Config_GetString(config, argv[2], NULL);
 			if (val)
-				LOG("%s\n", val);
+				printf("%s\n", val);
 			else
 				LOG_ERROR("Key not found: %s\n", argv[2]);
 		}
@@ -3391,8 +3391,12 @@ static int cmd_config(int argc, char *argv[])
 		}
 		else
 		{
-			Config_Set(config, argv[2], argv[3]);
-			if (Config_Save(config))
+			if (!Config_Set(config, argv[2], argv[3]))
+			{
+				LOG_ERROR("Error: Invalid value '%s' for key '%s'\n", argv[3], argv[2]);
+				result = 1;
+			}
+			else if (Config_Save(config))
 				LOG("Config updated: %s = %s\n", argv[2], argv[3]);
 			else
 			{
@@ -3731,7 +3735,21 @@ static void PrintUsage(void)
 
 int main(int argc, char *argv[])
 {
-	LOG("=== Wormhole - Secure P2P File Transfer ===\n\n");
+#ifdef _WIN32
+	if (!getenv("USERPROFILE"))
+	{
+		fprintf(stderr, "ERROR: USERPROFILE environment variable is not set\n");
+		return 1;
+	}
+#else
+	if (!getenv("HOME"))
+	{
+		fprintf(stderr, "ERROR: HOME environment variable is not set\n");
+		return 1;
+	}
+#endif
+
+	LOG_ERROR("=== Wormhole - Secure P2P File Transfer ===\n\n");
 
 	if (argc < 2)
 	{

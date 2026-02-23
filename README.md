@@ -97,7 +97,7 @@ Ticket: 5-ocean-maple
 | 6 | Done | Production readiness — RS(8,4), R=4, encryption, TLS identity, DHT persistence, multi-bootstrap |
 | 7 | Done | Usability & management — file deletion, key export/import, daemon lifecycle, peer visibility |
 
-17 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests (17 tests). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
+17 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests (20 tests). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
 
 ## Building
 

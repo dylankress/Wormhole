@@ -20,6 +20,7 @@
 #define DHT_MAX_PENDING_RPCS    64
 #define DHT_BUCKET_REFRESH_SEC  900     // 15 minutes
 #define DHT_RPC_TIMEOUT_MS      5000    // 5 seconds
+#define DHT_LOOKUP_TIMEOUT_SEC  30      // Wall-clock timeout for iterative lookups
 
 // ============================================================================
 // Address types (shared convention with relay protocol)

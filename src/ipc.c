@@ -8,6 +8,7 @@
 #include "wire_format.h"
 
 #ifdef _WIN32
+#include <sddl.h>
 
 // IPC message header size: 4 bytes (little-endian length)
 #define IPC_HEADER_SIZE 4
@@ -211,6 +212,28 @@ static void IpcServerHandleClient(HANDLE client_pipe, IPC_SERVER *server)
 
 static HANDLE IpcServerCreatePipe(void)
 {
+    // Build security descriptor: owner-only access (prevents other users from connecting)
+    SECURITY_ATTRIBUTES sa;
+    PSECURITY_DESCRIPTOR psd = NULL;
+    BOOLEAN have_sd = FALSE;
+
+    memset(&sa, 0, sizeof(sa));
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = FALSE;
+
+    if (ConvertStringSecurityDescriptorToSecurityDescriptorA(
+            "D:(A;;GA;;;OW)",  // Grant All access to Owner SID only
+            SDDL_REVISION_1, &psd, NULL))
+    {
+        sa.lpSecurityDescriptor = psd;
+        have_sd = TRUE;
+    }
+    else
+    {
+        LOG_ERROR("[ipc] Failed to create security descriptor: %lu (falling back to default)\n",
+                  GetLastError());
+    }
+
     HANDLE pipe = CreateNamedPipeA(
         g_ipc_server.pipe_name,
         PIPE_ACCESS_DUPLEX,
@@ -219,8 +242,13 @@ static HANDLE IpcServerCreatePipe(void)
         IPC_MAX_MESSAGE_SIZE,  // Output buffer size
         IPC_MAX_MESSAGE_SIZE,  // Input buffer size
         0,                     // Default timeout
-        NULL                   // Default security
+        have_sd ? &sa : NULL   // Owner-only security
     );
+
+    if (psd)
+    {
+        LocalFree(psd);
+    }
 
     if (pipe == INVALID_HANDLE_VALUE)
     {
@@ -539,6 +567,7 @@ void IpcClient_Disconnect(IPC_CLIENT *client)
 // ===================================================================
 
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -837,6 +866,9 @@ BOOLEAN IpcServer_Start(IpcCommandHandler handler, void *context,
         close(fd);
         return FALSE;
     }
+
+    // Restrict socket to owner-only access
+    chmod(g_ipc_server.socket_path, 0600);
 
     if (listen(fd, 5) < 0)
     {

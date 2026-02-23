@@ -200,6 +200,41 @@ static const FILE_ENTRY *FindFileEntryForChunk(const FILE_MANIFEST *m, uint32_t 
     return NULL;
 }
 
+// Validate a relative path from a manifest entry.
+// Rejects path traversal (".."), absolute paths, and null bytes.
+// Returns 0 for valid, -1 for invalid.
+static int ValidateRelativePath(const char *path, uint16_t path_len)
+{
+    if (!path || path_len == 0) return -1;
+
+    // Reject null bytes within path
+    for (uint16_t i = 0; i < path_len; i++)
+    {
+        if (path[i] == '\0') return -1;
+    }
+
+    // Reject absolute paths (/, \, or drive letter like C:)
+    if (path[0] == '/' || path[0] == '\\') return -1;
+    if (path_len >= 2 && path[1] == ':') return -1;
+
+    // Reject ".." path components
+    for (uint16_t i = 0; i < path_len; i++)
+    {
+        // Check if we're at the start of a path component
+        if (i == 0 || path[i - 1] == '/' || path[i - 1] == '\\')
+        {
+            if (i + 1 < path_len && path[i] == '.' && path[i + 1] == '.')
+            {
+                // ".." at end of path, or followed by separator
+                if (i + 2 == path_len || path[i + 2] == '/' || path[i + 2] == '\\')
+                    return -1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 // For v2 manifests: ensure the correct file is open in ctx->file_handle.
 // Returns TRUE if file_handle is ready for writing the given chunk.
 static BOOLEAN OpenChunkOutputFile(CHUNK_RECEIVE_CONTEXT *ctx, uint32_t chunk_index)
@@ -219,6 +254,17 @@ static BOOLEAN OpenChunkOutputFile(CHUNK_RECEIVE_CONTEXT *ctx, uint32_t chunk_in
         }
     }
     if (file_idx == UINT32_MAX) return FALSE;
+
+    // Validate path (reject path traversal, absolute paths, null bytes)
+    {
+        const FILE_ENTRY *fe_val = &ctx->manifest->files[file_idx];
+        if (ValidateRelativePath(fe_val->relative_path, fe_val->path_length) != 0)
+        {
+            LOG_ERROR("[RecvData] ERROR: Rejected unsafe path in manifest: %s\n",
+                      fe_val->relative_path);
+            return FALSE;
+        }
+    }
 
     // Already have the right file open?
     if (ctx->file_handle && ctx->current_file_index == file_idx)
@@ -750,6 +796,7 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
                 }
 
                 LOG("[SenderCtrl] Data stream opened, starting chunk send...\n");
+                ctx->expected_streams = 2;  // Now both control + data
                 ctx->start_time = WH_TIMER_NOW();
 
                 // Pipeline initial chunks (adaptive: fill to ideal or fallback limit)
@@ -825,12 +872,13 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
 
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
         LOG("[SenderCtrl] SHUTDOWN_COMPLETE\n");
-        // Control stream cleanup — don't free ctx here since data stream may still be active.
-        // ctx is freed when the last stream shuts down.
         ctx->control_stream = NULL;
-        if (ctx && !ctx->data_stream)
         {
-            CleanupSendContext(ctx);
+            int32_t prev = WH_ATOMIC_ADD(&ctx->streams_shutdown, 1);
+            if (prev + 1 >= ctx->expected_streams)
+            {
+                CleanupSendContext(ctx);
+            }
         }
         MsQuic->StreamClose(Stream);
         break;
@@ -911,10 +959,12 @@ QUIC_STATUS QUIC_API SenderDataStreamCallback(
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
         LOG("[SenderData] SHUTDOWN_COMPLETE\n");
         ctx->data_stream = NULL;
-        // If control stream is also gone, cleanup
-        if (ctx && !ctx->control_stream)
         {
-            CleanupSendContext(ctx);
+            int32_t prev = WH_ATOMIC_ADD(&ctx->streams_shutdown, 1);
+            if (prev + 1 >= ctx->expected_streams)
+            {
+                CleanupSendContext(ctx);
+            }
         }
         MsQuic->StreamClose(Stream);
         break;
@@ -940,6 +990,7 @@ QUIC_STATUS QUIC_API ReceiverControlStreamCallback(
     {
     case QUIC_STREAM_EVENT_START_COMPLETE:
         LOG("[RecvCtrl] START_COMPLETE\n");
+        ctx->expected_streams = 1;  // Control stream
         break;
 
     case QUIC_STREAM_EVENT_RECEIVE:
@@ -984,9 +1035,12 @@ QUIC_STATUS QUIC_API ReceiverControlStreamCallback(
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
         LOG("[RecvCtrl] SHUTDOWN_COMPLETE\n");
         ctx->control_stream = NULL;
-        if (ctx && !ctx->data_stream)
         {
-            CleanupReceiveContext(ctx);
+            int32_t prev = WH_ATOMIC_ADD(&ctx->streams_shutdown, 1);
+            if (prev + 1 >= ctx->expected_streams)
+            {
+                CleanupReceiveContext(ctx);
+            }
         }
         MsQuic->StreamClose(Stream);
         break;
@@ -1003,6 +1057,9 @@ QUIC_STATUS QUIC_API ReceiverDataStreamCallback(
     HQUIC Stream, void *Context, QUIC_STREAM_EVENT *Event)
 {
     CHUNK_RECEIVE_CONTEXT *ctx = (CHUNK_RECEIVE_CONTEXT *)Context;
+
+    // Data stream accepted — we now have 2 active streams
+    ctx->expected_streams = 2;
 
     switch (Event->Type)
     {
@@ -1097,6 +1154,15 @@ QUIC_STATUS QUIC_API ReceiverDataStreamCallback(
         {
             LOG_ERROR("[RecvData] WARNING: FIN received but only %u/%u chunks received\n",
                       ctx->chunks_received_count, ctx->total_chunks);
+
+            // Save state immediately for crash safety (cleanup also saves, but this is earlier)
+            if (ctx->chunks_received && ctx->chunks_received_count > 0)
+            {
+                TransferState_Save(ctx->manifest->manifest_hash,
+                                   ctx->chunks_received, ctx->total_chunks);
+                LOG("[RecvData] Saved transfer state (%u/%u) on incomplete FIN\n",
+                    ctx->chunks_received_count, ctx->total_chunks);
+            }
         }
         break;
     }
@@ -1104,9 +1170,12 @@ QUIC_STATUS QUIC_API ReceiverDataStreamCallback(
     case QUIC_STREAM_EVENT_SHUTDOWN_COMPLETE:
         LOG("[RecvData] SHUTDOWN_COMPLETE\n");
         ctx->data_stream = NULL;
-        if (ctx && !ctx->control_stream)
         {
-            CleanupReceiveContext(ctx);
+            int32_t prev = WH_ATOMIC_ADD(&ctx->streams_shutdown, 1);
+            if (prev + 1 >= ctx->expected_streams)
+            {
+                CleanupReceiveContext(ctx);
+            }
         }
         MsQuic->StreamClose(Stream);
         break;
@@ -1654,6 +1723,7 @@ void ChunkSendFile(HQUIC Connection, const char *file_path,
     ctx->transfer_complete_event = transfer_complete_event;
     ctx->transfer_complete_flag = transfer_complete_flag;
     ctx->current_file_index = UINT32_MAX;
+    ctx->expected_streams = 1;  // Control stream only initially
 
     // Pre-allocate send buffer pool
     ctx->send_pool = (SEND_BUFFER_SLOT *)calloc(SEND_POOL_SIZE, sizeof(SEND_BUFFER_SLOT));

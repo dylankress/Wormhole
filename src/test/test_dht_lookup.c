@@ -6,6 +6,7 @@
 #include "../dht/dht_lookup.h"
 #include "greatest.h"
 #include <string.h>
+#include <time.h>
 
 GREATEST_MAIN_DEFS();
 
@@ -284,6 +285,33 @@ TEST test_lookup_empty_routing_table(void)
     PASS();
 }
 
+TEST test_lookup_check_timeout(void)
+{
+    ROUTING_TABLE rt;
+    setup_routing_table(&rt, 0x00);
+
+    DHT_ITERATIVE_LOOKUP lookup;
+    uint8_t target[32];
+    fill_id(target, 0x05);
+
+    DhtLookup_Start(&lookup, &rt, DHT_LOOKUP_NODE, target);
+
+    // Should not be timed out immediately
+    ASSERT_FALSE(DhtLookup_CheckTimeout(&lookup));
+    ASSERT_FALSE(lookup.complete);
+
+    // Backdate start_time to trigger timeout
+    lookup.start_time = time(NULL) - DHT_LOOKUP_TIMEOUT_SEC - 1;
+
+    ASSERT(DhtLookup_CheckTimeout(&lookup));
+    ASSERT(lookup.complete);
+
+    // Calling again on already-complete lookup should return FALSE
+    ASSERT_FALSE(DhtLookup_CheckTimeout(&lookup));
+
+    PASS();
+}
+
 // ============================================================================
 // Test suite
 // ============================================================================
@@ -299,6 +327,7 @@ SUITE(dht_lookup_suite)
     RUN_TEST(test_lookup_max_iterations);
     RUN_TEST(test_lookup_get_closest_nodes);
     RUN_TEST(test_lookup_empty_routing_table);
+    RUN_TEST(test_lookup_check_timeout);
 }
 
 int main(int argc, char **argv)

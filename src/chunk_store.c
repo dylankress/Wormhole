@@ -5,6 +5,7 @@
 //
 
 #include "chunk_store.h"
+#include "config.h"
 #include "file_io.h"
 #include "proof.h"
 #include <blake3.h>
@@ -52,6 +53,49 @@ static void EnsureStoreLock(void)
     pthread_once(&g_store_lock_once, InitStoreLock);
 }
 #endif
+
+//=============================================================================
+// Storage quota tracking
+//=============================================================================
+
+static uint64_t g_total_store_bytes = 0;
+static BOOLEAN  g_quota_initialized = FALSE;
+
+static uint64_t g_quota_override = 0;  // 0 = use config, >0 = override (for testing)
+
+// Lazily initialize the total store size counter by scanning the store directory.
+// Must be called under g_store_lock or before concurrent access.
+static void EnsureQuotaInitialized(void)
+{
+    if (g_quota_initialized) return;
+    g_total_store_bytes = ChunkStore_GetTotalSize();
+    g_quota_initialized = TRUE;
+}
+
+uint64_t ChunkStore_GetQuotaBytes(void)
+{
+    if (g_quota_override > 0) return g_quota_override;
+
+    // Read from default config
+    WORMHOLE_CONFIG *config = Config_LoadDefault();
+    if (!config) return (uint64_t)CONFIG_DEFAULT_MAX_STORAGE_GB * 1024ULL * 1024ULL * 1024ULL;
+
+    uint64_t gb = Config_GetUint64(config, "max_storage_gb", CONFIG_DEFAULT_MAX_STORAGE_GB);
+    Config_Destroy(config);
+    return gb * 1024ULL * 1024ULL * 1024ULL;
+}
+
+void ChunkStore_SetQuotaBytes(uint64_t bytes)
+{
+    g_quota_override = bytes;
+}
+
+void ChunkStore_ResetQuotaTracking(void)
+{
+    g_total_store_bytes = ChunkStore_GetTotalSize();
+    g_quota_initialized = TRUE;
+    g_quota_override = 0;
+}
 
 //=============================================================================
 // Internal helpers
@@ -118,7 +162,7 @@ static BOOLEAN EnsureDir(const char *dir)
     // Already exists is fine
     return (GetLastError() == ERROR_ALREADY_EXISTS);
 #else
-    if (mkdir(dir, 0755) == 0)
+    if (mkdir(dir, 0700) == 0)
         return TRUE;
     return (errno == EEXIST);
 #endif
@@ -167,6 +211,22 @@ BOOLEAN ChunkStore_Put(const uint8_t hash[WH_HASH_SIZE],
     // Skip if already stored
     if (ChunkStore_Has(hash)) return TRUE;
 
+    // Enforce storage quota
+    EnsureStoreLock();
+    WH_MUTEX_LOCK(g_store_lock);
+    EnsureQuotaInitialized();
+
+    uint64_t max_bytes = ChunkStore_GetQuotaBytes();
+    if (max_bytes > 0 && g_total_store_bytes + size > max_bytes)
+    {
+        LOG_ERROR("[chunk_store] Storage quota exceeded (%llu + %u > %llu bytes)\n",
+                  (unsigned long long)g_total_store_bytes, size,
+                  (unsigned long long)max_bytes);
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return FALSE;
+    }
+    WH_MUTEX_UNLOCK(g_store_lock);
+
     char path[MAX_PATH];
     if (!GetChunkPath(hash, path, sizeof(path))) return FALSE;
 
@@ -193,7 +253,15 @@ BOOLEAN ChunkStore_Put(const uint8_t hash[WH_HASH_SIZE],
     size_t written = fwrite(data, 1, size, fh);
     fclose(fh);
 
-    return (written == size);
+    if (written == size)
+    {
+        WH_MUTEX_LOCK(g_store_lock);
+        g_total_store_bytes += size;
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 BOOLEAN ChunkStore_Has(const uint8_t hash[WH_HASH_SIZE])
@@ -588,11 +656,32 @@ BOOLEAN ChunkStore_Delete(const uint8_t hash[WH_HASH_SIZE])
     EnsureStoreLock();
     WH_MUTEX_LOCK(g_store_lock);
 
-    // Remove chunk data file
+    // Remove chunk data file and update quota counter
     char chunk_path[MAX_PATH];
     if (GetChunkPath(hash, chunk_path, sizeof(chunk_path)))
     {
-        remove(chunk_path);
+        // Get file size before deleting for quota tracking
+        FILE *sz_fh = fopen(chunk_path, "rb");
+        if (sz_fh)
+        {
+#ifdef _WIN32
+            _fseeki64(sz_fh, 0, SEEK_END);
+            uint64_t chunk_sz = (uint64_t)_ftelli64(sz_fh);
+#else
+            fseeko(sz_fh, 0, SEEK_END);
+            uint64_t chunk_sz = (uint64_t)ftello(sz_fh);
+#endif
+            fclose(sz_fh);
+
+            if (remove(chunk_path) == 0 && g_quota_initialized && chunk_sz <= g_total_store_bytes)
+            {
+                g_total_store_bytes -= chunk_sz;
+            }
+        }
+        else
+        {
+            remove(chunk_path);
+        }
     }
 
     // Remove replica metadata
@@ -1035,6 +1124,15 @@ uint64_t ChunkStore_Evict(uint64_t bytes_to_free)
             }
         }
         WH_MUTEX_UNLOCK(g_store_lock);
+    }
+
+    // Update quota tracking
+    if (freed > 0 && g_quota_initialized)
+    {
+        if (freed <= g_total_store_bytes)
+            g_total_store_bytes -= freed;
+        else
+            g_total_store_bytes = 0;
     }
 
     LOG("[evict] Evicted %u chunks, freed %llu bytes\n",

@@ -79,7 +79,7 @@ call :run_test test_manifest.exe
 REM ===================================================================
 echo.
 echo --- test_chunk_store ---
-cl %CFLAGS% %INCLUDES% test_chunk_store.c %BUILD%\chunk_store.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_chunk_store.exe /link ole32.lib
+cl %CFLAGS% %INCLUDES% test_chunk_store.c %BUILD%\chunk_store.obj %BUILD%\config.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_chunk_store.exe /link ole32.lib
 if errorlevel 1 (
     echo   COMPILE FAILED
     set /a FAIL_COUNT+=1
@@ -118,7 +118,7 @@ call :run_test test_config.exe
 REM ===================================================================
 echo.
 echo --- test_chunker ---
-cl %CFLAGS% %INCLUDES% test_chunker.c %BUILD%\chunker.obj %BUILD%\chunk_store.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_chunker.exe /link ole32.lib
+cl %CFLAGS% %INCLUDES% test_chunker.c %BUILD%\chunker.obj %BUILD%\chunk_store.obj %BUILD%\config.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_chunker.exe /link ole32.lib
 if errorlevel 1 (
     echo   COMPILE FAILED
     set /a FAIL_COUNT+=1
@@ -144,7 +144,7 @@ call :run_test test_reed_solomon.exe
 REM ===================================================================
 echo.
 echo --- test_erasure ---
-cl %CFLAGS% %INCLUDES% /I "%RS_ROOT%" test_erasure.c %BUILD%\erasure.obj %RS_ROOT%\rs.c %BUILD%\chunk_store.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_erasure.exe /link ole32.lib
+cl %CFLAGS% %INCLUDES% /I "%RS_ROOT%" test_erasure.c %BUILD%\erasure.obj %RS_ROOT%\rs.c %BUILD%\chunk_store.obj %BUILD%\config.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_erasure.exe /link ole32.lib
 if errorlevel 1 (
     echo   COMPILE FAILED
     set /a FAIL_COUNT+=1
@@ -235,7 +235,7 @@ call :run_test test_incentives.exe
 REM ===================================================================
 echo.
 echo --- test_health ---
-cl %CFLAGS% %INCLUDES% /I "%RS_ROOT%" test_health.c %BUILD%\health.obj %BUILD%\erasure.obj %RS_ROOT%\rs.c %BUILD%\chunk_store.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_health.exe /link ole32.lib
+cl %CFLAGS% %INCLUDES% /I "%RS_ROOT%" test_health.c %BUILD%\health.obj %BUILD%\erasure.obj %RS_ROOT%\rs.c %BUILD%\chunk_store.obj %BUILD%\config.obj %BUILD%\manifest.obj %BUILD%\file_io.obj %BUILD%\proof.obj %BLAKE3_OBJS% "%LIBSODIUM_LIB%" /Fe:test_health.exe /link ole32.lib
 if errorlevel 1 (
     echo   COMPILE FAILED
     set /a FAIL_COUNT+=1

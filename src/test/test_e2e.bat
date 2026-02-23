@@ -18,7 +18,7 @@ popd
 set "WORMHOLED=%BUILD_ABS%\wormholed.exe"
 set "WORMHOLE=%BUILD_ABS%\wormhole.exe"
 set TEST_DIR=%TEMP%\wh_e2e_test_%RANDOM%
-set HEALTH_INTERVAL=15
+set HEALTH_INTERVAL=60
 
 REM --- Verify binaries exist ---
 if not exist "%WORMHOLED%" (
@@ -371,9 +371,11 @@ echo --- Step 8: Test EC recovery ---
 set STORE_DIR=%TEST_DIR%\.wormhole\store
 set DELETED_CHUNK=
 
-REM Find any chunk file in the store directory to delete
+REM Find any chunk file in the store directory to delete (skip LRU metadata)
 for /r "%STORE_DIR%" %%f in (*) do (
-    if "!DELETED_CHUNK!"=="" set "DELETED_CHUNK=%%f"
+    if "!DELETED_CHUNK!"=="" (
+        if /I "%%~nxf" neq "access_times.dat" set "DELETED_CHUNK=%%f"
+    )
 )
 
 if "!DELETED_CHUNK!"=="" (

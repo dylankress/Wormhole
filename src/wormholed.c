@@ -3458,7 +3458,7 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
             if (home_ec)
             {
                 snprintf(ec_dir, sizeof(ec_dir), "%s/.wormhole/ec", home_ec);
-                mkdir(ec_dir, 0755);
+                mkdir(ec_dir, 0700);
                 char hex[65];
                 for (int hi = 0; hi < WH_HASH_SIZE; hi++)
                     sprintf(hex + hi * 2, "%02x", item->ec_meta.manifest_hash[hi]);
@@ -4662,6 +4662,21 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Verify home directory is set (may have been set by --data-dir above)
+#ifdef _WIN32
+    if (!getenv("USERPROFILE"))
+    {
+        fprintf(stderr, "ERROR: USERPROFILE environment variable is not set\n");
+        return 1;
+    }
+#else
+    if (!getenv("HOME"))
+    {
+        fprintf(stderr, "ERROR: HOME environment variable is not set\n");
+        return 1;
+    }
+#endif
+
     // Parse command-line arguments
     g_daemon.listen_port = DAEMON_DEFAULT_PORT;
     g_daemon.relay_enabled = TRUE;
@@ -4780,6 +4795,7 @@ int main(int argc, char *argv[])
 #else
         snprintf(wormhole_dir, sizeof(wormhole_dir), "%s/.wormhole", home);
         mkdir(wormhole_dir, 0700);
+        chmod(wormhole_dir, 0700);  // Fix perms if dir already existed
         snprintf(identity_path, sizeof(identity_path), "%s/.wormhole/identity", home);
 #endif
 
@@ -5266,6 +5282,43 @@ int main(int argc, char *argv[])
                                     }
                                 }
 
+                                // Check parity chunks — regenerate if missing
+                                for (uint32_t s = 0; s < ec_group->stripe_count && ec_attempts < 20; s++)
+                                {
+                                    const EC_STRIPE *stripe = &ec_group->stripes[s];
+                                    BOOLEAN parity_missing = FALSE;
+                                    for (uint8_t p = 0; p < ec_group->m; p++)
+                                    {
+                                        if (!ChunkStore_Has(stripe->parity_hashes[p]))
+                                        {
+                                            parity_missing = TRUE;
+                                            break;
+                                        }
+                                    }
+                                    if (!parity_missing) continue;
+
+                                    // Verify all data chunks present before regenerating
+                                    BOOLEAN all_data = TRUE;
+                                    for (uint32_t i = 0; i < stripe->data_chunk_count; i++)
+                                    {
+                                        uint32_t ci = stripe->data_chunk_start + i;
+                                        if (!ChunkStore_Has(ec_manifest->chunks[ci].hash))
+                                        {
+                                            all_data = FALSE;
+                                            break;
+                                        }
+                                    }
+                                    if (all_data)
+                                    {
+                                        ec_attempts++;
+                                        if (ErasureCoding_RegenerateStripeParity(s, ec_group, ec_manifest))
+                                        {
+                                            ec_recovered++;
+                                            LOG("[daemon] EC regenerated parity for stripe %u of %s\n", s, ec_find.cFileName);
+                                        }
+                                    }
+                                }
+
                                 Manifest_Destroy(ec_manifest);
                                 ErasureCoding_DestroyGroup(ec_group);
                             } while (FindNextFileA(hEcFind, &ec_find));
@@ -5310,6 +5363,43 @@ int main(int argc, char *argv[])
                                                     ec_manifest->chunks[ci].hash, g_daemon.listen_port);
                                                 WH_MUTEX_UNLOCK(g_daemon.dht_lock);
                                             }
+                                        }
+                                    }
+                                }
+
+                                // Check parity chunks — regenerate if missing
+                                for (uint32_t s = 0; s < ec_group->stripe_count && ec_attempts < 20; s++)
+                                {
+                                    const EC_STRIPE *stripe = &ec_group->stripes[s];
+                                    BOOLEAN parity_missing = FALSE;
+                                    for (uint8_t p = 0; p < ec_group->m; p++)
+                                    {
+                                        if (!ChunkStore_Has(stripe->parity_hashes[p]))
+                                        {
+                                            parity_missing = TRUE;
+                                            break;
+                                        }
+                                    }
+                                    if (!parity_missing) continue;
+
+                                    // Verify all data chunks present before regenerating
+                                    BOOLEAN all_data = TRUE;
+                                    for (uint32_t i = 0; i < stripe->data_chunk_count; i++)
+                                    {
+                                        uint32_t ci = stripe->data_chunk_start + i;
+                                        if (!ChunkStore_Has(ec_manifest->chunks[ci].hash))
+                                        {
+                                            all_data = FALSE;
+                                            break;
+                                        }
+                                    }
+                                    if (all_data)
+                                    {
+                                        ec_attempts++;
+                                        if (ErasureCoding_RegenerateStripeParity(s, ec_group, ec_manifest))
+                                        {
+                                            ec_recovered++;
+                                            LOG("[daemon] EC regenerated parity for stripe %u of %s\n", s, ec_ent->d_name);
                                         }
                                     }
                                 }

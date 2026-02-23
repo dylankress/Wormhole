@@ -46,6 +46,14 @@ EC_GROUP *ErasureCoding_Encode(const FILE_MANIFEST *manifest, uint8_t k, uint8_t
 BOOLEAN ErasureCoding_ReconstructChunk(uint32_t chunk_index, const EC_GROUP *group,
                                         const FILE_MANIFEST *manifest);
 
+// Regenerate all parity chunks for a single stripe.
+// Requires all data chunks to be present in the store.
+// Updates group->stripes[stripe_idx].parity_hashes/parity_sizes in-place.
+// Returns TRUE if parity was regenerated and stored, FALSE on failure.
+BOOLEAN ErasureCoding_RegenerateStripeParity(uint32_t stripe_idx,
+                                              EC_GROUP *group,
+                                              const FILE_MANIFEST *manifest);
+
 // Serialize EC_GROUP to a buffer. Caller must free().
 uint8_t *ErasureCoding_SerializeGroup(const EC_GROUP *group, size_t *out_size);
 

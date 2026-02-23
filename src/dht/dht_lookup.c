@@ -7,6 +7,7 @@
 #include "dht_lookup.h"
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 // ============================================================================
 // Internal: XOR distance comparison
@@ -113,6 +114,7 @@ void DhtLookup_Start(DHT_ITERATIVE_LOOKUP *lookup, const ROUTING_TABLE *rt,
     memset(lookup, 0, sizeof(DHT_ITERATIVE_LOOKUP));
     lookup->type = type;
     memcpy(lookup->target, target, 32);
+    lookup->start_time = time(NULL);
 
     // Seed shortlist from routing table's closest nodes
     ROUTING_NODE closest[DHT_K];
@@ -237,6 +239,17 @@ void DhtLookup_MarkFailed(DHT_ITERATIVE_LOOKUP *lookup, const uint8_t node_id[32
         if (lookup->queries_in_flight > 0)
             lookup->queries_in_flight--;
     }
+}
+
+BOOLEAN DhtLookup_CheckTimeout(DHT_ITERATIVE_LOOKUP *lookup)
+{
+    if (lookup->complete) return FALSE;
+    if (difftime(time(NULL), lookup->start_time) > DHT_LOOKUP_TIMEOUT_SEC)
+    {
+        lookup->complete = TRUE;
+        return TRUE;
+    }
+    return FALSE;
 }
 
 BOOLEAN DhtLookup_IsComplete(const DHT_ITERATIVE_LOOKUP *lookup)

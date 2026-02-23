@@ -340,6 +340,54 @@ TEST test_store_save_load(void)
     PASS();
 }
 
+TEST test_store_lru_eviction_at_capacity(void)
+{
+    static DHT_VALUE_STORE store;
+    DhtStore_Init(&store);
+
+    // Fill store to capacity
+    for (uint32_t i = 0; i < DHT_STORE_CAPACITY; i++)
+    {
+        uint8_t key[32];
+        memset(key, 0, 32);
+        key[0] = (uint8_t)(i & 0xFF);
+        key[1] = (uint8_t)((i >> 8) & 0xFF);
+
+        DHT_LOCATION loc;
+        make_location(&loc, (uint8_t)(i & 0xFF), (uint16_t)(4000 + (i % 1000)));
+
+        ASSERT(DhtStore_Put(&store, key, &loc, 1));
+    }
+    ASSERT_EQ(DhtStore_GetCount(&store), (uint32_t)DHT_STORE_CAPACITY);
+
+    // Make entry 0 the oldest by backdating its last_refreshed
+    store.entries[0].last_refreshed = time(NULL) - 99999;
+
+    // Remember the oldest entry's key
+    uint8_t oldest_key[32];
+    memcpy(oldest_key, store.entries[0].key, 32);
+
+    // Insert a new entry — should evict the oldest
+    uint8_t new_key[32];
+    memset(new_key, 0xFF, 32);
+
+    DHT_LOCATION new_loc;
+    make_location(&new_loc, 0xFE, 9999);
+
+    ASSERT(DhtStore_Put(&store, new_key, &new_loc, 1));
+
+    // Count should still be at capacity
+    ASSERT_EQ(DhtStore_GetCount(&store), (uint32_t)DHT_STORE_CAPACITY);
+
+    // New entry should be present
+    ASSERT(DhtStore_Has(&store, new_key));
+
+    // Oldest entry should have been evicted
+    ASSERT_FALSE(DhtStore_Has(&store, oldest_key));
+
+    PASS();
+}
+
 // ============================================================================
 // Test suite
 // ============================================================================
@@ -357,6 +405,7 @@ SUITE(dht_store_suite)
     RUN_TEST(test_store_remove);
     RUN_TEST(test_store_remove_middle);
     RUN_TEST(test_store_save_load);
+    RUN_TEST(test_store_lru_eviction_at_capacity);
 }
 
 int main(int argc, char **argv)

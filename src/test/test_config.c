@@ -321,6 +321,110 @@ TEST test_parse_empty_lines(void)
 }
 
 // ============================================================================
+// validation_suite — bounds checking for config values
+// ============================================================================
+
+TEST test_validate_numeric_in_range(void)
+{
+    ASSERT(Config_ValidateValue("max_storage_gb", "1"));
+    ASSERT(Config_ValidateValue("max_storage_gb", "1048576"));
+    ASSERT(Config_ValidateValue("max_storage_gb", "100"));
+    ASSERT(Config_ValidateValue("replication_target", "4"));
+    ASSERT(Config_ValidateValue("dht_port", "4568"));
+    ASSERT(Config_ValidateValue("relay_port", "443"));
+    ASSERT(Config_ValidateValue("min_storage_ratio", "0"));
+    ASSERT(Config_ValidateValue("min_storage_ratio", "100"));
+    PASS();
+}
+
+TEST test_validate_numeric_out_of_range(void)
+{
+    ASSERT_FALSE(Config_ValidateValue("max_storage_gb", "0"));
+    ASSERT_FALSE(Config_ValidateValue("max_storage_gb", "1048577"));
+    ASSERT_FALSE(Config_ValidateValue("replication_target", "0"));
+    ASSERT_FALSE(Config_ValidateValue("replication_target", "17"));
+    ASSERT_FALSE(Config_ValidateValue("dht_port", "1023"));
+    ASSERT_FALSE(Config_ValidateValue("dht_port", "65536"));
+    ASSERT_FALSE(Config_ValidateValue("relay_port", "0"));
+    ASSERT_FALSE(Config_ValidateValue("min_storage_ratio", "101"));
+    ASSERT_FALSE(Config_ValidateValue("ec_data_shards", "1"));
+    ASSERT_FALSE(Config_ValidateValue("ec_parity_shards", "0"));
+    ASSERT_FALSE(Config_ValidateValue("health_check_interval_sec", "59"));
+    ASSERT_FALSE(Config_ValidateValue("proof_cache_count", "0"));
+    ASSERT_FALSE(Config_ValidateValue("proof_cache_count", "257"));
+    PASS();
+}
+
+TEST test_validate_numeric_not_a_number(void)
+{
+    ASSERT_FALSE(Config_ValidateValue("max_storage_gb", "abc"));
+    ASSERT_FALSE(Config_ValidateValue("replication_target", ""));
+    ASSERT_FALSE(Config_ValidateValue("dht_port", "12abc"));
+    PASS();
+}
+
+TEST test_validate_boolean(void)
+{
+    ASSERT(Config_ValidateValue("dht_enabled", "0"));
+    ASSERT(Config_ValidateValue("dht_enabled", "1"));
+    ASSERT(Config_ValidateValue("ec_enabled", "0"));
+    ASSERT(Config_ValidateValue("auto_evict_enabled", "1"));
+
+    ASSERT_FALSE(Config_ValidateValue("dht_enabled", "2"));
+    ASSERT_FALSE(Config_ValidateValue("ec_enabled", "yes"));
+    ASSERT_FALSE(Config_ValidateValue("auto_evict_enabled", "true"));
+    PASS();
+}
+
+TEST test_validate_string_passthrough(void)
+{
+    ASSERT(Config_ValidateValue("relay_host", "wormholerelay.com"));
+    ASSERT(Config_ValidateValue("relay_host", ""));
+    ASSERT(Config_ValidateValue("dht_bootstrap_nodes", "192.168.1.1:4568,10.0.0.1:4568"));
+    PASS();
+}
+
+TEST test_set_rejects_invalid(void)
+{
+    char path[512];
+    make_temp_path(path, sizeof(path), "validate_set.ini");
+
+    WORMHOLE_CONFIG *config = Config_Load(path);
+    ASSERT(config != NULL);
+
+    // Out-of-range value should be rejected
+    ASSERT_FALSE(Config_Set(config, "max_storage_gb", "0"));
+    // Default should be unchanged
+    ASSERT_EQ(Config_GetUint64(config, "max_storage_gb", 0),
+              (uint64_t)CONFIG_DEFAULT_MAX_STORAGE_GB);
+
+    // Valid value should succeed
+    ASSERT(Config_Set(config, "max_storage_gb", "50"));
+    ASSERT_EQ(Config_GetUint64(config, "max_storage_gb", 0), 50ULL);
+
+    Config_Destroy(config);
+    PASS();
+}
+
+TEST test_validate_unknown_key_allowed(void)
+{
+    // Unknown keys should pass validation (custom user keys)
+    ASSERT(Config_ValidateValue("my_custom_key", "anything"));
+    PASS();
+}
+
+SUITE(validation_suite)
+{
+    RUN_TEST(test_validate_numeric_in_range);
+    RUN_TEST(test_validate_numeric_out_of_range);
+    RUN_TEST(test_validate_numeric_not_a_number);
+    RUN_TEST(test_validate_boolean);
+    RUN_TEST(test_validate_string_passthrough);
+    RUN_TEST(test_set_rejects_invalid);
+    RUN_TEST(test_validate_unknown_key_allowed);
+}
+
+// ============================================================================
 // Suites
 // ============================================================================
 
@@ -358,5 +462,6 @@ int main(void)
     RUN_SUITE(defaults_suite);
     RUN_SUITE(getset_suite);
     RUN_SUITE(file_roundtrip_suite);
+    RUN_SUITE(validation_suite);
     GREATEST_MAIN_END();
 }

@@ -88,3 +88,12 @@ void ChunkStore_ClearReplicas(const uint8_t hash[WH_HASH_SIZE]);
 
 // Update the last-access time for a chunk (called on Get).
 void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE]);
+
+// Get the effective storage quota in bytes (from config or override).
+uint64_t ChunkStore_GetQuotaBytes(void);
+
+// Override the storage quota for testing. Set to 0 to revert to config.
+void ChunkStore_SetQuotaBytes(uint64_t bytes);
+
+// Reset internal quota tracking state (for testing).
+void ChunkStore_ResetQuotaTracking(void);

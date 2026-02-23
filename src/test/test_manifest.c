@@ -534,6 +534,119 @@ SUITE(multifile_suite)
     RUN_TEST(test_multifile_empty_file);
 }
 
+// ============================================================================
+// Hardening tests (overflow, path traversal)
+// ============================================================================
+
+TEST test_overflow_chunk_count(void)
+{
+    // Craft raw manifest bytes with chunk_count = 0xFFFFFFFF
+    // Should be rejected by the 16M sanity cap before any allocation
+    uint8_t buf[64];
+    memset(buf, 0, sizeof(buf));
+    uint8_t *p = buf;
+
+    // Header: magic + version + dummy hash
+    WriteUint32LE(p, WH_MANIFEST_MAGIC); p += 4;
+    *p = WH_MANIFEST_VERSION; p += 1;
+    memset(p, 0, WH_HASH_SIZE); p += WH_HASH_SIZE;
+
+    // Body: file_size + chunk_size + chunk_count + filename
+    WriteUint64LE(p, 0); p += 8;
+    WriteUint32LE(p, WH_CHUNK_SIZE); p += 4;
+    WriteUint32LE(p, 0xFFFFFFFF); p += 4;
+    WriteUint16LE(p, 4); p += 2;
+    memcpy(p, "test", 4); p += 4;
+
+    FILE_MANIFEST *m = Manifest_Deserialize(buf, (size_t)(p - buf));
+    ASSERT(m == NULL);
+    PASS();
+}
+
+TEST test_large_file_count_rejected(void)
+{
+    // Craft raw manifest bytes with file_count > 65536
+    uint8_t buf[80];
+    memset(buf, 0, sizeof(buf));
+    uint8_t *p = buf;
+
+    WriteUint32LE(p, WH_MANIFEST_MAGIC); p += 4;
+    *p = WH_MANIFEST_VERSION_2; p += 1;
+    memset(p, 0, WH_HASH_SIZE); p += WH_HASH_SIZE;
+
+    WriteUint64LE(p, 0); p += 8;
+    WriteUint32LE(p, WH_CHUNK_SIZE); p += 4;
+    WriteUint32LE(p, 0); p += 4;  // chunk_count = 0
+    WriteUint16LE(p, 4); p += 2;
+    memcpy(p, "test", 4); p += 4;
+    WriteUint32LE(p, 100000); p += 4;  // file_count > 65536
+
+    FILE_MANIFEST *m = Manifest_Deserialize(buf, (size_t)(p - buf));
+    ASSERT(m == NULL);
+    PASS();
+}
+
+TEST test_path_traversal_rejected(void)
+{
+    // Create v2 manifest with "../evil.txt" path — should be rejected
+    const char *paths[] = {"../evil.txt"};
+    uint64_t sizes[] = {1000};
+
+    FILE_MANIFEST *m = Manifest_CreateMultiFile("mydir", paths, sizes, 1);
+    ASSERT(m != NULL);
+
+    uint8_t hash[WH_HASH_SIZE];
+    fill_hash(hash, 0xAB);
+    Manifest_AddChunk(m, 0, hash, 1000);
+    Manifest_ComputeHash(m);
+
+    size_t sz = 0;
+    uint8_t *data = Manifest_Serialize(m, &sz);
+    ASSERT(data != NULL);
+
+    // Deserialize should fail due to path traversal
+    FILE_MANIFEST *m2 = Manifest_Deserialize(data, sz);
+    ASSERT(m2 == NULL);
+
+    free(data);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+TEST test_absolute_path_rejected(void)
+{
+    // Create v2 manifest with absolute path — should be rejected
+    const char *paths[] = {"/etc/passwd"};
+    uint64_t sizes[] = {1000};
+
+    FILE_MANIFEST *m = Manifest_CreateMultiFile("mydir", paths, sizes, 1);
+    ASSERT(m != NULL);
+
+    uint8_t hash[WH_HASH_SIZE];
+    fill_hash(hash, 0xAC);
+    Manifest_AddChunk(m, 0, hash, 1000);
+    Manifest_ComputeHash(m);
+
+    size_t sz = 0;
+    uint8_t *data = Manifest_Serialize(m, &sz);
+    ASSERT(data != NULL);
+
+    FILE_MANIFEST *m2 = Manifest_Deserialize(data, sz);
+    ASSERT(m2 == NULL);
+
+    free(data);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+SUITE(hardening_suite)
+{
+    RUN_TEST(test_overflow_chunk_count);
+    RUN_TEST(test_large_file_count_rejected);
+    RUN_TEST(test_path_traversal_rejected);
+    RUN_TEST(test_absolute_path_rejected);
+}
+
 int main(void)
 {
     GREATEST_MAIN_BEGIN();
@@ -541,5 +654,6 @@ int main(void)
     RUN_SUITE(roundtrip_suite);
     RUN_SUITE(validation_suite);
     RUN_SUITE(multifile_suite);
+    RUN_SUITE(hardening_suite);
     GREATEST_MAIN_END();
 }

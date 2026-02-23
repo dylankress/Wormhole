@@ -181,7 +181,7 @@ docker compose up -d              # Start 5-node cluster
 docker compose down -v            # Tear down
 ```
 
-Tests: daemon health across 5 nodes, file store, DHT peer discovery, chunk replication to 3+ additional nodes (R=4), cross-node retrieval, node failure survival. 17 total tests covering Phase 6 (production readiness) and Phase 7 (usability & management) features.
+Tests: daemon health across 5 nodes, file store, DHT peer discovery, chunk replication to 3+ additional nodes (R=4), cross-node retrieval, node failure survival, EC recovery (data + parity chunks), security permissions, config bounds validation, and storage quota enforcement. 20 total tests covering Phase 6 (production readiness), Phase 7 (usability & management), and hardening.
 
 **Windows** (3-node localhost, requires relay connectivity):
 
@@ -503,6 +503,8 @@ rm ~/.wormhole/store/<prefix>/<chunk_hash>
 
 - [ ] Daemon log shows "EC recovered chunk ..."
 - [ ] Deleted chunk reappears in the store directory
+- [ ] If a parity chunk was deleted, daemon log shows "EC regenerated parity for stripe ..."
+- [ ] Both data and parity chunks are covered by the health check EC recovery pass
 - [ ] `wormhole get <deleted_hash> -o recovered.bin` succeeds
 
 **RS(8,4) specifics:**
@@ -1035,7 +1037,7 @@ Copy this table and fill in after each test run.
 |------|--------|-------|
 | Unit tests (17/17) | | |
 | E2E daemon tests | | |
-| Docker multi-node tests | | |
+| Docker multi-node tests (20/20) | | |
 
 ### Direct File Transfer
 

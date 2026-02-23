@@ -79,5 +79,9 @@ BOOLEAN Config_Set(WORMHOLE_CONFIG *config, const char *key, const char *value);
 // Set a config value (uint64). Convenience wrapper.
 BOOLEAN Config_SetUint64(WORMHOLE_CONFIG *config, const char *key, uint64_t value);
 
+// Validate a config value for the given key.
+// Returns TRUE if the value is acceptable, FALSE if out of range.
+BOOLEAN Config_ValidateValue(const char *key, const char *value);
+
 // Get the default config file path (~/.wormhole/config).
 BOOLEAN Config_GetDefaultPath(char *path, size_t path_len);

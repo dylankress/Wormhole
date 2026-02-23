@@ -50,7 +50,7 @@
 - 6B: Configurable auto-eviction (local copies preserved by default)
 - 6C: DHT value store persistence (chunk locations survive restart)
 - 6D: Multi-bootstrap resilience (up to 4 bootstrap nodes, exponential backoff)
-- 6E: Enhanced health monitoring (20 chunks x 3 peers, event-driven)
+- 6E: Enhanced health monitoring (20 chunks x 3 peers, event-driven, parity regeneration)
 - 6F: Client-side encryption (XChaCha20-Poly1305, encrypt-before-chunk)
 - 6G: TLS peer identity verification (Ed25519 in cert CN, MITM prevention)
 

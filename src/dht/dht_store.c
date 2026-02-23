@@ -89,15 +89,27 @@ BOOLEAN DhtStore_Put(DHT_VALUE_STORE *store, const uint8_t key[32],
     }
     else
     {
-        // New entry
+        // New entry — evict oldest if at capacity
         if (store->count >= DHT_STORE_CAPACITY)
         {
-#ifdef _WIN32
-            LeaveCriticalSection(&store->lock);
-#else
-            pthread_mutex_unlock(&store->lock);
-#endif
-            return FALSE;  // Store full
+            // Find entry with oldest last_refreshed timestamp
+            uint32_t oldest_idx = 0;
+            time_t oldest_time = store->entries[0].last_refreshed;
+            for (uint32_t i = 1; i < store->count; i++)
+            {
+                if (store->entries[i].last_refreshed < oldest_time)
+                {
+                    oldest_time = store->entries[i].last_refreshed;
+                    oldest_idx = i;
+                }
+            }
+            // Swap-remove the oldest entry
+            if (oldest_idx < store->count - 1)
+            {
+                store->entries[oldest_idx] = store->entries[store->count - 1];
+            }
+            memset(&store->entries[store->count - 1], 0, sizeof(DHT_VALUE_ENTRY));
+            store->count--;
         }
         entry = &store->entries[store->count];
         memcpy(entry->key, key, 32);

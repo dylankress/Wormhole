@@ -75,7 +75,7 @@ COPY --from=build-wormhole /build/src/build/wormholed /usr/local/bin/
 COPY deps/eff_large_wordlist.txt /usr/local/share/wormhole/
 
 # Create wormhole data directory
-RUN mkdir -p /root/.wormhole
+RUN mkdir -p /root/.wormhole && chmod 700 /root/.wormhole
 
 EXPOSE 4567/udp 4568/udp
 

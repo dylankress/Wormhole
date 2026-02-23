@@ -73,7 +73,7 @@ run_test test_manifest \
 
 # 3. test_chunk_store
 run_test test_chunk_store \
-    test_chunk_store.c ../chunk_store.c ../file_io.c ../proof.c $BLAKE3_SRC
+    test_chunk_store.c ../chunk_store.c ../config.c ../file_io.c ../proof.c $BLAKE3_SRC
 
 # 4. test_transfer_state
 run_test test_transfer_state \
@@ -85,7 +85,7 @@ run_test test_config \
 
 # 6. test_chunker
 run_test test_chunker \
-    test_chunker.c ../chunker.c ../chunk_store.c ../manifest.c ../file_io.c ../proof.c $BLAKE3_SRC
+    test_chunker.c ../chunker.c ../chunk_store.c ../config.c ../manifest.c ../file_io.c ../proof.c $BLAKE3_SRC
 
 # 7. test_reed_solomon
 run_test test_reed_solomon \
@@ -93,7 +93,7 @@ run_test test_reed_solomon \
 
 # 8. test_erasure
 run_test test_erasure \
-    test_erasure.c ../erasure.c $RS_SRC ../chunk_store.c ../manifest.c ../file_io.c ../proof.c $BLAKE3_SRC
+    test_erasure.c ../erasure.c $RS_SRC ../chunk_store.c ../config.c ../manifest.c ../file_io.c ../proof.c $BLAKE3_SRC
 
 # 9. test_routing_table
 run_test test_routing_table \
@@ -121,7 +121,7 @@ run_test test_incentives \
 
 # 15. test_health
 run_test test_health \
-    test_health.c ../health.c ../erasure.c $RS_SRC ../chunk_store.c ../manifest.c ../file_io.c ../proof.c $BLAKE3_SRC
+    test_health.c ../health.c ../erasure.c $RS_SRC ../chunk_store.c ../config.c ../manifest.c ../file_io.c ../proof.c $BLAKE3_SRC
 
 # 16. test_file_registry
 run_test test_file_registry \
