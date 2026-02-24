@@ -298,6 +298,14 @@ ipc_client_autogen/timestamp: /mnt/c/Dev/Wormhole/gui/CMakeLists.txt \
   /usr/lib/x86_64-linux-gnu/cmake/Qt6GuiTools/Qt6GuiToolsTargets-none.cmake \
   /usr/lib/x86_64-linux-gnu/cmake/Qt6GuiTools/Qt6GuiToolsTargets.cmake \
   /usr/lib/x86_64-linux-gnu/cmake/Qt6GuiTools/Qt6GuiToolsVersionlessTargets.cmake \
+  /usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestAdditionalTargetInfo.cmake \
+  /usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfig.cmake \
+  /usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfigVersion.cmake \
+  /usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfigVersionImpl.cmake \
+  /usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestDependencies.cmake \
+  /usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestTargets-none.cmake \
+  /usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestTargets.cmake \
+  /usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestVersionlessTargets.cmake \
   /usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsAdditionalTargetInfo.cmake \
   /usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsConfig.cmake \
   /usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsConfigVersion.cmake \
@@ -354,11 +362,17 @@ ipc_client_autogen/timestamp: /mnt/c/Dev/Wormhole/gui/CMakeLists.txt \
   /usr/share/cmake-3.28/Modules/Platform/UnixPaths.cmake
 
 
+/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestTargets-none.cmake:
+
+/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfig.cmake:
+
 /usr/share/cmake-3.28/Modules/Platform/Linux-Initialize.cmake:
 
 /usr/share/cmake-3.28/Modules/Platform/Linux-GNU-C.cmake:
 
 /usr/share/cmake-3.28/Modules/MacroAddFileDependencies.cmake:
+
+/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestTargets.cmake:
 
 /usr/share/cmake-3.28/Modules/Internal/FeatureTesting.cmake:
 
@@ -406,6 +420,8 @@ ipc_client_autogen/timestamp: /mnt/c/Dev/Wormhole/gui/CMakeLists.txt \
 
 /usr/share/cmake-3.28/Modules/Compiler/LCC-C-DetermineCompiler.cmake:
 
+/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfigVersionImpl.cmake:
+
 /usr/share/cmake-3.28/Modules/FindPackageHandleStandardArgs.cmake:
 
 /usr/share/cmake-3.28/Modules/Compiler/IntelLLVM-DetermineCompiler.cmake:
@@ -431,6 +447,8 @@ ipc_client_autogen/timestamp: /mnt/c/Dev/Wormhole/gui/CMakeLists.txt \
 /usr/share/cmake-3.28/Modules/Compiler/GNU-C-DetermineCompiler.cmake:
 
 /usr/share/cmake-3.28/Modules/Compiler/GHS-DetermineCompiler.cmake:
+
+/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfigVersion.cmake:
 
 /usr/share/cmake-3.28/Modules/Compiler/Cray-DetermineCompiler.cmake:
 
@@ -636,6 +654,8 @@ CMakeFiles/3.28.3/CMakeSystem.cmake:
 
 /usr/lib/x86_64-linux-gnu/cmake/Qt6/QtPublicDependencyHelpers.cmake:
 
+/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestDependencies.cmake:
+
 /usr/lib/x86_64-linux-gnu/cmake/Qt6DBusTools/Qt6DBusToolsConfig.cmake:
 
 /usr/share/cmake-3.28/Modules/Compiler/zOS-C-DetermineCompiler.cmake:
@@ -698,6 +718,8 @@ CMakeFiles/3.28.3/CMakeSystem.cmake:
 
 /usr/lib/x86_64-linux-gnu/cmake/Qt6GuiTools/Qt6GuiToolsDependencies.cmake:
 
+/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestVersionlessTargets.cmake:
+
 /usr/lib/x86_64-linux-gnu/cmake/Qt6GuiTools/Qt6GuiToolsTargets.cmake:
 
 /usr/lib/x86_64-linux-gnu/cmake/Qt6Core/Qt6CoreVersionlessTargets.cmake:
@@ -709,6 +731,8 @@ CMakeFiles/3.28.3/CMakeSystem.cmake:
 /usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsAdditionalTargetInfo.cmake:
 
 /usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsConfigVersion.cmake:
+
+/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestAdditionalTargetInfo.cmake:
 
 /usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsTargets-none.cmake:
 

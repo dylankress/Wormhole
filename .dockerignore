@@ -2,6 +2,7 @@ msquic/build/
 msquic/.git/
 .git/
 src/build/
+gui/build*/
 *.exe
 *.dll
 *.obj

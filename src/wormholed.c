@@ -117,6 +117,9 @@ typedef struct {
     uint32_t            retry_count;
     WH_MUTEX            retry_lock;
 
+    // Peer discovery debounce
+    int32_t             consecutive_empty_discovery;
+
     // Synchronization
     WH_MUTEX            ledger_lock;
     WH_MUTEX            dht_lock;
@@ -124,6 +127,26 @@ typedef struct {
 } DAEMON_STATE;
 
 static DAEMON_STATE g_daemon = { 0 };
+
+// Select best endpoint: lowest priority wins, prefer IPv4 at same priority.
+// Skip relay fallback endpoints (priority >= 200).
+static const ENDPOINT *SelectBestEndpoint(const ENDPOINT *endpoints, uint16_t count)
+{
+    const ENDPOINT *best = NULL;
+    for (uint16_t j = 0; j < count; j++)
+    {
+        const ENDPOINT *ep = &endpoints[j];
+        if (ep->priority >= 200) continue;
+        if (ep->addr_type != 0x04 && ep->addr_type != 0x06) continue;
+        if (!best || ep->priority < best->priority ||
+            (ep->priority == best->priority &&
+             ep->addr_type == 0x04 && best->addr_type == 0x06))
+        {
+            best = ep;
+        }
+    }
+    return best;
+}
 
 //=============================================================================
 // Background Work Queue
@@ -1440,18 +1463,7 @@ static void Daemon_OnPunchRequest(void *context, const uint8_t requester_id[32])
         if (memcmp(g_daemon.discovered_peers[i].peer_id, requester_id, 32) == 0)
         {
             DISCOVERED_PEER *peer = &g_daemon.discovered_peers[i];
-            // Prefer IPv4, fall back to IPv6
-            for (uint16_t j = 0; j < peer->endpoint_count; j++)
-            {
-                if (peer->endpoints[j].addr_type == 0x04) { ep = &peer->endpoints[j]; break; }
-            }
-            if (!ep)
-            {
-                for (uint16_t j = 0; j < peer->endpoint_count; j++)
-                {
-                    if (peer->endpoints[j].addr_type == 0x06) { ep = &peer->endpoints[j]; break; }
-                }
-            }
+            ep = SelectBestEndpoint(peer->endpoints, peer->endpoint_count);
             break;
         }
     }
@@ -1779,19 +1791,7 @@ static void Daemon_ReplicateChunk(const uint8_t hash[WH_HASH_SIZE],
         DISCOVERED_PEER *peer = &local_peers[i];
         if (peer->endpoint_count == 0) continue;
 
-        // Select best endpoint: prefer IPv4, fall back to IPv6
-        const ENDPOINT *ep = NULL;
-        for (uint16_t j = 0; j < peer->endpoint_count; j++)
-        {
-            if (peer->endpoints[j].addr_type == 0x04) { ep = &peer->endpoints[j]; break; }
-        }
-        if (!ep)
-        {
-            for (uint16_t j = 0; j < peer->endpoint_count; j++)
-            {
-                if (peer->endpoints[j].addr_type == 0x06) { ep = &peer->endpoints[j]; break; }
-            }
-        }
+        const ENDPOINT *ep = SelectBestEndpoint(peer->endpoints, peer->endpoint_count);
         if (!ep) continue;
 
         // Build target address string (supports both IPv4 and IPv6)
@@ -2011,19 +2011,7 @@ static void Daemon_ReplicateBatch(const uint8_t hashes[][WH_HASH_SIZE],
         DISCOVERED_PEER *peer = &local_peers[pi];
         if (peer->endpoint_count == 0) continue;
 
-        // Select best endpoint: prefer IPv4, fall back to IPv6
-        const ENDPOINT *ep = NULL;
-        for (uint16_t j = 0; j < peer->endpoint_count; j++)
-        {
-            if (peer->endpoints[j].addr_type == 0x04) { ep = &peer->endpoints[j]; break; }
-        }
-        if (!ep)
-        {
-            for (uint16_t j = 0; j < peer->endpoint_count; j++)
-            {
-                if (peer->endpoints[j].addr_type == 0x06) { ep = &peer->endpoints[j]; break; }
-            }
-        }
+        const ENDPOINT *ep = SelectBestEndpoint(peer->endpoints, peer->endpoint_count);
         if (!ep) continue;
 
         char addr_str[INET6_ADDRSTRLEN];
@@ -3107,12 +3095,17 @@ static void Daemon_OnPeersFound(void *context, const DISCOVERED_PEER *peers, uin
 
     if (peer_count == 0)
     {
-        LOG("[daemon] Peer discovery: no active peers found\n");
-        WH_MUTEX_LOCK(g_daemon.peers_lock);
-        WH_ATOMIC_SET(&g_daemon.discovered_peer_count, 0);
-        WH_MUTEX_UNLOCK(g_daemon.peers_lock);
+        g_daemon.consecutive_empty_discovery++;
+        if (g_daemon.consecutive_empty_discovery >= 3)
+        {
+            LOG("[daemon] Peer discovery: no active peers (confirmed)\n");
+            WH_MUTEX_LOCK(g_daemon.peers_lock);
+            WH_ATOMIC_SET(&g_daemon.discovered_peer_count, 0);
+            WH_MUTEX_UNLOCK(g_daemon.peers_lock);
+        }
         return;
     }
+    g_daemon.consecutive_empty_discovery = 0;
 
     // Update local peer table (protected by peers_lock)
     uint16_t count = peer_count < MAX_FIND_PEERS ? peer_count : MAX_FIND_PEERS;
@@ -3523,27 +3516,25 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
 
             uint32_t repl_target = (uint32_t)Config_GetUint64(g_daemon.config,
                 "replication_target", CONFIG_DEFAULT_REPLICATION_TARGET);
-            uint32_t replicated = 0;
+            uint32_t at_target = 0;
+            uint32_t has_copies = 0;
+            uint32_t min_copies = UINT32_MAX;
 
             for (uint32_t i = 0; i < manifest->chunk_count; i++)
             {
                 uint32_t remote_copies = ChunkStore_GetReplicaCount(manifest->chunks[i].hash);
-                if (i == 0)
-                {
-                    char h8[17];
-                    for (int x = 0; x < 8; x++) snprintf(h8 + x*2, 3, "%02x", manifest->chunks[i].hash[x]);
-                    h8[16] = '\0';
-                    LOG("[worker] Checking replicas: first chunk=%s... count=%u\n", h8, remote_copies);
-                }
+                if (remote_copies < min_copies) min_copies = remote_copies;
+                if (remote_copies >= 1) has_copies++;
                 if (remote_copies >= repl_target - 1)  // -1 for our local copy
-                    replicated++;
+                    at_target++;
             }
+            if (min_copies == UINT32_MAX) min_copies = 0;
 
             FileRegistry_UpdateStatus(item->check_repl.manifest_hash,
-                replicated >= manifest->chunk_count ? FILE_STATUS_SAFE : FILE_STATUS_REPLICATING,
-                replicated);
+                at_target >= manifest->chunk_count ? FILE_STATUS_SAFE : FILE_STATUS_REPLICATING,
+                has_copies);
 
-            if (replicated >= manifest->chunk_count)
+            if (at_target >= manifest->chunk_count)
             {
                 LOG("[worker] File %s safely replicated to network\n", entry.filename);
 
@@ -3552,7 +3543,7 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
                     uint8_t fs_evt[36];
                     memcpy(fs_evt, item->check_repl.manifest_hash, WH_HASH_SIZE);
                     fs_evt[32] = FILE_STATUS_SAFE;
-                    WriteUint16LE(fs_evt + 33, (uint16_t)replicated);
+                    WriteUint16LE(fs_evt + 33, (uint16_t)has_copies);
                     fs_evt[35] = 0; // padding
                     IpcServer_PushEvent(IPC_EVENT_FILE_STATUS, 0, fs_evt, 36);
                 }
@@ -3573,7 +3564,7 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
                     }
 
                     FileRegistry_UpdateStatus(item->check_repl.manifest_hash,
-                        FILE_STATUS_OFFLOADED, replicated);
+                        FILE_STATUS_OFFLOADED, has_copies);
 
                     if (freed > 0)
                     {
@@ -3586,14 +3577,15 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
                 {
                     // Keep local copies, just mark as safe
                     FileRegistry_UpdateStatus(item->check_repl.manifest_hash,
-                        FILE_STATUS_SAFE, replicated);
+                        FILE_STATUS_SAFE, has_copies);
                     LOG("[worker] File %s safe (local copies preserved)\n", entry.filename);
                 }
             }
             else
             {
-                LOG("[worker] File %s: %u/%u chunks replicated\n",
-                    entry.filename, replicated, manifest->chunk_count);
+                LOG("[worker] File %s: %u/%u copied (min %u copies, need %u for safe)\n",
+                    entry.filename, has_copies, manifest->chunk_count,
+                    min_copies, repl_target - 1);
             }
 
             Manifest_Destroy(manifest);
@@ -3990,19 +3982,7 @@ static uint32_t Daemon_HandleIpcCommand(
         {
             DISCOVERED_PEER *peer = &local_peers_get[i];
 
-            // Select best endpoint: prefer IPv4, fall back to IPv6
-            const ENDPOINT *ep = NULL;
-            for (uint16_t j = 0; j < peer->endpoint_count; j++)
-            {
-                if (peer->endpoints[j].addr_type == 0x04) { ep = &peer->endpoints[j]; break; }
-            }
-            if (!ep)
-            {
-                for (uint16_t j = 0; j < peer->endpoint_count; j++)
-                {
-                    if (peer->endpoints[j].addr_type == 0x06) { ep = &peer->endpoints[j]; break; }
-                }
-            }
+            const ENDPOINT *ep = SelectBestEndpoint(peer->endpoints, peer->endpoint_count);
             if (!ep) continue;
 
             char addr_str[INET6_ADDRSTRLEN];
@@ -4102,7 +4082,7 @@ static uint32_t Daemon_HandleIpcCommand(
 
         response_out[0] = IPC_STATUS_OK;
         WriteUint32LE(response_out + 1,
-            (uint32_t)WH_ATOMIC_LOAD(&g_daemon.peer_count));
+            (uint32_t)WH_ATOMIC_LOAD(&g_daemon.discovered_peer_count));
         WriteUint32LE(response_out + 5,
             (uint32_t)WH_ATOMIC_LOAD(&g_daemon.chunk_count));
         WriteUint64LE(response_out + 9,
@@ -4332,21 +4312,8 @@ static uint32_t Daemon_HandleIpcCommand(
 
                 for (LONG pi = 0; pi < fg_peer_count && !got; pi++)
                 {
-                    // Select best endpoint: prefer IPv4, fall back to IPv6
-                    const ENDPOINT *ep = NULL;
-                    for (uint16_t j = 0; j < local_peers_fg[pi].endpoint_count; j++)
-                    {
-                        if (local_peers_fg[pi].endpoints[j].addr_type == 0x04)
-                        { ep = &local_peers_fg[pi].endpoints[j]; break; }
-                    }
-                    if (!ep)
-                    {
-                        for (uint16_t j = 0; j < local_peers_fg[pi].endpoint_count; j++)
-                        {
-                            if (local_peers_fg[pi].endpoints[j].addr_type == 0x06)
-                            { ep = &local_peers_fg[pi].endpoints[j]; break; }
-                        }
-                    }
+                    const ENDPOINT *ep = SelectBestEndpoint(
+                        local_peers_fg[pi].endpoints, local_peers_fg[pi].endpoint_count);
                     if (!ep) continue;
 
                     char addr_str[INET6_ADDRSTRLEN];

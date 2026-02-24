@@ -1,0 +1,68 @@
+# docker-compose.gui-test.yml — 3-node GUI IPC test network
+#
+# Usage:
+#   cd docker
+#   docker compose -f docker-compose.gui-test.yml build
+#   ./test_gui_ipc.sh
+#
+# Each daemon node shares its /root/.wormhole via a named volume so the
+# test-runner can access Unix domain sockets at /ipc/nodeN/wormhole_4567.sock.
+# A shared test-data volume at /test-data lets the test-runner generate files
+# that daemon nodes can read (for store/send) and write (for receive).
+
+services:
+  node1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gui-test
+    entrypoint: sleep infinity
+    volumes:
+      - node1-data:/root/.wormhole
+      - test-data:/test-data
+    networks:
+      - wormhole-test
+
+  node2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gui-test
+    entrypoint: sleep infinity
+    volumes:
+      - node2-data:/root/.wormhole
+      - test-data:/test-data
+    networks:
+      - wormhole-test
+
+  node3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gui-test
+    entrypoint: sleep infinity
+    volumes:
+      - node3-data:/root/.wormhole
+      - test-data:/test-data
+    networks:
+      - wormhole-test
+
+  test-runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gui-test
+    entrypoint: sleep infinity
+    volumes:
+      - node1-data:/ipc/node1
+      - node2-data:/ipc/node2
+      - node3-data:/ipc/node3
+      - test-data:/test-data
+    networks:
+      - wormhole-test
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+  test-data:
+
+networks:
+  wormhole-test:
+    driver: bridge

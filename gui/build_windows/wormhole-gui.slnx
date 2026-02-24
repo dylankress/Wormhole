@@ -10,6 +10,7 @@
 	<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="df1eb884-515b-381e-948a-07b65b0a1e87" DefaultStartup="true">
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
 		<BuildDependency Project="ipc_client.vcxproj"/>
+		<BuildDependency Project="test_gui_ipc.vcxproj"/>
 		<BuildDependency Project="wormhole-gui.vcxproj"/>
 		<Build Solution="Debug|*" Project="false"/>
 		<Build Solution="Release|*" Project="false"/>
@@ -19,6 +20,10 @@
 	<Project Path="ZERO_CHECK.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f953c64b-60cf-3b8a-ab48-1a95be483b49"/>
 	<Project Path="ipc_client.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="8d7b9932-5470-3d08-a0d8-40c7111db4a6">
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="test_gui_ipc.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="fe7304f3-6863-36e9-a088-86e23b7d78e7">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ipc_client.vcxproj"/>
 	</Project>
 	<Project Path="wormhole-gui.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f59dfe39-3c42-319c-bf2b-a0c2ca87354e">
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>

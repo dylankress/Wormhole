@@ -54,4 +54,5 @@ private:
 
     bool m_hasEverConnected = false;
     bool m_daemonStartOffered = false;
+    bool m_stopped = false;
 };

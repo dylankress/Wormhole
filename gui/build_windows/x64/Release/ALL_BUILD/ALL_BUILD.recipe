@@ -5,6 +5,9 @@
       <FullPath>C:\Dev\Wormhole\gui\build_windows\x64\Release\ZERO_CHECK</FullPath>
     </ProjectOutput>
     <ProjectOutput>
+      <FullPath>C:\Dev\Wormhole\gui\build_windows\Release\test_gui_ipc.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>C:\Dev\Wormhole\gui\build_windows\Release\wormhole-gui.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>

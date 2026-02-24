@@ -103,12 +103,10 @@ void TrayManager::onEventReceived(uint8_t type, uint32_t opId, QByteArray payloa
     }
     else if (type == IPC_EVENT_HEALTH && size >= 1) {
         uint8_t issueCount = data[0];
-        QString msg;
-        if (issueCount > 0)
-            msg = tr("Health check: %1 chunk(s) need attention.").arg(issueCount);
-        else
-            msg = tr("Chunk health check completed.");
-        showNotification(tr("Health Alert"), msg, QSystemTrayIcon::Warning);
+        if (issueCount > 0) {
+            QString msg = tr("Health check: %1 chunk(s) need attention.").arg(issueCount);
+            showNotification(tr("Health Alert"), msg, QSystemTrayIcon::Warning);
+        }
     }
 }
 

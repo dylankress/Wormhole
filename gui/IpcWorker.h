@@ -18,6 +18,7 @@ public:
     ~IpcWorker();
 
     bool isConnected() const { return m_connected.load(); }
+    void setSocketName(const QString &name) { m_socketName = name; }
 
 public slots:
     void start();
@@ -97,4 +98,5 @@ private:
 
     uint32_t m_nextOpId = 1;
     uint8_t *m_responseBuf = nullptr;
+    QString m_socketName;  // empty = default (wormhole_4567)
 };

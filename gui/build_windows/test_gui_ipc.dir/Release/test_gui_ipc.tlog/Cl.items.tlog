@@ -1,0 +1,4 @@
+C:\Dev\Wormhole\gui\test_gui_ipc.cpp;C:\Dev\Wormhole\gui\build_windows\test_gui_ipc.dir\Release\test_gui_ipc.obj
+C:\Dev\Wormhole\gui\IpcWorker.cpp;C:\Dev\Wormhole\gui\build_windows\test_gui_ipc.dir\Release\IpcWorker.obj
+C:\Dev\Wormhole\gui\DaemonClient.cpp;C:\Dev\Wormhole\gui\build_windows\test_gui_ipc.dir\Release\DaemonClient.obj
+C:\Dev\Wormhole\gui\build_windows\test_gui_ipc_autogen\mocs_compilation_Release.cpp;C:\Dev\Wormhole\gui\build_windows\test_gui_ipc.dir\Release\mocs_compilation_Release.obj

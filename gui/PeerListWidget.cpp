@@ -92,6 +92,7 @@ void PeerListWidget::refresh()
 
 void PeerListWidget::onConnected()
 {
+    m_refreshButton->setEnabled(true);
     m_refreshTimer->start(30000);
     refresh();
 }
@@ -99,6 +100,17 @@ void PeerListWidget::onConnected()
 void PeerListWidget::onDisconnected()
 {
     m_refreshTimer->stop();
+    m_refreshButton->setEnabled(false);
+
+    // Clear stale data
+    m_peerTable->setRowCount(0);
+    updateEmptyState();
+
+    // Reset DHT status labels
+    m_dhtNodesLabel->setText(tr("DHT Nodes: -"));
+    m_dhtValuesLabel->setText(tr("DHT Values: -"));
+    m_dhtSentLabel->setText(tr("Msgs Sent: -"));
+    m_dhtRecvLabel->setText(tr("Msgs Recv: -"));
 }
 
 void PeerListWidget::updateEmptyState()
@@ -149,8 +161,11 @@ void PeerListWidget::onPeerListReceived(QByteArray data)
             char addrStr[INET6_ADDRSTRLEN];
             struct in6_addr addr6;
             memcpy(&addr6, buf + off, 16);
-            inet_ntop(AF_INET6, &addr6, addrStr, sizeof(addrStr));
-            address = QStringLiteral("[%1]").arg(QString::fromLatin1(addrStr));
+            const char *result = inet_ntop(AF_INET6, &addr6, addrStr, sizeof(addrStr));
+            if (result)
+                address = QStringLiteral("[%1]").arg(QString::fromLatin1(addrStr));
+            else
+                address = QStringLiteral("?");
         } else {
             address = QStringLiteral("?");
         }
@@ -161,6 +176,20 @@ void PeerListWidget::onPeerListReceived(QByteArray data)
 
         QDateTime dt = QDateTime::fromSecsSinceEpoch(static_cast<qint64>(lastSeen));
 
+        // Relative time for Last Seen
+        qint64 secsAgo = dt.secsTo(QDateTime::currentDateTime());
+        QString relativeTime;
+        if (secsAgo < 0)
+            relativeTime = QStringLiteral("just now");
+        else if (secsAgo < 60)
+            relativeTime = QStringLiteral("%1s ago").arg(secsAgo);
+        else if (secsAgo < 3600)
+            relativeTime = QStringLiteral("%1m ago").arg(secsAgo / 60);
+        else if (secsAgo < 86400)
+            relativeTime = QStringLiteral("%1h ago").arg(secsAgo / 3600);
+        else
+            relativeTime = QStringLiteral("%1d ago").arg(secsAgo / 86400);
+
         int row = m_peerTable->rowCount();
         m_peerTable->insertRow(row);
 
@@ -169,7 +198,10 @@ void PeerListWidget::onPeerListReceived(QByteArray data)
         m_peerTable->setItem(row, 0, nodeIdItem);
         m_peerTable->setItem(row, 1, new QTableWidgetItem(address));
         m_peerTable->setItem(row, 2, new QTableWidgetItem(QString::number(port)));
-        m_peerTable->setItem(row, 3, new QTableWidgetItem(dt.toString(QStringLiteral("hh:mm:ss"))));
+
+        auto *lastSeenItem = new QTableWidgetItem(relativeTime);
+        lastSeenItem->setToolTip(dt.toString(Qt::ISODate));
+        m_peerTable->setItem(row, 3, lastSeenItem);
     }
 
     updateEmptyState();

@@ -107,7 +107,7 @@ Ticket: 5-ocean-maple
 | 8 | Done | GUI foundation — IPC v2, progress reporting, daemon send/receive, config via IPC, lifecycle hardening, push events |
 | 9 | Done | Qt GUI — transfers, file management, settings, peer list, system tray |
 
-18 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests (22 tests). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
+18 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests (22 tests) + GUI IPC integration tests (22 tests). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
 
 ## Building
 

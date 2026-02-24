@@ -56,6 +56,11 @@ bool DaemonClient::isConnected() const
     return m_worker && m_worker->isConnected();
 }
 
+void DaemonClient::setSocketName(const QString &name)
+{
+    m_worker->setSocketName(name);
+}
+
 void DaemonClient::sendFile(const QString &path)
 {
     QMetaObject::invokeMethod(m_worker, "sendFile", Qt::QueuedConnection,

@@ -169,6 +169,9 @@ static BOOLEAN VerifyMessage(const uint8_t *sender_id, uint8_t *msg, size_t msg_
 // Internal helpers: UDP transport
 // ============================================================================
 
+static uint32_t s_send_fail_count = 0;
+#define SEND_FAIL_LOG_INTERVAL 100
+
 static BOOLEAN SendRawUDP(DHT_NODE *node, const struct sockaddr_storage *addr,
                            socklen_t addr_len, const uint8_t *data, size_t len)
 {
@@ -192,11 +195,16 @@ static BOOLEAN SendRawUDP(DHT_NODE *node, const struct sockaddr_storage *addr,
 
     int sent = sendto(node->socket_fd, (const char *)data, (int)len, 0, sa, (int)sa_len);
     if (sent <= 0) {
+        s_send_fail_count++;
+        if (s_send_fail_count == 1 || s_send_fail_count % SEND_FAIL_LOG_INTERVAL == 0) {
 #ifdef _WIN32
-        printf("[dht] SendRawUDP failed: WSA error %d\n", WSAGetLastError());
+            printf("[dht] SendRawUDP failed: WSA error %d (%u total failures)\n",
+                   WSAGetLastError(), s_send_fail_count);
 #else
-        printf("[dht] SendRawUDP failed: errno %d\n", errno);
+            printf("[dht] SendRawUDP failed: errno %d (%u total failures)\n",
+                   errno, s_send_fail_count);
 #endif
+        }
     }
     return (sent > 0) ? TRUE : FALSE;
 }

@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/test_gui_ipc.dir/test_gui_ipc_autogen/mocs_compilation.cpp.o CMakeFiles/test_gui_ipc.dir/test_gui_ipc.cpp.o CMakeFiles/test_gui_ipc.dir/IpcWorker.cpp.o CMakeFiles/test_gui_ipc.dir/DaemonClient.cpp.o -o test_gui_ipc  /usr/lib/x86_64-linux-gnu/libQt6Test.so.6.4.2 libipc_client.a /usr/lib/x86_64-linux-gnu/libQt6Core.so.6.4.2 

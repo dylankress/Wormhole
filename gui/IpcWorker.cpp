@@ -57,7 +57,10 @@ void IpcWorker::tryConnect()
 {
     if (!m_running) return;
 
-    m_client = IpcClient_Connect();
+    if (m_socketName.isEmpty())
+        m_client = IpcClient_Connect();
+    else
+        m_client = IpcClient_ConnectTo(m_socketName.toUtf8().constData());
     if (!m_client) {
         emit reconnecting();
         m_reconnectTimer->start(m_reconnectDelay);
@@ -167,6 +170,10 @@ void IpcWorker::sendFile(const QString &path)
     }
 
     QByteArray pathBytes = path.toUtf8();
+    if (pathBytes.size() > 65535) {
+        emit transferFailed(QStringLiteral("File path too long"));
+        return;
+    }
     uint16_t pathLen = static_cast<uint16_t>(pathBytes.size());
 
     QByteArray payload(2 + pathLen, '\0');
@@ -287,6 +294,10 @@ void IpcWorker::storeFile(const QString &path)
     emit fileStoreStarted(path);
 
     QByteArray pathBytes = path.toUtf8();
+    if (pathBytes.size() > 65535) {
+        emit fileStored(false, QStringLiteral("File path too long"));
+        return;
+    }
     uint16_t pathLen = static_cast<uint16_t>(pathBytes.size());
 
     QByteArray payload(2 + pathLen, '\0');
@@ -318,6 +329,11 @@ void IpcWorker::retrieveFile(const QByteArray &hash, const QString &outputPath)
 {
     if (!m_client || !m_connected.load()) return;
 
+    if (hash.size() < WH_HASH_SIZE) {
+        emit fileRetrieved(false, QStringLiteral("Invalid hash: too short"));
+        return;
+    }
+
     emit fileRetrieveStarted(outputPath);
 
     QByteArray pathBytes = outputPath.toUtf8();
@@ -340,13 +356,25 @@ void IpcWorker::retrieveFile(const QByteArray &hash, const QString &outputPath)
     if (ok && respSize >= 1 && m_responseBuf[0] == IPC_STATUS_OK) {
         emit fileRetrieved(true, QString());
     } else {
-        emit fileRetrieved(false, QStringLiteral("Retrieve failed"));
+        char errMsg[IPC_MAX_ERROR_MSG_LEN];
+        uint8_t status;
+        if (ok && respSize >= 1) {
+            IpcReadErrorResponse(m_responseBuf, respSize, &status, errMsg, sizeof(errMsg));
+            emit fileRetrieved(false, QString::fromUtf8(errMsg));
+        } else {
+            emit fileRetrieved(false, QStringLiteral("Retrieve failed: connection error"));
+        }
     }
 }
 
 void IpcWorker::deleteFile(const QByteArray &hash)
 {
     if (!m_client || !m_connected.load()) return;
+
+    if (hash.size() < WH_HASH_SIZE) {
+        emit fileDeleted(false, QStringLiteral("Invalid hash: too short"));
+        return;
+    }
 
     uint32_t respSize = 0;
     BOOLEAN ok = IpcClient_SendCommandV2(
@@ -358,13 +386,25 @@ void IpcWorker::deleteFile(const QByteArray &hash)
     if (ok && respSize >= 1 && m_responseBuf[0] == IPC_STATUS_OK) {
         emit fileDeleted(true, QString());
     } else {
-        emit fileDeleted(false, QStringLiteral("Delete failed"));
+        char errMsg[IPC_MAX_ERROR_MSG_LEN];
+        uint8_t status;
+        if (ok && respSize >= 1) {
+            IpcReadErrorResponse(m_responseBuf, respSize, &status, errMsg, sizeof(errMsg));
+            emit fileDeleted(false, QString::fromUtf8(errMsg));
+        } else {
+            emit fileDeleted(false, QStringLiteral("Delete failed: connection error"));
+        }
     }
 }
 
 void IpcWorker::exportKey(const QByteArray &hash)
 {
     if (!m_client || !m_connected.load()) return;
+
+    if (hash.size() < WH_HASH_SIZE) {
+        emit keyExported(false, QByteArray(), QStringLiteral("Invalid hash: too short"));
+        return;
+    }
 
     uint32_t respSize = 0;
     BOOLEAN ok = IpcClient_SendCommandV2(
@@ -382,13 +422,29 @@ void IpcWorker::exportKey(const QByteArray &hash)
             emit keyExported(false, QByteArray(), QStringLiteral("Invalid response"));
         }
     } else {
-        emit keyExported(false, QByteArray(), QStringLiteral("Export failed"));
+        char errMsg[IPC_MAX_ERROR_MSG_LEN];
+        uint8_t status;
+        if (ok && respSize >= 1) {
+            IpcReadErrorResponse(m_responseBuf, respSize, &status, errMsg, sizeof(errMsg));
+            emit keyExported(false, QByteArray(), QString::fromUtf8(errMsg));
+        } else {
+            emit keyExported(false, QByteArray(), QStringLiteral("Export failed: connection error"));
+        }
     }
 }
 
 void IpcWorker::importKey(const QByteArray &hash, const QByteArray &key)
 {
     if (!m_client || !m_connected.load()) return;
+
+    if (hash.size() < WH_HASH_SIZE) {
+        emit keyImported(false, QStringLiteral("Invalid hash: too short"));
+        return;
+    }
+    if (key.size() < 32) {
+        emit keyImported(false, QStringLiteral("Invalid key: must be 32 bytes"));
+        return;
+    }
 
     QByteArray payload;
     payload.append(hash.constData(), WH_HASH_SIZE);
@@ -404,7 +460,14 @@ void IpcWorker::importKey(const QByteArray &hash, const QByteArray &key)
     if (ok && respSize >= 1 && m_responseBuf[0] == IPC_STATUS_OK) {
         emit keyImported(true, QString());
     } else {
-        emit keyImported(false, QStringLiteral("Import failed"));
+        char errMsg[IPC_MAX_ERROR_MSG_LEN];
+        uint8_t status;
+        if (ok && respSize >= 1) {
+            IpcReadErrorResponse(m_responseBuf, respSize, &status, errMsg, sizeof(errMsg));
+            emit keyImported(false, QString::fromUtf8(errMsg));
+        } else {
+            emit keyImported(false, QStringLiteral("Import failed: connection error"));
+        }
     }
 }
 

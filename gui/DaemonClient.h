@@ -16,6 +16,7 @@ public:
     void start();
     void stop();
     bool isConnected() const;
+    void setSocketName(const QString &name);
 
     // Thread-safe command forwarding (queued connections to worker)
     void sendFile(const QString &path);

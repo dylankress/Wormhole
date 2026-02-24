@@ -96,7 +96,10 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    m_client->stop();
+    if (!m_stopped) {
+        m_stopped = true;
+        m_client->stop();
+    }
 }
 
 void MainWindow::setupMenuBar()
@@ -132,9 +135,9 @@ void MainWindow::setupCentralWidget()
 void MainWindow::setupStatusBar()
 {
     m_connectionLabel = new QLabel(tr("Disconnected"));
-    m_peersLabel = new QLabel;
-    m_storageLabel = new QLabel;
-    m_relayLabel = new QLabel;
+    m_peersLabel = new QLabel(tr("Peers: -"));
+    m_storageLabel = new QLabel(tr("Storage: -"));
+    m_relayLabel = new QLabel(tr("Relay: -"));
 
     statusBar()->addWidget(m_connectionLabel);
     statusBar()->addPermanentWidget(m_peersLabel);
@@ -222,7 +225,11 @@ void MainWindow::tryStartDaemon()
     if (!QFile::exists(daemonPath))
         daemonPath = QStringLiteral("wormholed");
 
-    QProcess::startDetached(daemonPath, QStringList());
+    if (!QProcess::startDetached(daemonPath, QStringList())) {
+        QMessageBox::warning(this, tr("Daemon Start Failed"),
+            tr("Could not start the daemon.\n"
+               "Make sure '%1' exists and is executable.").arg(daemonPath));
+    }
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -235,7 +242,10 @@ void MainWindow::closeEvent(QCloseEvent *event)
         hide();
         event->ignore();
     } else {
-        m_client->stop();
+        if (!m_stopped) {
+            m_stopped = true;
+            m_client->stop();
+        }
         event->accept();
         QApplication::quit();
     }

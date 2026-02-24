@@ -68,7 +68,7 @@ FileListWidget::FileListWidget(DaemonClient *client, QWidget *parent)
     // File tree
     m_fileTree = new QTreeWidget;
     m_fileTree->setHeaderLabels(
-        {tr("Name"), tr("Size"), tr("Status"), tr("Chunks"), tr("Replicated"),
+        {tr("Name"), tr("Size"), tr("Status"), tr("Chunks"), tr("Copied"),
          tr("Stored"), tr("File ID")});
     m_fileTree->setRootIsDecorated(false);
     m_fileTree->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -121,7 +121,7 @@ FileListWidget::FileListWidget(DaemonClient *client, QWidget *parent)
     // Periodic refresh
     m_refreshTimer = new QTimer(this);
     connect(m_refreshTimer, &QTimer::timeout, this, &FileListWidget::refresh);
-    m_refreshTimer->start(30000);
+    // Timer will be started by connected signal (don't start before connection)
 
     // Keyboard shortcuts
     new QShortcut(QKeySequence::Refresh, this, SLOT(refresh()));         // F5
@@ -199,6 +199,10 @@ void FileListWidget::parseFileList(const QByteArray &data)
     }
 
     updateEmptyState();
+
+    // Reapply search filter after refresh
+    if (!m_searchEdit->text().isEmpty())
+        onSearchChanged(m_searchEdit->text());
 }
 
 void FileListWidget::onEventReceived(uint8_t type, uint32_t opId, QByteArray payload)
@@ -268,6 +272,27 @@ void FileListWidget::onImportKey()
         tr("Encryption key (hex):"), QLineEdit::Normal, QString(), &ok);
     if (!ok || keyHex.isEmpty()) return;
 
+    // Validate hex input
+    auto isValidHex = [](const QString &s) {
+        for (QChar c : s) {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                return false;
+        }
+        return s.length() > 0 && s.length() % 2 == 0;
+    };
+
+    if (!isValidHex(hexKey)) {
+        QMessageBox::warning(this, tr("Invalid Input"),
+            tr("File ID must be an even-length hex string (0-9, a-f)."));
+        return;
+    }
+
+    if (!isValidHex(keyHex) || keyHex.length() != 64) {
+        QMessageBox::warning(this, tr("Invalid Input"),
+            tr("Encryption key must be exactly 64 hex characters (32 bytes)."));
+        return;
+    }
+
     // Parse hex ID to hash
     QByteArray hash = QByteArray::fromHex(hexKey.toUtf8());
     if (hash.size() < WH_HASH_SIZE)
@@ -275,9 +300,6 @@ void FileListWidget::onImportKey()
     hash.truncate(WH_HASH_SIZE);
 
     QByteArray key = QByteArray::fromHex(keyHex.toUtf8());
-    if (key.size() < 32)
-        key.append(QByteArray(32 - key.size(), '\0'));
-    key.truncate(32);
 
     m_client->importKey(hash, key);
 }
@@ -287,13 +309,18 @@ void FileListWidget::onContextMenu(const QPoint &pos)
     auto *item = m_fileTree->itemAt(pos);
     if (!item) return;
 
+    // Select the right-clicked item so actions operate on it
+    m_fileTree->setCurrentItem(item);
+
+    QString fileId = item->text(6);
+
     QMenu menu;
     menu.addAction(tr("Retrieve"), this, &FileListWidget::onRetrieveFile);
     menu.addAction(tr("Delete"), this, &FileListWidget::onDeleteFile);
     menu.addSeparator();
     menu.addAction(tr("Export Key"), this, &FileListWidget::onExportKey);
-    menu.addAction(tr("Copy File ID"), this, [this, item]() {
-        QApplication::clipboard()->setText(item->text(6));
+    menu.addAction(tr("Copy File ID"), this, [this, fileId]() {
+        QApplication::clipboard()->setText(fileId);
     });
 
     menu.exec(m_fileTree->mapToGlobal(pos));

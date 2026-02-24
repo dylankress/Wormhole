@@ -411,21 +411,21 @@ uint32_t ChunkStore_GetReplicaCount(const uint8_t hash[WH_HASH_SIZE])
     char path[MAX_PATH];
     if (!GetReplicaPath(hash, path, sizeof(path))) return 0;
 
+    EnsureStoreLock();
+    WH_MUTEX_LOCK(g_store_lock);
+
     FILE *fh = fopen(path, "rb");
-    if (!fh) return 0;
+    if (!fh) { WH_MUTEX_UNLOCK(g_store_lock); return 0; }
 
     uint8_t count_buf[4];
-    size_t read = fread(count_buf, 1, 4, fh);
+    size_t rd = fread(count_buf, 1, 4, fh);
     fclose(fh);
+    WH_MUTEX_UNLOCK(g_store_lock);
 
-    if (read != 4) return 0;
+    if (rd != 4) return 0;
 
-    uint32_t count = (uint32_t)count_buf[0] |
-                     ((uint32_t)count_buf[1] << 8) |
-                     ((uint32_t)count_buf[2] << 16) |
-                     ((uint32_t)count_buf[3] << 24);
-
-    return count;
+    return (uint32_t)count_buf[0] | ((uint32_t)count_buf[1] << 8) |
+           ((uint32_t)count_buf[2] << 16) | ((uint32_t)count_buf[3] << 24);
 }
 
 BOOLEAN ChunkStore_SetReplicaLocation(const uint8_t hash[WH_HASH_SIZE],
@@ -525,13 +525,17 @@ uint32_t ChunkStore_GetReplicaLocations(const uint8_t hash[WH_HASH_SIZE],
     char path[MAX_PATH];
     if (!GetReplicaPath(hash, path, sizeof(path))) return 0;
 
+    EnsureStoreLock();
+    WH_MUTEX_LOCK(g_store_lock);
+
     FILE *fh = fopen(path, "rb");
-    if (!fh) return 0;
+    if (!fh) { WH_MUTEX_UNLOCK(g_store_lock); return 0; }
 
     uint8_t count_buf[4];
     if (fread(count_buf, 1, 4, fh) != 4)
     {
         fclose(fh);
+        WH_MUTEX_UNLOCK(g_store_lock);
         return 0;
     }
 
@@ -543,10 +547,11 @@ uint32_t ChunkStore_GetReplicaLocations(const uint8_t hash[WH_HASH_SIZE],
     if (count > max_peers) count = max_peers;
     if (count > MAX_REPLICAS) count = MAX_REPLICAS;
 
-    size_t read = fread(peer_ids_out, 32, count, fh);
+    size_t rd = fread(peer_ids_out, 32, count, fh);
     fclose(fh);
+    WH_MUTEX_UNLOCK(g_store_lock);
 
-    return (uint32_t)read;
+    return (uint32_t)rd;
 }
 
 // Access time entry: [32B hash][8B unix_timestamp]

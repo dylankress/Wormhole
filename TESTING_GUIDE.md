@@ -13,6 +13,7 @@ Complete walkthrough for building, running automated tests, and manually verifyi
    - [Unit Tests (18 suites)](#31-unit-tests-18-suites)
    - [E2E Daemon Tests](#32-e2e-daemon-tests)
    - [Docker Multi-Node Tests](#33-docker-multi-node-tests)
+   - [GUI IPC Tests](#34-gui-ipc-tests)
 4. [Manual Testing — Direct File Transfer](#4-manual-testing--direct-file-transfer)
    - [Setup & Test Files](#41-setup--test-files)
    - [Relay Server](#42-relay-server)
@@ -232,6 +233,149 @@ Tests: daemon health across 5 nodes, file store, DHT peer discovery, chunk repli
 cd src\test
 test_multi_node.bat
 ```
+
+### 3.4 GUI IPC Tests
+
+Headless integration tests that exercise the Qt GUI's `DaemonClient`/`IpcWorker` against live daemons — no display server required. Available in two modes:
+
+| Mode | Tests | Command | Requirements |
+|------|-------|---------|-------------|
+| **Localhost** (quick) | 15 (1-14 + 22) | `cd gui && ./test_gui_ipc.sh` | Daemon + Qt6 |
+| **Docker** (full) | 22 | `cd docker && ./test_gui_ipc.sh` | Docker + Docker Compose |
+
+The 22 tests cover: connect, status, DHT, peer list, config CRUD, store/retrieve with integrity check, key export/import, file events, multi-node replication (15-18), P2P file transfer (19-21), and file deletion (22).
+
+**Why two modes?** Multi-node replication and P2P transfer (tests 15-21) require each daemon to have a distinct network address. On localhost, all daemons share one IP, so peers can't reach each other. Docker gives each node its own container IP, enabling real replication and transfer.
+
+#### Localhost Mode (15 tests, ~30 seconds)
+
+Runs a single daemon — tests 15-21 (replication/transfer) are automatically skipped.
+
+**Linux:**
+
+```bash
+# 1. Build the daemon
+cd src && make
+
+# 2. Build the GUI test binary (requires Qt 6 and CMake 3.21+)
+cd gui
+cmake -B build_linux
+cmake --build build_linux
+
+# 3. Run the test
+./test_gui_ipc.sh
+```
+
+**Windows** (from x64 Native Tools Command Prompt):
+
+```bat
+REM 1. Build the daemon
+cd src
+build.bat
+
+REM 2. Build the GUI test binary (requires Qt 6 and CMake 3.21+)
+cd gui
+cmake -B build_windows -DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/msvc2022_64
+cmake --build build_windows --config Release
+
+REM 3. Run the test
+test_gui_ipc.bat
+```
+
+**Expected output (localhost):**
+
+```
+=== GUI IPC Test (Single-Node, 15 tests) ===
+
+Starting daemon (QUIC:4567, DHT:14568)...
+Daemon running
+
+--- Running test binary ---
+
+=== Headless GUI IPC Test Suite ===
+Test file:  /tmp/.../test_1mb.bin
+Nodes:      /tmp/.../home1/.wormhole/wormhole_4567.sock
+
+--- Daemon & IPC ---
+  1/22  [PASS]  Connect to daemon
+  2/22  [PASS]  Status poll  (peers=0, chunks=0)
+  3/22  [PASS]  DHT status
+  4/22  [PASS]  Peer list
+--- Config ---
+  5/22  [PASS]  Config list  (14 keys)
+  6/22  [PASS]  Config set  (max_storage_gb=5)
+  7/22  [PASS]  Config verify roundtrip
+--- File Storage ---
+  8/22  [PASS]  Store file  (1048576 bytes)
+  9/22  [PASS]  List files  (1 file(s))
+ 10/22  [PASS]  Export key  (32-byte key)
+ 11/22  [PASS]  Import key
+ 12/22  [PASS]  File status events
+ 13/22  [PASS]  Retrieve file
+ 14/22  [PASS]  Verify store integrity  (MD5 match)
+--- Replication ---
+ 15/22  [SKIP]  Connect daemon 2  (No --socket2 provided)
+ 16/22  [SKIP]  Connect daemon 3  (No --socket3 provided)
+ 17/22  [SKIP]  Replication wait  (No multi-node daemons connected)
+ 18/22  [SKIP]  Verify replication  (No multi-node daemons connected)
+--- P2P Transfer ---
+ 19/22  [SKIP]  Transfer send  (No daemon 2 -- need multi-node for transfer)
+ 20/22  [SKIP]  Transfer receive  (No ticket or no daemon 2)
+ 21/22  [SKIP]  Transfer verify  (No transfer completed or no output dir)
+--- Cleanup ---
+ 22/22  [PASS]  Delete & verify
+
+=== RESULTS: 15 passed, 0 failed, 7 skipped (of 22) ===
+
+=== ALL TESTS PASSED ===
+```
+
+#### Docker Mode (22 tests, ~3 minutes)
+
+Runs 3 daemon containers + a local relay + a test-runner container. Each daemon has its own IP so replication and transfer work correctly.
+
+```bash
+cd docker
+./test_gui_ipc.sh
+```
+
+**Expected output (Docker):**
+
+```
+============================================
+  GUI IPC Test (Docker, 22 tests)
+============================================
+
+Building Docker images...
+Starting containers...
+Writing daemon configs...
+Starting daemons...
+  Waiting for node1... ready (3s)
+  Waiting for node2... ready (4s)
+  Waiting for node3... ready (4s)
+
+--- Running test binary ---
+
+=== Headless GUI IPC Test Suite ===
+  ...
+ 15/22  [PASS]  Connect daemon 2
+ 16/22  [PASS]  Connect daemon 3
+ 17/22  [PASS]  Replication wait  (chunks appeared after 47s)
+ 18/22  [PASS]  Verify replication  (node2=4, node3=4 chunks)
+ 19/22  [PASS]  Transfer send  (ticket: 3-guitar-battery)
+ 20/22  [PASS]  Transfer receive  (1048576 bytes in 2.1s)
+ 21/22  [PASS]  Transfer verify  (MD5 match)
+ 22/22  [PASS]  Delete & verify
+
+=== RESULTS: 22 passed, 0 failed, 0 skipped (of 22) ===
+
+=== ALL 22 TESTS PASSED ===
+```
+
+**If tests fail:**
+- **Localhost**: Check that Qt 6 is installed (`qt6-base-dev` on Linux, or `-DCMAKE_PREFIX_PATH` on Windows), daemon builds successfully, and no port conflicts on 4567/14568
+- **Docker**: Check `docker compose` is available, images build successfully, and no port conflicts. The script dumps daemon logs on failure.
+- On Windows, verify `windeployqt` ran for `test_gui_ipc` (Qt6Test.dll must be in the build directory)
 
 ---
 
@@ -1194,6 +1338,8 @@ Copy this table and fill in after each test run.
 | Unit tests (18/18) | | |
 | E2E daemon tests | | |
 | Docker multi-node tests (22/22) | | |
+| GUI IPC tests — localhost (15/15) | | |
+| GUI IPC tests — Docker (22/22) | | |
 
 ### Direct File Transfer
 

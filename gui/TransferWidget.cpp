@@ -334,7 +334,7 @@ void TransferWidget::updateTransferRow(uint32_t transferId)
     auto *progressBar = qobject_cast<QProgressBar *>(
         m_transferTable->cellWidget(row, 2));
     if (progressBar && info.bytesTotal > 0) {
-        int percent = static_cast<int>((info.bytesDone * 100) / info.bytesTotal);
+        int percent = qBound(0, static_cast<int>((info.bytesDone * 100) / info.bytesTotal), 100);
         progressBar->setValue(percent);
         progressBar->setFormat(QStringLiteral("%1 / %2")
             .arg(WormholeGui::formatSize(info.bytesDone), WormholeGui::formatSize(info.bytesTotal)));
@@ -349,6 +349,13 @@ void TransferWidget::updateTransferRow(uint32_t transferId)
     m_transferTable->item(row, 5)->setText(statusText);
     if (!info.error.isEmpty())
         m_transferTable->item(row, 5)->setToolTip(info.error);
+
+    // Show ticket per-row (as tooltip on filename, and in status for waiting state)
+    if (!info.ticket.isEmpty()) {
+        m_transferTable->item(row, 0)->setToolTip(tr("Ticket: %1").arg(info.ticket));
+        if (info.state == TRANSFER_STATE_WAITING_PEER)
+            m_transferTable->item(row, 5)->setText(tr("Waiting: %1").arg(info.ticket));
+    }
 
     // Disable cancel button for completed transfers
     if (info.state == TRANSFER_STATE_COMPLETED ||

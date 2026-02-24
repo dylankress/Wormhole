@@ -563,6 +563,14 @@ wormhole-gui_autogen/timestamp: \
 	/usr/lib/x86_64-linux-gnu/cmake/Qt6GuiTools/Qt6GuiToolsTargets-none.cmake \
 	/usr/lib/x86_64-linux-gnu/cmake/Qt6GuiTools/Qt6GuiToolsTargets.cmake \
 	/usr/lib/x86_64-linux-gnu/cmake/Qt6GuiTools/Qt6GuiToolsVersionlessTargets.cmake \
+	/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestAdditionalTargetInfo.cmake \
+	/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfig.cmake \
+	/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfigVersion.cmake \
+	/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestConfigVersionImpl.cmake \
+	/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestDependencies.cmake \
+	/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestTargets-none.cmake \
+	/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestTargets.cmake \
+	/usr/lib/x86_64-linux-gnu/cmake/Qt6Test/Qt6TestVersionlessTargets.cmake \
 	/usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsAdditionalTargetInfo.cmake \
 	/usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsConfig.cmake \
 	/usr/lib/x86_64-linux-gnu/cmake/Qt6Widgets/Qt6WidgetsConfigVersion.cmake \

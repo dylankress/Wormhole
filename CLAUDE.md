@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wormhole is a decentralized P2P file storage platform written in C — a privacy-respecting alternative to Dropbox/Google Drive. Peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without centralized cloud providers. Built on QUIC (via MsQuic) with a Kademlia DHT for decentralized discovery and a UDP relay server for NAT traversal. Also supports direct peer-to-peer file transfer via ticket codes like "3-guitar-battery".
 
-**Phases 1-9 complete.** Phase 9 added a Qt 6 cross-platform GUI as a thin IPC client to the daemon. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (18 unit test suites + E2E daemon tests). Phase 8 added IPC v2 protocol (subscriptions, structured errors, operation tracking, cancellation), progress reporting for long-running operations, daemon-mediated send/receive with `--direct` fallback, config management via IPC, daemon lifecycle hardening (readiness signal, heartbeat, stale PID, log rotation), and real-time push events (peer/file/health/transfer). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
+**Phases 1-9 complete.** Phase 9 added a Qt 6 cross-platform GUI as a thin IPC client to the daemon. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (18 unit test suites + E2E daemon tests + 22 GUI IPC integration tests). Phase 8 added IPC v2 protocol (subscriptions, structured errors, operation tracking, cancellation), progress reporting for long-running operations, daemon-mediated send/receive with `--direct` fallback, config management via IPC, daemon lifecycle hardening (readiness signal, heartbeat, stale PID, log rotation), and real-time push events (peer/file/health/transfer). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
 
 Design decisions should keep the decentralized storage trajectory in mind. See [ROADMAP.md](ROADMAP.md) for the full development roadmap and production readiness plan.
 
@@ -250,6 +250,18 @@ cd src\test
 test_multi_node.bat
 ```
 Tests peer discovery, chunk replication across nodes, cross-node retrieval, node failure handling, EC recovery (data + parity), security permissions, config bounds validation, and storage quota enforcement. 22 total tests covering Phases 6-7, hardening, and post-Phase 7 improvements.
+
+### GUI IPC integration tests
+```bash
+# Docker (Linux) — 3-node cluster, full IPC stack (22 tests)
+cd docker
+./test_gui_ipc.sh
+
+# Localhost — single daemon, no replication/P2P tests (15 tests)
+cd gui
+./test_gui_ipc.sh
+```
+Test file: `gui/test_gui_ipc.cpp`. Covers connect, status, DHT status, peer list, config CRUD, store/retrieve integrity, key export/import, event subscription, replication (Docker only), P2P transfer (Docker only), file delete, and cleanup.
 
 ## Deployment
 - Relay runs on a DigitalOcean droplet at `wormholerelay.com:443`

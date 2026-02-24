@@ -112,6 +112,8 @@ SettingsDialog::SettingsDialog(DaemonClient *client, QWidget *parent)
             if (restartRequired) {
                 msg += tr(" Some changes require a daemon restart.");
                 m_restartBtn->setVisible(true);
+            } else {
+                m_restartBtn->setVisible(false);
             }
             m_statusLabel->setText(msg);
             m_statusLabel->setStyleSheet(

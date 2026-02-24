@@ -143,6 +143,19 @@ wormhole-gui/fast:
 .PHONY : wormhole-gui/fast
 
 #=============================================================================
+# Target rules for targets named test_gui_ipc
+
+# Build rule for target.
+test_gui_ipc: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_gui_ipc
+.PHONY : test_gui_ipc
+
+# fast build rule for target.
+test_gui_ipc/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/build
+.PHONY : test_gui_ipc/fast
+
+#=============================================================================
 # Target rules for targets named ipc_client_autogen_timestamp_deps
 
 # Build rule for target.
@@ -194,12 +207,39 @@ wormhole-gui_autogen/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/wormhole-gui_autogen.dir/build.make CMakeFiles/wormhole-gui_autogen.dir/build
 .PHONY : wormhole-gui_autogen/fast
 
+#=============================================================================
+# Target rules for targets named test_gui_ipc_autogen_timestamp_deps
+
+# Build rule for target.
+test_gui_ipc_autogen_timestamp_deps: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_gui_ipc_autogen_timestamp_deps
+.PHONY : test_gui_ipc_autogen_timestamp_deps
+
+# fast build rule for target.
+test_gui_ipc_autogen_timestamp_deps/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc_autogen_timestamp_deps.dir/build.make CMakeFiles/test_gui_ipc_autogen_timestamp_deps.dir/build
+.PHONY : test_gui_ipc_autogen_timestamp_deps/fast
+
+#=============================================================================
+# Target rules for targets named test_gui_ipc_autogen
+
+# Build rule for target.
+test_gui_ipc_autogen: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_gui_ipc_autogen
+.PHONY : test_gui_ipc_autogen
+
+# fast build rule for target.
+test_gui_ipc_autogen/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc_autogen.dir/build.make CMakeFiles/test_gui_ipc_autogen.dir/build
+.PHONY : test_gui_ipc_autogen/fast
+
 DaemonClient.o: DaemonClient.cpp.o
 .PHONY : DaemonClient.o
 
 # target to build an object file
 DaemonClient.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/wormhole-gui.dir/build.make CMakeFiles/wormhole-gui.dir/DaemonClient.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/DaemonClient.cpp.o
 .PHONY : DaemonClient.cpp.o
 
 DaemonClient.i: DaemonClient.cpp.i
@@ -208,6 +248,7 @@ DaemonClient.i: DaemonClient.cpp.i
 # target to preprocess a source file
 DaemonClient.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/wormhole-gui.dir/build.make CMakeFiles/wormhole-gui.dir/DaemonClient.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/DaemonClient.cpp.i
 .PHONY : DaemonClient.cpp.i
 
 DaemonClient.s: DaemonClient.cpp.s
@@ -216,6 +257,7 @@ DaemonClient.s: DaemonClient.cpp.s
 # target to generate assembly for a file
 DaemonClient.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/wormhole-gui.dir/build.make CMakeFiles/wormhole-gui.dir/DaemonClient.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/DaemonClient.cpp.s
 .PHONY : DaemonClient.cpp.s
 
 FileListWidget.o: FileListWidget.cpp.o
@@ -248,6 +290,7 @@ IpcWorker.o: IpcWorker.cpp.o
 # target to build an object file
 IpcWorker.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/wormhole-gui.dir/build.make CMakeFiles/wormhole-gui.dir/IpcWorker.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/IpcWorker.cpp.o
 .PHONY : IpcWorker.cpp.o
 
 IpcWorker.i: IpcWorker.cpp.i
@@ -256,6 +299,7 @@ IpcWorker.i: IpcWorker.cpp.i
 # target to preprocess a source file
 IpcWorker.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/wormhole-gui.dir/build.make CMakeFiles/wormhole-gui.dir/IpcWorker.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/IpcWorker.cpp.i
 .PHONY : IpcWorker.cpp.i
 
 IpcWorker.s: IpcWorker.cpp.s
@@ -264,6 +308,7 @@ IpcWorker.s: IpcWorker.cpp.s
 # target to generate assembly for a file
 IpcWorker.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/wormhole-gui.dir/build.make CMakeFiles/wormhole-gui.dir/IpcWorker.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/IpcWorker.cpp.s
 .PHONY : IpcWorker.cpp.s
 
 MainWindow.o: MainWindow.cpp.o
@@ -458,6 +503,54 @@ main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/wormhole-gui.dir/build.make CMakeFiles/wormhole-gui.dir/main.cpp.s
 .PHONY : main.cpp.s
 
+test_gui_ipc.o: test_gui_ipc.cpp.o
+.PHONY : test_gui_ipc.o
+
+# target to build an object file
+test_gui_ipc.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/test_gui_ipc.cpp.o
+.PHONY : test_gui_ipc.cpp.o
+
+test_gui_ipc.i: test_gui_ipc.cpp.i
+.PHONY : test_gui_ipc.i
+
+# target to preprocess a source file
+test_gui_ipc.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/test_gui_ipc.cpp.i
+.PHONY : test_gui_ipc.cpp.i
+
+test_gui_ipc.s: test_gui_ipc.cpp.s
+.PHONY : test_gui_ipc.s
+
+# target to generate assembly for a file
+test_gui_ipc.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/test_gui_ipc.cpp.s
+.PHONY : test_gui_ipc.cpp.s
+
+test_gui_ipc_autogen/mocs_compilation.o: test_gui_ipc_autogen/mocs_compilation.cpp.o
+.PHONY : test_gui_ipc_autogen/mocs_compilation.o
+
+# target to build an object file
+test_gui_ipc_autogen/mocs_compilation.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/test_gui_ipc_autogen/mocs_compilation.cpp.o
+.PHONY : test_gui_ipc_autogen/mocs_compilation.cpp.o
+
+test_gui_ipc_autogen/mocs_compilation.i: test_gui_ipc_autogen/mocs_compilation.cpp.i
+.PHONY : test_gui_ipc_autogen/mocs_compilation.i
+
+# target to preprocess a source file
+test_gui_ipc_autogen/mocs_compilation.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/test_gui_ipc_autogen/mocs_compilation.cpp.i
+.PHONY : test_gui_ipc_autogen/mocs_compilation.cpp.i
+
+test_gui_ipc_autogen/mocs_compilation.s: test_gui_ipc_autogen/mocs_compilation.cpp.s
+.PHONY : test_gui_ipc_autogen/mocs_compilation.s
+
+# target to generate assembly for a file
+test_gui_ipc_autogen/mocs_compilation.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_gui_ipc.dir/build.make CMakeFiles/test_gui_ipc.dir/test_gui_ipc_autogen/mocs_compilation.cpp.s
+.PHONY : test_gui_ipc_autogen/mocs_compilation.cpp.s
+
 wormhole-gui_autogen/3YJK5W5UP7/qrc_wormhole.o: wormhole-gui_autogen/3YJK5W5UP7/qrc_wormhole.cpp.o
 .PHONY : wormhole-gui_autogen/3YJK5W5UP7/qrc_wormhole.o
 
@@ -516,9 +609,12 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... ipc_client_autogen"
 	@echo "... ipc_client_autogen_timestamp_deps"
+	@echo "... test_gui_ipc_autogen"
+	@echo "... test_gui_ipc_autogen_timestamp_deps"
 	@echo "... wormhole-gui_autogen"
 	@echo "... wormhole-gui_autogen_timestamp_deps"
 	@echo "... ipc_client"
+	@echo "... test_gui_ipc"
 	@echo "... wormhole-gui"
 	@echo "... DaemonClient.o"
 	@echo "... DaemonClient.i"
@@ -553,6 +649,12 @@ help:
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... test_gui_ipc.o"
+	@echo "... test_gui_ipc.i"
+	@echo "... test_gui_ipc.s"
+	@echo "... test_gui_ipc_autogen/mocs_compilation.o"
+	@echo "... test_gui_ipc_autogen/mocs_compilation.i"
+	@echo "... test_gui_ipc_autogen/mocs_compilation.s"
 	@echo "... wormhole-gui_autogen/3YJK5W5UP7/qrc_wormhole.o"
 	@echo "... wormhole-gui_autogen/3YJK5W5UP7/qrc_wormhole.i"
 	@echo "... wormhole-gui_autogen/3YJK5W5UP7/qrc_wormhole.s"

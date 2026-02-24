@@ -54,6 +54,20 @@ set_target_properties(wormhole-gui PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+# --- Headless IPC test (Qt6::Test, no Widgets) ---
+find_package(Qt6 COMPONENTS Test QUIET)
+if(Qt6Test_FOUND)
+    add_executable(test_gui_ipc
+        test_gui_ipc.cpp
+        IpcWorker.cpp
+        DaemonClient.cpp
+    )
+    target_link_libraries(test_gui_ipc PRIVATE
+        Qt6::Core Qt6::Test ipc_client
+    )
+    target_include_directories(test_gui_ipc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
+
 # Deploy Qt runtime DLLs on Windows (windeployqt)
 if(WIN32)
     add_custom_command(TARGET wormhole-gui POST_BUILD
@@ -63,4 +77,15 @@ if(WIN32)
                 "$<TARGET_FILE:wormhole-gui>"
         COMMENT "Deploying Qt runtime DLLs"
     )
+
+    # Deploy Qt runtime DLLs for test binary (Windows)
+    if(Qt6Test_FOUND)
+        add_custom_command(TARGET test_gui_ipc POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "Running windeployqt for test binary..."
+            COMMAND "$<TARGET_FILE_DIR:Qt6::Core>/windeployqt.exe"
+                    --no-translations --no-opengl-sw
+                    "$<TARGET_FILE:test_gui_ipc>"
+            COMMENT "Deploying Qt runtime DLLs for test_gui_ipc"
+        )
+    endif()
 endif()
