@@ -164,7 +164,8 @@ typedef struct {
 // then sends manifest + chunks. Signals transfer_complete_event when done.
 void ChunkSendFile(HQUIC Connection, const char *file_path,
                    FILE_MANIFEST *manifest, WH_EVENT transfer_complete_event,
-                   BOOLEAN *transfer_complete_flag);
+                   BOOLEAN *transfer_complete_flag,
+                   StreamProgressCallback progress_cb, void *progress_cb_ctx);
 
 //=============================================================================
 // Stream Callbacks (attached by wormhole.c / connection callbacks)

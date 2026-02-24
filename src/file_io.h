@@ -9,6 +9,7 @@
 
 // File existence and metadata
 BOOLEAN FileExists(const char *path);
+BOOLEAN IsDirectory(const char *path);
 BOOLEAN GetWormholeFileSize(const char *path, uint64_t *size_out);
 void ExtractFilename(const char *path, char **filename_out, uint32_t *length_out);
 

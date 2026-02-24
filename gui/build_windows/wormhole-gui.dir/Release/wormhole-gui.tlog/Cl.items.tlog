@@ -1,0 +1,11 @@
+C:\Dev\Wormhole\gui\main.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\main.obj
+C:\Dev\Wormhole\gui\MainWindow.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\MainWindow.obj
+C:\Dev\Wormhole\gui\DaemonClient.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\DaemonClient.obj
+C:\Dev\Wormhole\gui\IpcWorker.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\IpcWorker.obj
+C:\Dev\Wormhole\gui\TransferWidget.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\TransferWidget.obj
+C:\Dev\Wormhole\gui\FileListWidget.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\FileListWidget.obj
+C:\Dev\Wormhole\gui\PeerListWidget.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\PeerListWidget.obj
+C:\Dev\Wormhole\gui\SettingsDialog.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\SettingsDialog.obj
+C:\Dev\Wormhole\gui\TrayManager.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\TrayManager.obj
+C:\Dev\Wormhole\gui\build_windows\wormhole-gui_autogen\mocs_compilation_Release.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\mocs_compilation_Release.obj
+C:\Dev\Wormhole\gui\build_windows\wormhole-gui_autogen\3YJK5W5UP7_Release\qrc_wormhole.cpp;C:\Dev\Wormhole\gui\build_windows\wormhole-gui.dir\Release\wormhole-gui_autogen\3YJK5W5UP7_Release\qrc_wormhole.cpp.obj

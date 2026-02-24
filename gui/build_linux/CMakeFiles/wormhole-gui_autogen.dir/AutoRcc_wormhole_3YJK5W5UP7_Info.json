@@ -1,0 +1,20 @@
+{
+	"BUILD_DIR" : "/mnt/c/Dev/Wormhole/gui/build_linux/wormhole-gui_autogen",
+	"CMAKE_BINARY_DIR" : "/mnt/c/Dev/Wormhole/gui/build_linux",
+	"CMAKE_CURRENT_BINARY_DIR" : "/mnt/c/Dev/Wormhole/gui/build_linux",
+	"CMAKE_CURRENT_SOURCE_DIR" : "/mnt/c/Dev/Wormhole/gui",
+	"CMAKE_SOURCE_DIR" : "/mnt/c/Dev/Wormhole/gui",
+	"GENERATOR" : "Unix Makefiles",
+	"INCLUDE_DIR" : "/mnt/c/Dev/Wormhole/gui/build_linux/wormhole-gui_autogen/include",
+	"INPUTS" : [ "/mnt/c/Dev/Wormhole/gui/resources/wormhole.png" ],
+	"LOCK_FILE" : "/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/wormhole-gui_autogen.dir/AutoRcc_wormhole_3YJK5W5UP7_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "-name", "wormhole" ],
+	"OUTPUT_CHECKSUM" : "3YJK5W5UP7",
+	"OUTPUT_NAME" : "qrc_wormhole.cpp",
+	"RCC_EXECUTABLE" : "/usr/lib/qt6/libexec/rcc",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/wormhole-gui_autogen.dir/AutoRcc_wormhole_3YJK5W5UP7_Used.txt",
+	"SOURCE" : "/mnt/c/Dev/Wormhole/gui/resources/wormhole.qrc",
+	"VERBOSITY" : 0
+}

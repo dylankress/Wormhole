@@ -1,0 +1,8 @@
+/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/ipc_client.dir
+/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/wormhole-gui.dir
+/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/edit_cache.dir
+/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/rebuild_cache.dir
+/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/ipc_client_autogen_timestamp_deps.dir
+/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/ipc_client_autogen.dir
+/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/wormhole-gui_autogen_timestamp_deps.dir
+/mnt/c/Dev/Wormhole/gui/build_linux/CMakeFiles/wormhole-gui_autogen.dir

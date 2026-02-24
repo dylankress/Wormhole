@@ -48,6 +48,7 @@ static QUIC_STATUS QUIC_API Daemon_ReceiveConnectionCallback(
 static ACTIVE_TRANSFER g_transfers[TRANSFER_MAX_CONCURRENT];
 static WH_MUTEX g_transfer_lock;
 static KEYPAIR *g_daemon_keypair;
+static WORMHOLE_CONFIG *g_config = NULL;
 static volatile int32_t g_next_transfer_id = 1;
 static volatile int32_t g_initialized = 0;
 
@@ -81,6 +82,19 @@ static ACTIVE_TRANSFER *AllocTransfer(void)
 static void FreeTransfer(ACTIVE_TRANSFER *t)
 {
     if (!t) return;
+
+    // Close QUIC handles (safety net after thread join)
+    if (t->quic_connection) {
+        MsQuic->ConnectionShutdown(t->quic_connection,
+            QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+        MsQuic->ConnectionClose(t->quic_connection);
+        t->quic_connection = NULL;
+    }
+    if (t->quic_listener) {
+        MsQuic->ListenerClose(t->quic_listener);
+        t->quic_listener = NULL;
+    }
+
     if (t->relay_client) {
         RelayClient_SendGoodbye(t->relay_client, 0);
         RelayClient_Destroy(t->relay_client);
@@ -94,6 +108,7 @@ static void FreeTransfer(ACTIVE_TRANSFER *t)
         Manifest_Destroy(t->manifest);
         t->manifest = NULL;
     }
+    t->recv_ctx = NULL;  // Owned by stream cleanup, don't free here
     WH_EVENT_DESTROY(t->complete_event);
     t->active = FALSE;
 }
@@ -119,6 +134,7 @@ static void PushTransferEvent(ACTIVE_TRANSFER *t, uint8_t ipc_status)
     // Transfer event payload: [4B transfer_id][1B direction][1B state][1B status]
     //                         [8B bytes_transferred][8B bytes_total]
     //                         [2B error_msg_len][error_msg]
+    //                         [1B ticket_len][ticket_bytes]
     uint8_t buf[512];
     uint32_t off = 0;
 
@@ -137,6 +153,24 @@ static void PushTransferEvent(ACTIVE_TRANSFER *t, uint8_t ipc_status)
         off += msg_len;
     }
 
+    // Ticket field: [1B ticket_len][ticket_bytes]
+    uint8_t ticket_len = (uint8_t)strlen(t->ticket);
+    if (ticket_len > sizeof(buf) - off - 1) ticket_len = (uint8_t)(sizeof(buf) - off - 1);
+    buf[off++] = ticket_len;
+    if (ticket_len > 0) {
+        memcpy(buf + off, t->ticket, ticket_len);
+        off += ticket_len;
+    }
+
+    // Filename field: [1B filename_len][filename_bytes]
+    uint8_t fn_len = (uint8_t)strlen(t->filename);
+    if (fn_len > sizeof(buf) - off - 1) fn_len = (uint8_t)(sizeof(buf) - off - 1);
+    buf[off++] = fn_len;
+    if (fn_len > 0) {
+        memcpy(buf + off, t->filename, fn_len);
+        off += fn_len;
+    }
+
     IpcServer_PushEvent(IPC_EVENT_TRANSFER, t->transfer_id, buf, off);
 }
 
@@ -151,6 +185,15 @@ static BOOLEAN TransferProgressCallback(
     UNREFERENCED_PARAMETER(eta_seconds);
     ACTIVE_TRANSFER *t = (ACTIVE_TRANSFER *)user_context;
     if (!t) return TRUE;
+
+    // Lazy-populate filename for receiver (from manifest, available after first progress)
+    if (t->filename[0] == '\0' && t->recv_ctx) {
+        CHUNK_RECEIVE_CONTEXT *rc = (CHUNK_RECEIVE_CONTEXT *)t->recv_ctx;
+        if (rc->manifest && rc->manifest->filename[0]) {
+            strncpy(t->filename, rc->manifest->filename, sizeof(t->filename) - 1);
+            t->filename[sizeof(t->filename) - 1] = '\0';
+        }
+    }
 
     t->bytes_transferred = bytes_done;
     t->bytes_total = bytes_total;
@@ -255,8 +298,12 @@ static WH_THREAD_RETURN SendThreadFunc(WH_THREAD_PARAM param)
     WH_ATOMIC_SET(&t->state, TRANSFER_STATE_REGISTERING);
     PushTransferEvent(t, IPC_STATUS_OK);
 
-    // 1. Build manifest
-    t->manifest = Chunker_BuildManifest(t->filepath);
+    // 1. Build manifest (directory → v2 multi-file, file → v1 single-file)
+    if (IsDirectory(t->filepath)) {
+        t->manifest = Chunker_BuildManifestFromDirectory(t->filepath);
+    } else {
+        t->manifest = Chunker_BuildManifest(t->filepath);
+    }
     if (!t->manifest) {
         snprintf(t->error_msg, sizeof(t->error_msg), "Failed to build manifest for %s", t->filepath);
         WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
@@ -270,9 +317,12 @@ static WH_THREAD_RETURN SendThreadFunc(WH_THREAD_PARAM param)
     t->chunks_total = t->manifest->chunk_count;
 
     // 2. Set up relay client
+    const char *cfg_relay_host = g_config ? Config_GetString(g_config, "relay_host", CONFIG_DEFAULT_RELAY_HOST) : CONFIG_DEFAULT_RELAY_HOST;
+    uint16_t cfg_relay_port = g_config ? (uint16_t)Config_GetUint64(g_config, "relay_port", CONFIG_DEFAULT_RELAY_PORT) : CONFIG_DEFAULT_RELAY_PORT;
+
     RELAY_CLIENT_CONFIG relay_cfg = {0};
-    relay_cfg.relay_host = "wormholerelay.com";
-    relay_cfg.relay_port = 443;
+    relay_cfg.relay_host = cfg_relay_host;
+    relay_cfg.relay_port = cfg_relay_port;
     relay_cfg.keypair = &t->keypair;
     relay_cfg.on_connected = on_transfer_relay_connected;
     relay_cfg.on_ticket_created = on_transfer_ticket_created;
@@ -288,11 +338,55 @@ static WH_THREAD_RETURN SendThreadFunc(WH_THREAD_PARAM param)
         return (WH_THREAD_RETURN)0;
     }
 
-    // Discover endpoints
+    // 3. Start QUIC listener BEFORE relay registration so we know the port
+    HQUIC listener = NULL;
+    QUIC_STATUS status = MsQuic->ListenerOpen(
+        DaemonRegistration, Daemon_SendListenerCallback, t, &listener);
+    if (QUIC_FAILED(status)) {
+        snprintf(t->error_msg, sizeof(t->error_msg), "Failed to open QUIC listener");
+        WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
+        PushTransferEvent(t, IPC_STATUS_ERROR);
+        WH_EVENT_SET(t->complete_event);
+        return (WH_THREAD_RETURN)0;
+    }
+    t->quic_listener = listener;
+
+    const QUIC_BUFFER alpn = { sizeof("wormhole") - 1, (uint8_t *)"wormhole" };
+    QUIC_ADDR addr = {0};
+    QuicAddrSetFamily(&addr, QUIC_ADDRESS_FAMILY_UNSPEC);
+    QuicAddrSetPort(&addr, 0);  // Ephemeral — avoids conflict with daemon listener on 4567
+    status = MsQuic->ListenerStart(listener, &alpn, 1, &addr);
+    if (QUIC_FAILED(status)) {
+        MsQuic->ListenerClose(listener);
+        t->quic_listener = NULL;
+        snprintf(t->error_msg, sizeof(t->error_msg), "Failed to start QUIC listener");
+        WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
+        PushTransferEvent(t, IPC_STATUS_ERROR);
+        WH_EVENT_SET(t->complete_event);
+        return (WH_THREAD_RETURN)0;
+    }
+
+    // Query the actual bound port
+    QUIC_ADDR listener_addr = {0};
+    uint32_t addr_len = sizeof(listener_addr);
+    uint16_t listener_port = 0;
+    if (QUIC_SUCCEEDED(MsQuic->GetParam(listener, QUIC_PARAM_LISTENER_LOCAL_ADDRESS,
+                                         &addr_len, &listener_addr))) {
+        listener_port = QuicAddrGetPort(&listener_addr);
+    }
+    LOG("[transfer %u] QUIC listener started on port %u\n", t->transfer_id, listener_port);
+
+    // 4. Discover endpoints and set ports to the listener's ephemeral port
     t->our_endpoint_count = Discovery_FindEndpoints(
         t->our_endpoints, MAX_ENDPOINTS);
 
-    // Register with relay
+    // Discovery returns interface addresses with port 0 — fix them to the actual
+    // listener port so the receiver can connect (mirrors cmd_send in wormhole.c)
+    for (uint16_t i = 0; i < t->our_endpoint_count; i++) {
+        t->our_endpoints[i].port = listener_port;
+    }
+
+    // 5. Register with relay (now endpoints have the correct port)
     RelayClient_Register(t->relay_client, t->our_endpoints, t->our_endpoint_count);
 
     // Poll for registration confirmation (5s)
@@ -302,6 +396,8 @@ static WH_THREAD_RETURN SendThreadFunc(WH_THREAD_PARAM param)
     }
 
     if (WH_ATOMIC_LOAD(&t->cancel_requested)) {
+        MsQuic->ListenerClose(listener);
+        t->quic_listener = NULL;
         WH_ATOMIC_SET(&t->state, TRANSFER_STATE_CANCELLED);
         PushTransferEvent(t, IPC_STATUS_CANCELLED);
         WH_EVENT_SET(t->complete_event);
@@ -318,25 +414,26 @@ static WH_THREAD_RETURN SendThreadFunc(WH_THREAD_PARAM param)
 
     if (!t->ticket_ready) {
         snprintf(t->error_msg, sizeof(t->error_msg), "Timeout waiting for ticket");
+        MsQuic->ListenerClose(listener);
+        t->quic_listener = NULL;
         WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
         PushTransferEvent(t, IPC_STATUS_ERROR);
         WH_EVENT_SET(t->complete_event);
         return (WH_THREAD_RETURN)0;
     }
 
-    // 3. Wait for receiver
+    // 6. Wait for receiver
     WH_ATOMIC_SET(&t->state, TRANSFER_STATE_WAITING_PEER);
     PushTransferEvent(t, IPC_STATUS_OK);
 
     // Poll for peer info (up to 30 minutes)
     for (int w = 0; w < 18000 && !t->peer_info_ready && !WH_ATOMIC_LOAD(&t->cancel_requested); w++) {
         RelayClient_Poll(t->relay_client, 100);
-
-        // Send hole punch probes every 200ms once we have peer info
-        // (peer_info_ready checked by loop condition, but we also probe during the loop)
     }
 
     if (WH_ATOMIC_LOAD(&t->cancel_requested)) {
+        MsQuic->ListenerClose(listener);
+        t->quic_listener = NULL;
         WH_ATOMIC_SET(&t->state, TRANSFER_STATE_CANCELLED);
         PushTransferEvent(t, IPC_STATUS_CANCELLED);
         WH_EVENT_SET(t->complete_event);
@@ -345,13 +442,15 @@ static WH_THREAD_RETURN SendThreadFunc(WH_THREAD_PARAM param)
 
     if (!t->peer_info_ready) {
         snprintf(t->error_msg, sizeof(t->error_msg), "Timeout waiting for receiver");
+        MsQuic->ListenerClose(listener);
+        t->quic_listener = NULL;
         WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
         PushTransferEvent(t, IPC_STATUS_ERROR);
         WH_EVENT_SET(t->complete_event);
         return (WH_THREAD_RETURN)0;
     }
 
-    // 4. Send hole punch probes
+    // 7. Send hole punch probes
     WH_ATOMIC_SET(&t->state, TRANSFER_STATE_CONNECTING);
     PushTransferEvent(t, IPC_STATUS_OK);
 
@@ -360,54 +459,26 @@ static WH_THREAD_RETURN SendThreadFunc(WH_THREAD_PARAM param)
         WH_SLEEP_MS(200);
     }
 
-    // 5. Start QUIC listener
-    HQUIC listener = NULL;
-    QUIC_STATUS status = MsQuic->ListenerOpen(
-        DaemonRegistration, Daemon_SendListenerCallback, t, &listener);
-    if (QUIC_FAILED(status)) {
-        snprintf(t->error_msg, sizeof(t->error_msg), "Failed to open QUIC listener");
-        WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
-        PushTransferEvent(t, IPC_STATUS_ERROR);
-        WH_EVENT_SET(t->complete_event);
-        return (WH_THREAD_RETURN)0;
-    }
-    t->quic_listener = listener;
-
-    const QUIC_BUFFER alpn = { sizeof("wormhole") - 1, (uint8_t *)"wormhole" };
-    QUIC_ADDR addr = {0};
-    QuicAddrSetFamily(&addr, QUIC_ADDRESS_FAMILY_UNSPEC);
-    QuicAddrSetPort(&addr, 4567);
-    status = MsQuic->ListenerStart(listener, &alpn, 1, &addr);
-    if (QUIC_FAILED(status)) {
-        MsQuic->ListenerClose(listener);
-        t->quic_listener = NULL;
-        snprintf(t->error_msg, sizeof(t->error_msg), "Failed to start QUIC listener");
-        WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
-        PushTransferEvent(t, IPC_STATUS_ERROR);
-        WH_EVENT_SET(t->complete_event);
-        return (WH_THREAD_RETURN)0;
-    }
-
-    // Also start relay forwarder for fallback
-    if (t->peer_info_ready) {
+    // Start relay forwarder for fallback
+    {
         RELAY_FORWARDER_CONFIG fwd_cfg = {0};
-        fwd_cfg.relay_host = "wormholerelay.com";
-        fwd_cfg.relay_port = 443;
+        fwd_cfg.relay_host = cfg_relay_host;
+        fwd_cfg.relay_port = cfg_relay_port;
         fwd_cfg.keypair = &t->keypair;
         memcpy(fwd_cfg.remote_peer_id, t->peer_id, 32);
         fwd_cfg.our_endpoints = t->our_endpoints;
         fwd_cfg.our_endpoint_count = t->our_endpoint_count;
-        fwd_cfg.local_quic_port = 4567;
+        fwd_cfg.local_quic_port = listener_port;
         t->relay_forwarder = RelayForwarder_Start(&fwd_cfg);
     }
 
-    // 6. Wait for transfer to complete (up to 60 minutes)
+    // 8. Wait for transfer to complete (up to 60 minutes)
     WH_ATOMIC_SET(&t->state, TRANSFER_STATE_TRANSFERRING);
     t->start_time = WH_TIMER_NOW();
 
     uint32_t wait_result = WH_EVENT_WAIT(t->complete_event, 3600000);
 
-    // 7. Cleanup
+    // 9. Cleanup
     if (t->quic_listener) {
         MsQuic->ListenerClose(t->quic_listener);
         t->quic_listener = NULL;
@@ -430,10 +501,17 @@ static WH_THREAD_RETURN SendThreadFunc(WH_THREAD_PARAM param)
         WH_ATOMIC_SET(&t->state, TRANSFER_STATE_CANCELLED);
         PushTransferEvent(t, IPC_STATUS_CANCELLED);
     } else if ((int32_t)WH_ATOMIC_LOAD(&t->state) != TRANSFER_STATE_COMPLETED) {
-        if (t->error_msg[0] == '\0')
-            snprintf(t->error_msg, sizeof(t->error_msg), "Transfer failed");
-        WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
-        PushTransferEvent(t, IPC_STATUS_ERROR);
+        // Event may have been signaled from stream.c TRANSFER_COMPLETE before
+        // SHUTDOWN_COMPLETE set the state — check chunk counts directly
+        if (t->chunks_transferred >= t->chunks_total && t->chunks_total > 0) {
+            WH_ATOMIC_SET(&t->state, TRANSFER_STATE_COMPLETED);
+            PushTransferEvent(t, IPC_STATUS_OK);
+        } else {
+            if (t->error_msg[0] == '\0')
+                snprintf(t->error_msg, sizeof(t->error_msg), "Transfer failed");
+            WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
+            PushTransferEvent(t, IPC_STATUS_ERROR);
+        }
     }
 
     return (WH_THREAD_RETURN)0;
@@ -451,9 +529,12 @@ static WH_THREAD_RETURN ReceiveThreadFunc(WH_THREAD_PARAM param)
     PushTransferEvent(t, IPC_STATUS_OK);
 
     // 1. Set up relay client and look up ticket
+    const char *cfg_relay_host = g_config ? Config_GetString(g_config, "relay_host", CONFIG_DEFAULT_RELAY_HOST) : CONFIG_DEFAULT_RELAY_HOST;
+    uint16_t cfg_relay_port = g_config ? (uint16_t)Config_GetUint64(g_config, "relay_port", CONFIG_DEFAULT_RELAY_PORT) : CONFIG_DEFAULT_RELAY_PORT;
+
     RELAY_CLIENT_CONFIG relay_cfg = {0};
-    relay_cfg.relay_host = "wormholerelay.com";
-    relay_cfg.relay_port = 443;
+    relay_cfg.relay_host = cfg_relay_host;
+    relay_cfg.relay_port = cfg_relay_port;
     relay_cfg.keypair = &t->keypair;
     relay_cfg.on_connected = on_transfer_relay_connected;
     relay_cfg.on_peer_info = on_transfer_peer_info;
@@ -561,8 +642,8 @@ static WH_THREAD_RETURN ReceiveThreadFunc(WH_THREAD_PARAM param)
     // 4. Relay fallback if direct connections failed
     if (!connected && !WH_ATOMIC_LOAD(&t->cancel_requested)) {
         RELAY_FORWARDER_CONFIG fwd_cfg = {0};
-        fwd_cfg.relay_host = "wormholerelay.com";
-        fwd_cfg.relay_port = 443;
+        fwd_cfg.relay_host = cfg_relay_host;
+        fwd_cfg.relay_port = cfg_relay_port;
         fwd_cfg.keypair = &t->keypair;
         memcpy(fwd_cfg.remote_peer_id, t->peer_id, 32);
         fwd_cfg.our_endpoints = t->our_endpoints;
@@ -607,6 +688,7 @@ static WH_THREAD_RETURN ReceiveThreadFunc(WH_THREAD_PARAM param)
     }
 
     // 5. Transfer in progress — wait for completion
+    WH_EVENT_RESET(t->complete_event);    // Clear connection signal before transfer wait
     WH_ATOMIC_SET(&t->state, TRANSFER_STATE_TRANSFERRING);
     t->start_time = WH_TIMER_NOW();
     PushTransferEvent(t, IPC_STATUS_OK);
@@ -639,10 +721,17 @@ static WH_THREAD_RETURN ReceiveThreadFunc(WH_THREAD_PARAM param)
         WH_ATOMIC_SET(&t->state, TRANSFER_STATE_CANCELLED);
         PushTransferEvent(t, IPC_STATUS_CANCELLED);
     } else if ((int32_t)WH_ATOMIC_LOAD(&t->state) != TRANSFER_STATE_COMPLETED) {
-        if (t->error_msg[0] == '\0')
-            snprintf(t->error_msg, sizeof(t->error_msg), "Transfer failed");
-        WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
-        PushTransferEvent(t, IPC_STATUS_ERROR);
+        // Event may have been signaled from stream.c TRANSFER_COMPLETE before
+        // SHUTDOWN_COMPLETE set the state — check chunk counts directly
+        if (t->chunks_transferred >= t->chunks_total && t->chunks_total > 0) {
+            WH_ATOMIC_SET(&t->state, TRANSFER_STATE_COMPLETED);
+            PushTransferEvent(t, IPC_STATUS_OK);
+        } else {
+            if (t->error_msg[0] == '\0')
+                snprintf(t->error_msg, sizeof(t->error_msg), "Transfer failed");
+            WH_ATOMIC_SET(&t->state, TRANSFER_STATE_FAILED);
+            PushTransferEvent(t, IPC_STATUS_ERROR);
+        }
     }
 
     return (WH_THREAD_RETURN)0;
@@ -688,9 +777,9 @@ static QUIC_STATUS QUIC_API Daemon_SendConnectionCallback(
     case QUIC_CONNECTION_EVENT_CONNECTED:
         LOG("[transfer %u] Receiver connected\n", t->transfer_id);
         // ChunkSendFile creates its own CHUNK_SEND_CONTEXT internally.
-        // Progress is tracked via the complete_event signal and state updates.
         ChunkSendFile(Connection, t->filepath, t->manifest,
-                       t->complete_event, NULL);
+                       t->complete_event, NULL,
+                       TransferProgressCallback, t);
         break;
 
     case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
@@ -719,6 +808,7 @@ static QUIC_STATUS QUIC_API Daemon_ReceiveConnectionCallback(
     case QUIC_CONNECTION_EVENT_CONNECTED:
         LOG("[transfer %u] Connected to sender\n", t->transfer_id);
         t->quic_connection = Connection;
+        WH_EVENT_SET(t->complete_event);
         break;
 
     case QUIC_CONNECTION_EVENT_PEER_STREAM_STARTED:
@@ -735,6 +825,7 @@ static QUIC_STATUS QUIC_API Daemon_ReceiveConnectionCallback(
                 recv_ctx->progress_cb = TransferProgressCallback;
                 recv_ctx->progress_cb_ctx = t;
                 recv_ctx->user_context = t;
+                t->recv_ctx = recv_ctx;  // Store for data stream callback
 
                 // Set Downloads path
                 const char *home = getenv("HOME");
@@ -755,19 +846,31 @@ static QUIC_STATUS QUIC_API Daemon_ReceiveConnectionCallback(
                 MsQuic->SetCallbackHandler(stream,
                     (void *)ReceiverControlStreamCallback, recv_ctx);
 
-                // Send MANIFEST_REQUEST
-                uint8_t req[5];
-                req[0] = CTRL_MSG_MANIFEST_REQUEST;
-                WriteUint32LE(req + 1, 0); // payload_len = 0
-                QUIC_BUFFER buf = { sizeof(req), req };
-                MsQuic->StreamSend(stream, &buf, 1,
-                    QUIC_SEND_FLAG_NONE, NULL);
+                // Send MANIFEST_REQUEST (heap-allocated for zero-copy StreamSend)
+                uint8_t *req_buf = (uint8_t *)malloc(CTRL_HEADER_SIZE);
+                if (req_buf) {
+                    req_buf[0] = CTRL_MSG_MANIFEST_REQUEST;
+                    WriteUint32LE(req_buf + 1, 0); // payload_len = 0
+                    QUIC_BUFFER *quic_buf = (QUIC_BUFFER *)malloc(sizeof(QUIC_BUFFER));
+                    if (quic_buf) {
+                        quic_buf->Buffer = req_buf;
+                        quic_buf->Length = CTRL_HEADER_SIZE;
+                        MsQuic->StreamSend(stream, quic_buf, 1,
+                            QUIC_SEND_FLAG_NONE, quic_buf);
+                    } else {
+                        free(req_buf);
+                    }
+                }
             }
         } else {
-            // Data stream — set callback to ReceiverDataStreamCallback
-            // The data stream callback needs the receive context from the control stream
-            MsQuic->SetCallbackHandler(stream,
-                (void *)ReceiverDataStreamCallback, t);
+            // Data stream — pass the receive context (set during control stream setup)
+            if (t->recv_ctx) {
+                MsQuic->SetCallbackHandler(stream,
+                    (void *)ReceiverDataStreamCallback, t->recv_ctx);
+            } else {
+                LOG_ERROR("[transfer %u] Data stream arrived but recv_ctx is NULL\n", t->transfer_id);
+                MsQuic->StreamClose(stream);
+            }
         }
         break;
     }
@@ -793,11 +896,12 @@ static QUIC_STATUS QUIC_API Daemon_ReceiveConnectionCallback(
 // Public API Implementation
 //=============================================================================
 
-void TransferMgr_Init(KEYPAIR *daemon_keypair)
+void TransferMgr_Init(KEYPAIR *daemon_keypair, WORMHOLE_CONFIG *config)
 {
     if (WH_ATOMIC_LOAD(&g_initialized)) return;
     WH_MUTEX_INIT(g_transfer_lock);
     g_daemon_keypair = daemon_keypair;
+    g_config = config;
     memset(g_transfers, 0, sizeof(g_transfers));
     WH_ATOMIC_SET(&g_initialized, 1);
 }
@@ -806,6 +910,7 @@ void TransferMgr_Shutdown(void)
 {
     if (!WH_ATOMIC_LOAD(&g_initialized)) return;
 
+    // Phase 1: Signal cancel + set complete_event on all active transfers
     WH_MUTEX_LOCK(g_transfer_lock);
     for (int i = 0; i < TRANSFER_MAX_CONCURRENT; i++) {
         if (g_transfers[i].active) {
@@ -815,9 +920,29 @@ void TransferMgr_Shutdown(void)
     }
     WH_MUTEX_UNLOCK(g_transfer_lock);
 
-    // Wait for transfers to wind down
-    WH_SLEEP_MS(500);
+    // Phase 2: Force-shutdown QUIC connections + stop listeners (unblocks threads)
+    WH_MUTEX_LOCK(g_transfer_lock);
+    for (int i = 0; i < TRANSFER_MAX_CONCURRENT; i++) {
+        if (!g_transfers[i].active) continue;
+        if (g_transfers[i].quic_connection) {
+            MsQuic->ConnectionShutdown(g_transfers[i].quic_connection,
+                QUIC_CONNECTION_SHUTDOWN_FLAG_NONE, 0);
+        }
+        if (g_transfers[i].quic_listener) {
+            MsQuic->ListenerStop(g_transfers[i].quic_listener);
+        }
+    }
+    WH_MUTEX_UNLOCK(g_transfer_lock);
 
+    // Phase 3: Join all threads with timeout (5s)
+    for (int i = 0; i < TRANSFER_MAX_CONCURRENT; i++) {
+        if (g_transfers[i].active && g_transfers[i].thread_valid) {
+            WH_THREAD_JOIN(g_transfers[i].thread, 5000);
+            g_transfers[i].thread_valid = FALSE;
+        }
+    }
+
+    // Phase 4: FreeTransfer on remaining active transfers
     WH_MUTEX_LOCK(g_transfer_lock);
     for (int i = 0; i < TRANSFER_MAX_CONCURRENT; i++) {
         if (g_transfers[i].active)
@@ -859,9 +984,11 @@ uint32_t TransferMgr_Send(uint32_t op_id, const char *filepath)
     WH_MUTEX_UNLOCK(g_transfer_lock);
 
     // Start send thread
-    WH_THREAD thread;
-    (void)WH_THREAD_CREATE(thread, SendThreadFunc, t);
-    // Detach — thread manages its own lifetime
+    if (WH_THREAD_CREATE(t->thread, SendThreadFunc, t)) {
+        t->thread_valid = TRUE;
+    } else {
+        LOG_ERROR("[transfer %u] Failed to create send thread\n", id);
+    }
 
     return id;
 }
@@ -892,9 +1019,11 @@ uint32_t TransferMgr_Receive(uint32_t op_id, const char *ticket,
     WH_MUTEX_UNLOCK(g_transfer_lock);
 
     // Start receive thread
-    WH_THREAD thread;
-    (void)WH_THREAD_CREATE(thread, ReceiveThreadFunc, t);
-    // Detach
+    if (WH_THREAD_CREATE(t->thread, ReceiveThreadFunc, t)) {
+        t->thread_valid = TRUE;
+    } else {
+        LOG_ERROR("[transfer %u] Failed to create receive thread\n", id);
+    }
 
     return id;
 }

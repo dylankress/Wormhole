@@ -17,6 +17,7 @@
 #include "relay/discovery.h"
 #include "relay_forwarder.h"
 #include "ipc.h"
+#include "config.h"
 
 //=============================================================================
 // Transfer Configuration
@@ -97,12 +98,19 @@ typedef struct {
     double          start_time;
     double          last_event_time;    // Throttle IPC progress events
 
+    // Receive context (void* to avoid circular stream.h include)
+    void           *recv_ctx;           // CHUNK_RECEIVE_CONTEXT* for receiver
+
     // Error
     char            error_msg[256];
 
     // Synchronization
     WH_EVENT        complete_event;     // Signaled when transfer finishes
     volatile int32_t cancel_requested;
+
+    // Thread management (for clean shutdown)
+    WH_THREAD       thread;
+    BOOLEAN         thread_valid;
 
     // Reflected address from relay
     uint8_t         reflected_addr_type;
@@ -116,7 +124,8 @@ typedef struct {
 //=============================================================================
 
 // Initialize the transfer manager. Call once at daemon startup.
-void TransferMgr_Init(KEYPAIR *daemon_keypair);
+// config: daemon config (for relay_host/relay_port lookups), may be NULL.
+void TransferMgr_Init(KEYPAIR *daemon_keypair, WORMHOLE_CONFIG *config);
 
 // Shut down the transfer manager. Cancels all active transfers.
 void TransferMgr_Shutdown(void);

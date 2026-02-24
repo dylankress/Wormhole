@@ -1,0 +1,24 @@
+^C:\DEV\WORMHOLE\GUI\BUILD_WINDOWS\CMAKEFILES\7A16AB8EF53DC4067874EAF3971DCEA9\QRC_WORMHOLE.CPP.RULE
+setlocal
+cd C:\Dev\Wormhole\gui\build_windows
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_autorcc C:/Dev/Wormhole/gui/build_windows/CMakeFiles/wormhole-gui_autogen.dir/AutoRcc_wormhole_3YJK5W5UP7_Info.json Release
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\DEV\WORMHOLE\GUI\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Dev/Wormhole/gui -BC:/Dev/Wormhole/gui/build_windows --check-stamp-file C:/Dev/Wormhole/gui/build_windows/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

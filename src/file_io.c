@@ -11,7 +11,19 @@
 #pragma comment(lib, "shell32.lib")
 #else
 #include <unistd.h>  // For usleep()
+#include <sys/stat.h>  // For stat(), S_ISDIR()
 #endif
+
+BOOLEAN IsDirectory(const char *path)
+{
+#ifdef _WIN32
+	DWORD attrs = GetFileAttributesA(path);
+	return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY));
+#else
+	struct stat st;
+	return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+#endif
+}
 
 BOOLEAN FileExists(const char *path)
 {

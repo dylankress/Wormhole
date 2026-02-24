@@ -82,9 +82,17 @@ Ticket: 5-ocean-maple
 - **Content-addressed chunking** — Blake3-hashed 256KB chunks with dedup
 - **Ed25519 identity** — each peer has a persistent cryptographic identity
 
+### GUI
+- **Qt 6 desktop app** — cross-platform (Windows + Linux), thin IPC client to the daemon
+- **Transfer queue** — send file/directory, receive by ticket, progress bars, cancel
+- **File management** — drag-and-drop store, search/filter, column sorting, delete with confirmation
+- **Settings editor** — typed widgets for all 14 config keys, hot-reload detection, restart prompts
+- **Peer/network status** — peer table with full node ID tooltips, DHT status, refresh
+- **System tray** — minimize-to-tray, desktop notifications, tray context menu
+
 ## Project Status
 
-**Phases 1–7 complete.** The core platform is built and tested:
+**Phases 1–9 complete.** The core platform is built and tested:
 
 | Phase | Status | Description |
 |-------|--------|-------------|
@@ -96,15 +104,17 @@ Ticket: 5-ocean-maple
 | 5 | Done | Multi-platform — Linux client (Makefile + Docker), file registry, multi-node testing |
 | 6 | Done | Production readiness — RS(8,4), R=4, encryption, TLS identity, DHT persistence, multi-bootstrap |
 | 7 | Done | Usability & management — file deletion, key export/import, daemon lifecycle, peer visibility |
+| 8 | Done | GUI foundation — IPC v2, progress reporting, daemon send/receive, config via IPC, lifecycle hardening, push events |
+| 9 | Done | Qt GUI — transfers, file management, settings, peer list, system tray |
 
-17 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests (20 tests). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
+18 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests (22 tests). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
 
 ## Building
 
 ### Prerequisites
 
 - **Windows client**: Visual Studio 2019+ (MSVC x64)
-- **Linux client**: `build-essential cmake libsodium-dev libssl-dev` (see [BUILD_LINUX.md](BUILD_LINUX.md))
+- **Linux client**: `build-essential cmake libsodium-dev libssl-dev qt6-base-dev (optional, for GUI)` (see [BUILD_LINUX.md](BUILD_LINUX.md))
 - **Linux relay server**: GCC + `libsodium-dev`
 - **MsQuic** — git submodule, build separately (`git submodule update --init --recursive`)
 - **libsodium** — pre-built Windows binaries in `deps/libsodium/`; on Linux: `apt install libsodium-dev`
@@ -139,6 +149,16 @@ docker compose down -v       # Tear down
 ```
 
 See [BUILD_LINUX.md](BUILD_LINUX.md) for detailed Docker usage (manual setup, interaction, debugging).
+
+### GUI (Qt 6)
+
+```bash
+cd gui
+cmake -B build -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x
+cmake --build build
+```
+
+Requires Qt 6 (`qt6-base-dev` on Linux). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for platform-specific build details.
 
 ### Relay Server (Linux)
 
@@ -206,6 +226,15 @@ wormhole daemon restart         # Stop then start
 wormhole daemon status          # Alias for 'wormhole status'
 ```
 
+### GUI
+
+Launch the Qt desktop app:
+```
+gui/build/wormhole-gui           # Linux
+gui\build\Release\wormhole-gui   # Windows
+```
+The daemon must be running — the GUI connects via IPC.
+
 ### List peers
 ```
 wormhole peers
@@ -270,7 +299,7 @@ wormhole --daemon <port> <command>    # Connect to daemon on non-default port (d
 └────────────────────────────────┘       └───────────────────────────┘
 ```
 
-The project has three components:
+The project has four components:
 
 **Daemon** (`src/wormholed.c`) — The core of the network. A persistent background process that manages:
 - QUIC listener for peer-to-peer chunk transfer
@@ -293,6 +322,17 @@ The project has three components:
 - Packet forwarding (QUIC-over-relay fallback)
 - Peer discovery (FIND_PEERS protocol)
 - DHT bootstrap (responds to PING/FIND_NODE)
+
+**GUI** (`gui/`) — Qt 6 desktop application (~3,000 LOC), thin IPC client to the daemon:
+- `ipc_client.h/c` — Standalone C IPC client (extracted from `src/ipc.c`, no MsQuic dependency)
+- `IpcWorker.h/cpp` — QObject on background QThread for blocking IPC calls and event polling
+- `DaemonClient.h/cpp` — Thread-safe QObject wrapper with signal forwarding
+- `MainWindow.h/cpp` — QMainWindow with tabs (Transfers, Files, Network)
+- `TransferWidget.h/cpp` — Send/receive UI with progress bars and transfer queue
+- `FileListWidget.h/cpp` — File storage management with drag-and-drop, search, column sorting
+- `PeerListWidget.h/cpp` — Peer table with full node ID tooltips and DHT status
+- `SettingsDialog.h/cpp` — Config editor with typed widgets, hot-reload detection, restart prompts
+- `TrayManager.h/cpp` — System tray icon with notifications, minimize-to-tray, quit confirmation
 
 ### Protocol Stack
 

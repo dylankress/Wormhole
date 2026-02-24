@@ -671,6 +671,8 @@ static BOOLEAN Daemon_LoadServerConfig(void)
     settings.IsSet.ServerResumptionLevel = TRUE;
     settings.PeerBidiStreamCount = 1;
     settings.IsSet.PeerBidiStreamCount = TRUE;
+    settings.PeerUnidiStreamCount = 10;
+    settings.IsSet.PeerUnidiStreamCount = TRUE;
 
     // Flow control
     settings.StreamRecvWindowDefault = 16777216;   // 16 MB
@@ -1342,6 +1344,8 @@ static BOOLEAN Daemon_LoadClientConfig(void)
     settings.IsSet.KeepAliveIntervalMs = TRUE;
     settings.PeerBidiStreamCount = 1;
     settings.IsSet.PeerBidiStreamCount = TRUE;
+    settings.PeerUnidiStreamCount = 10;
+    settings.IsSet.PeerUnidiStreamCount = TRUE;
     settings.StreamRecvWindowDefault = 16777216;
     settings.IsSet.StreamRecvWindowDefault = TRUE;
     settings.SendBufferingEnabled = FALSE;  // Zero-copy: MsQuic uses our buffers directly
@@ -5375,7 +5379,7 @@ int main(int argc, char *argv[])
     }
 
     // Step 5d: Initialize transfer manager
-    TransferMgr_Init(&g_daemon.keypair);
+    TransferMgr_Init(&g_daemon.keypair, g_daemon.config);
 
     // Step 6: Optionally connect to relay
     if (g_daemon.relay_enabled)

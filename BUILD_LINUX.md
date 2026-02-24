@@ -75,7 +75,7 @@ cd /path/to/Wormhole/src/test
 ./test_linux.sh
 ```
 
-This compiles and runs all 17 test suites. Each test links only what it needs (no MsQuic required for most tests).
+This compiles and runs all 18 test suites. Each test links only what it needs (no MsQuic required for most tests).
 
 ## Step 4: Smoke test the daemon
 
@@ -91,6 +91,30 @@ echo "hello" > /tmp/test.txt
 ./wormhole store /tmp/test.txt
 ./wormhole get <hash> -o /tmp/out.txt    # use hash from store output
 ```
+
+## Step 5: Build the GUI (optional)
+
+The Qt GUI is a separate CMake project. It requires Qt 6:
+
+```bash
+sudo apt install qt6-base-dev
+```
+
+Build:
+
+```bash
+cd /path/to/Wormhole/gui
+cmake -B build_linux
+cmake --build build_linux
+```
+
+Run:
+
+```bash
+./build_linux/wormhole-gui
+```
+
+The daemon must be running for the GUI to connect. Start it first with `wormhole daemon start` or `wormholed --port 4567`.
 
 ---
 

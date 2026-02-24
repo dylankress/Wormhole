@@ -99,13 +99,19 @@ static WH_THREAD_RETURN ForwarderThread(WH_THREAD_PARAM param)
 
 	while (WH_ATOMIC_LOAD(&fwd->running) == 1)
 	{
+		// Snapshot proxy_sock to a local variable so that if Stop() closes the
+		// fd and sets proxy_sock = -1 while we're inside select(), we don't
+		// pass -1 to FD_SET/FD_ISSET (which crashes with FD_SETSIZE assert).
+		int psock = fwd->proxy_sock;
+		if (psock < 0) break;
+
 		// Poll both sockets with a short timeout
 		fd_set readfds;
 		FD_ZERO(&readfds);
 		FD_SET(relay_sock, &readfds);
-		FD_SET(fwd->proxy_sock, &readfds);
+		FD_SET(psock, &readfds);
 
-		int max_fd = (relay_sock > fwd->proxy_sock) ? relay_sock : fwd->proxy_sock;
+		int max_fd = (relay_sock > psock) ? relay_sock : psock;
 
 		struct timeval tv;
 		tv.tv_sec = 0;
@@ -113,6 +119,9 @@ static WH_THREAD_RETURN ForwarderThread(WH_THREAD_PARAM param)
 
 		int ready = select(max_fd + 1, &readfds, NULL, NULL, &tv);
 		if (ready <= 0) continue;
+
+		// Re-check after select wakeup — Stop() may have closed the socket
+		if (fwd->proxy_sock < 0) break;
 
 		// --- Relay socket: receive packets from relay server ---
 		if (FD_ISSET(relay_sock, &readfds))
@@ -129,7 +138,7 @@ static WH_THREAD_RETURN ForwarderThread(WH_THREAD_PARAM param)
 					// Forwarded QUIC packet from relay — send to MsQuic via proxy socket
 					if (fwd->msquic_addr_known)
 					{
-						int ret = sendto(fwd->proxy_sock, (const char*)buf, recv_len, 0,
+						int ret = sendto(psock, (const char*)buf, recv_len, 0,
 						       (struct sockaddr*)&fwd->msquic_addr, fwd->msquic_addr_len);
 						if (ret < 0)
 						{
@@ -159,11 +168,11 @@ static WH_THREAD_RETURN ForwarderThread(WH_THREAD_PARAM param)
 		}
 
 		// --- Proxy socket: receive QUIC packets from MsQuic ---
-		if (FD_ISSET(fwd->proxy_sock, &readfds))
+		if (FD_ISSET(psock, &readfds))
 		{
 			struct sockaddr_storage from_addr;
 			socklen_t from_len = sizeof(from_addr);
-			int recv_len = recvfrom(fwd->proxy_sock, (char*)buf, sizeof(buf), 0,
+			int recv_len = recvfrom(psock, (char*)buf, sizeof(buf), 0,
 			                        (struct sockaddr*)&from_addr, &from_len);
 
 			if (recv_len > 0)

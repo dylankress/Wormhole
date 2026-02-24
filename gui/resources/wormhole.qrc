@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>wormhole.png</file>
+    </qresource>
+</RCC>

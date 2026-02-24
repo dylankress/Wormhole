@@ -1,0 +1,5 @@
+set(__QT_DEPLOY_TARGET_ipc_client_FILE C:/Dev/Wormhole/gui/build_windows/RelWithDebInfo/ipc_client.lib)
+set(__QT_DEPLOY_TARGET_ipc_client_TYPE STATIC_LIBRARY)
+set(__QT_DEPLOY_TARGET_wormhole-gui_FILE C:/Dev/Wormhole/gui/build_windows/RelWithDebInfo/wormhole-gui.exe)
+set(__QT_DEPLOY_TARGET_wormhole-gui_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_wormhole-gui_RUNTIME_DLLS C:/Qt/6.10.2/msvc2022_64/bin/Qt6Widgets.dll;C:/Qt/6.10.2/msvc2022_64/bin/Qt6Gui.dll;C:/Qt/6.10.2/msvc2022_64/bin/Qt6Core.dll)

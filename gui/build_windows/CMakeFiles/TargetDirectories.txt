@@ -1,0 +1,4 @@
+C:/Dev/Wormhole/gui/build_windows/CMakeFiles/ipc_client.dir
+C:/Dev/Wormhole/gui/build_windows/CMakeFiles/wormhole-gui.dir
+C:/Dev/Wormhole/gui/build_windows/CMakeFiles/ALL_BUILD.dir
+C:/Dev/Wormhole/gui/build_windows/CMakeFiles/ZERO_CHECK.dir

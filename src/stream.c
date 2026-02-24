@@ -856,6 +856,14 @@ QUIC_STATUS QUIC_API SenderControlStreamCallback(
                 LOG("[SenderCtrl] Transfer complete: %llu bytes in %.2f sec (%.1f KB/s)\n",
                     (unsigned long long)ctx->manifest->file_size, duration, throughput);
 
+                // Report 100% completion to transfer manager (critical for "all from cache" case
+                // where no data chunks were sent and progress callback was never called)
+                if (ctx->progress_cb) {
+                    ctx->progress_cb(ctx->manifest->chunk_count, ctx->manifest->chunk_count,
+                                     ctx->manifest->file_size, ctx->manifest->file_size,
+                                     0.0, 0.0, ctx->progress_cb_ctx);
+                }
+
                 // Signal completion
                 if (ctx->transfer_complete_event)
                 {
@@ -1506,6 +1514,14 @@ static void ProcessReceiverControlData(CHUNK_RECEIVE_CONTEXT *ctx)
 
                 TransferState_Delete(ctx->manifest->manifest_hash);
 
+                // Report 100% completion to transfer manager (progress callback was never
+                // called since all chunks came from local store, not the network)
+                if (ctx->progress_cb) {
+                    ctx->progress_cb(ctx->chunks_received_count, ctx->total_chunks,
+                                     ctx->manifest->file_size, ctx->manifest->file_size,
+                                     0.0, 0.0, ctx->progress_cb_ctx);
+                }
+
                 if (ctx->control_stream)
                 {
                     SendControlMessage(ctx->control_stream, CTRL_MSG_TRANSFER_COMPLETE, NULL, 0);
@@ -1744,7 +1760,8 @@ static void ProcessReceiverDataFrames(CHUNK_RECEIVE_CONTEXT *ctx)
 
 void ChunkSendFile(HQUIC Connection, const char *file_path,
                    FILE_MANIFEST *manifest, WH_EVENT transfer_complete_event,
-                   BOOLEAN *transfer_complete_flag)
+                   BOOLEAN *transfer_complete_flag,
+                   StreamProgressCallback progress_cb, void *progress_cb_ctx)
 {
     QUIC_STATUS status;
 
@@ -1763,6 +1780,8 @@ void ChunkSendFile(HQUIC Connection, const char *file_path,
     ctx->connection = Connection;
     ctx->transfer_complete_event = transfer_complete_event;
     ctx->transfer_complete_flag = transfer_complete_flag;
+    ctx->progress_cb = progress_cb;
+    ctx->progress_cb_ctx = progress_cb_ctx;
     ctx->current_file_index = UINT32_MAX;
     ctx->expected_streams = 1;  // Control stream only initially
 

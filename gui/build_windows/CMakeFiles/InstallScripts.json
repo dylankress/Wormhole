@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Dev/Wormhole/gui/build_windows/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

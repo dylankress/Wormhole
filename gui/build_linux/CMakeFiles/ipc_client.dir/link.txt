@@ -1,0 +1,2 @@
+/usr/bin/ar qc libipc_client.a CMakeFiles/ipc_client.dir/ipc_client_autogen/mocs_compilation.cpp.o CMakeFiles/ipc_client.dir/ipc_client.c.o
+/usr/bin/ranlib libipc_client.a

@@ -84,6 +84,7 @@ typedef unsigned char BOOLEAN;
 #define WH_EVENT                    HANDLE
 #define WH_EVENT_CREATE()           CreateEvent(NULL, TRUE, FALSE, NULL)
 #define WH_EVENT_SET(e)             SetEvent(e)
+#define WH_EVENT_RESET(e)           ResetEvent(e)
 #define WH_EVENT_WAIT(e, ms)        WaitForSingleObject((e), (ms))
 #define WH_EVENT_DESTROY(e)         do { if (e) CloseHandle(e); } while(0)
 #define WH_EVENT_WAIT_OK            WAIT_OBJECT_0
@@ -220,8 +221,17 @@ static inline void wh_event_destroy(WH_EVENT ev)
     free(ev);
 }
 
+static inline void wh_event_reset(WH_EVENT ev)
+{
+    if (!ev) return;
+    pthread_mutex_lock(&ev->mutex);
+    ev->signaled = 0;
+    pthread_mutex_unlock(&ev->mutex);
+}
+
 #define WH_EVENT_CREATE()           wh_event_create()
 #define WH_EVENT_SET(e)             wh_event_set(e)
+#define WH_EVENT_RESET(e)           wh_event_reset(e)
 #define WH_EVENT_WAIT(e, ms)        wh_event_wait((e), (ms))
 #define WH_EVENT_DESTROY(e)         wh_event_destroy(e)
 #define WH_EVENT_WAIT_OK            0

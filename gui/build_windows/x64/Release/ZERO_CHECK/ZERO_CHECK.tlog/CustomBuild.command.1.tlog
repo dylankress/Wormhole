@@ -1,0 +1,10 @@
+^C:\DEV\WORMHOLE\GUI\BUILD_WINDOWS\CMAKEFILES\ADE08289FEB14FAD319E4648E6EC2109\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Dev/Wormhole/gui -BC:/Dev/Wormhole/gui/build_windows --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Dev/Wormhole/gui/build_windows/wormhole-gui.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

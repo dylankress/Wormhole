@@ -26,7 +26,7 @@ Used for content-addressed chunk hashing (256KB chunks) and proof-of-storage ver
 ### Reed-Solomon (Erasure Coding)
 GF(2^8) Reed-Solomon codec for erasure coding, located in `deps/reed_solomon/`.
 - `rs.h` / `rs.c` — Vandermonde-matrix RS encoder/decoder
-- Used by `src/erasure.c` for RS(4,2) stripe encoding (4 data + 2 parity shards)
+- Used by `src/erasure.c` for RS(8,4) stripe encoding (8 data + 4 parity shards)
 - No external dependencies, pure C implementation
 - Precomputed log/exp tables for GF(2^8) with polynomial 0x11d
 
@@ -45,7 +45,7 @@ sudo dnf install libsodium-devel    # Fedora/RHEL
 
 ### MsQuic
 Not required for relay server (relay server uses UDP only, not QUIC).
-Required for full client (future Linux client support).
+Required for Linux client. Build from source with OpenSSL TLS backend (see [BUILD_LINUX.md](../BUILD_LINUX.md)).
 
 ## Building Relay Server (Linux)
 ```
@@ -57,6 +57,21 @@ Dependencies:
 - GCC or Clang
 - libsodium-dev
 - pthread (included in glibc)
+
+## OpenSSL (Linux)
+Required on Linux for TLS cert generation and peer certificate verification.
+```
+sudo apt install libssl-dev        # Ubuntu/Debian
+sudo dnf install openssl-devel     # Fedora/RHEL
+```
+
+## Qt 6 (Optional — GUI)
+Required for the Qt desktop GUI application. Not needed for CLI or daemon.
+```
+sudo apt install qt6-base-dev      # Ubuntu/Debian
+sudo dnf install qt6-qtbase-devel  # Fedora/RHEL
+```
+CMake 3.21+ is also required for the GUI build.
 
 ## Updating Dependencies
 

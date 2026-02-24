@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wormhole is a decentralized P2P file storage platform written in C — a privacy-respecting alternative to Dropbox/Google Drive. Peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without centralized cloud providers. Built on QUIC (via MsQuic) with a Kademlia DHT for decentralized discovery and a UDP relay server for NAT traversal. Also supports direct peer-to-peer file transfer via ticket codes like "3-guitar-battery".
 
-**Phases 1-8 complete.** Phase 9 (Qt GUI) is next. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (18 unit test suites + E2E daemon tests). Phase 8 added IPC v2 protocol (subscriptions, structured errors, operation tracking, cancellation), progress reporting for long-running operations, daemon-mediated send/receive with `--direct` fallback, config management via IPC, daemon lifecycle hardening (readiness signal, heartbeat, stale PID, log rotation), and real-time push events (peer/file/health/transfer). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
+**Phases 1-9 complete.** Phase 9 added a Qt 6 cross-platform GUI as a thin IPC client to the daemon. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (18 unit test suites + E2E daemon tests). Phase 8 added IPC v2 protocol (subscriptions, structured errors, operation tracking, cancellation), progress reporting for long-running operations, daemon-mediated send/receive with `--direct` fallback, config management via IPC, daemon lifecycle hardening (readiness signal, heartbeat, stale PID, log rotation), and real-time push events (peer/file/health/transfer). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
 
 Design decisions should keep the decentralized storage trajectory in mind. See [ROADMAP.md](ROADMAP.md) for the full development roadmap and production readiness plan.
 
@@ -37,6 +37,14 @@ cd relay-server
 ./build.sh
 ```
 Output: `relay-server/build/relay-server`
+
+### GUI (Qt 6)
+```bash
+cd gui
+cmake -B build -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x
+cmake --build build
+```
+Output: `gui/build/wormhole-gui` (Linux) or `gui/build/Release/wormhole-gui.exe` (Windows). Requires Qt 6 (`qt6-base-dev` on Linux) and CMake 3.21+.
 
 ### Dependencies
 - **MsQuic**: Git submodule at `msquic/` — init with `git submodule update --init --recursive`, then build separately
@@ -73,14 +81,14 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 
 ## Architecture
 
-### Three Components
+### Four Components
 
 **Client** (`src/`) — Cross-platform QUIC-based file transfer app (Windows + Linux)
 - `wormhole.c` — Entry point, CLI (`send`/`receive`/`store`/`get`/`delete`/`files`/`status`/`peers`/`export-key`/`import-key`/`daemon`/`config`), MsQuic lifecycle, QUIC listener/connection setup, UDP hole-punch probes (WHPK), parallel connection racing, Ctrl+C cleanup
 - `wormholed.c` — Persistent daemon process: QUIC listener, chunk store, relay connection with auto-reconnect, peer discovery, chunk replication (4x target), DHT node bootstrap/polling (multi-bootstrap with exponential backoff), health checks (20-chunk sample, event-driven), proof-of-storage challenge/response, storage ledger, client-side encryption on store/retrieve, configurable auto-eviction, DHT store persistence, IPC v1+v2 server (named pipes on Windows, Unix sockets on Linux), transfer manager integration, readiness signal, heartbeat, log rotation
-- `transfer_mgr.c` — Daemon-mediated send/receive: manages up to 8 concurrent transfers (ACTIVE_TRANSFER), per-transfer relay client and QUIC connection, send/receive thread functions, progress callback bridging to IPC events, cancel support
+- `transfer_mgr.c` — Daemon-mediated send/receive: manages up to 8 concurrent transfers (ACTIVE_TRANSFER), per-transfer relay client and QUIC connection, send/receive thread functions (supports directory send via IsDirectory check), progress callback bridging to IPC events, cancel support
 - `stream.c` — Chunk-based two-stream transfer protocol: control stream (manifest request/response, chunk request, transfer complete) and data stream (chunk frames). Progress bar with speed/ETA (or StreamProgressCallback for daemon mode). Resumable transfers via `transfer_state.c`. Multi-file receive support.
-- `file_io.c` — Cross-platform file ops, 64-bit size support, Downloads folder integration
+- `file_io.c` — Cross-platform file ops, 64-bit size support, Downloads folder integration, `IsDirectory()` check
 - `crypto.c` — Self-signed TLS cert generation with Ed25519 node ID embedded in CN (64 hex chars), peer certificate verification, Windows Certificate Store integration
 - `manifest.c` — File manifest serialization: v1 (single file), v2 (multi-file with per-file entries and chunk ranges), v3 (erasure coding metadata — ec_k, ec_m, stripe definitions with parity hashes)
 - `chunker.c` — Content-addressed chunking (Blake3 hashes, 256KB chunks), `Chunker_BuildManifestFromDirectory` for recursive directory transfer, `Chunker_BuildManifestAndStoreWithProgress` for progress-reporting store operations
@@ -114,6 +122,18 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 - `ticket_manager.c` — EFF wordlist ticket generation ("N-word-word"), 1-hour expiry
 - `rate_limiter.c` — Per-IP rate limiting (1,000 pkt/s), hash table tracking
 - `crypto.c` — Ed25519 signature verification for relay messages
+
+**GUI** (`gui/`) — Qt 6 cross-platform desktop application (22 files, ~3,000 LOC)
+- `ipc_client.h/c` — Standalone C IPC client (extracted from `src/ipc.c`, no MsQuic dependency)
+- `IpcWorker.h/cpp` — QObject on background QThread: blocking IPC calls, event polling, auto-reconnect
+- `DaemonClient.h/cpp` — QObject wrapper: owns IpcWorker+QThread, signal forwarding, thread-safe command dispatch
+- `MainWindow.h/cpp` — QMainWindow: tabs (Transfers/Files/Network), menu bar, status bar, daemon auto-start, window geometry persistence, single instance lock
+- `TransferWidget.h/cpp` — Send/receive UI with progress bars, transfer queue, cancel, ticket display, empty state
+- `FileListWidget.h/cpp` — File storage management with drag-and-drop, search/filter, column sorting, context menu (delete/export-key/import-key)
+- `PeerListWidget.h/cpp` — Peer table with full node ID tooltips, IPv6 display, DHT status, refresh button
+- `SettingsDialog.h/cpp` — Config editor with typed widgets per key, tooltips, hot-reload detection, restart prompts
+- `TrayManager.h/cpp` — System tray icon, minimize-to-tray, desktop notifications (send/receive/health), quit confirmation
+- `CMakeLists.txt` — Qt6 Widgets build, CMake 3.21+, windeployqt on Windows
 
 ### Protocol Details
 - ALPN: `"wormhole"`, default port: 4567 (UDP)
@@ -246,7 +266,7 @@ Tests peer discovery, chunk replication across nodes, cross-node retrieval, node
 
 See [ROADMAP.md](ROADMAP.md) for the full development roadmap.
 
-**Completed:** Phases 1-8 (core transfer, P2P storage, DHT, erasure coding, multi-platform, production readiness, usability, GUI foundation)
+**Completed:** Phases 1-9 (core transfer, P2P storage, DHT, erasure coding, multi-platform, production readiness, usability, GUI foundation, Qt GUI)
 
 ### Phase 7: Usability & Management (Complete)
 - 7A: File deletion — `wormhole delete <id>` removes chunks, EC metadata, DHT entries, registry entry ✅
@@ -262,6 +282,10 @@ See [ROADMAP.md](ROADMAP.md) for the full development roadmap.
 - 8E: Daemon Lifecycle Hardening — readiness signal, heartbeat, stale PID detection, log rotation ✅
 - 8F: Push Notification Events — peer change, file status, health, transfer events ✅
 
-### Phase 9: GUI Implementation (Planned)
-- Qt 6 (C++) cross-platform GUI as thin IPC client to daemon
-- See ROADMAP.md for sub-phases 9A-9E
+### Phase 9: GUI Implementation (Complete)
+- 9A: Project setup — standalone `ipc_client.h/c` (no MsQuic), IpcWorker+DaemonClient Qt wrappers, MainWindow ✅
+- 9B: TransferWidget — send file/dir, receive by ticket, progress bars, cancel, transfer queue ✅
+- 9C: FileListWidget — file tree, store/retrieve/delete, drag-and-drop, key export/import, context menu, search/filter ✅
+- 9D: SettingsDialog + PeerListWidget — 14 config keys with typed widgets, hot-reload detection, peer table, tooltips ✅
+- 9E: TrayManager — system tray icon, minimize-to-tray, desktop notifications, tray menu, quit confirmation ✅
+- 19 GUI audit fixes applied (ticket display, error feedback, daemon auto-start, empty states, single instance, etc.)

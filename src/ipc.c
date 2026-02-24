@@ -448,10 +448,18 @@ static void IpcServerHandleClient(HANDLE client_pipe, IPC_SERVER *server)
             if (client_is_v2 && op_id != 0) {
                 response_buf[0] = IPC_STATUS_OK;
                 WriteUint32LE(response_buf + 1, op_id);
+                if (client_sub_index >= 0)
+                    WH_MUTEX_LOCK(g_subscribers[client_sub_index].write_lock);
                 IpcWriteMessage(client_pipe, response_buf, 5);
+                if (client_sub_index >= 0)
+                    WH_MUTEX_UNLOCK(g_subscribers[client_sub_index].write_lock);
             } else {
                 response_buf[0] = IPC_STATUS_OK;
+                if (client_sub_index >= 0)
+                    WH_MUTEX_LOCK(g_subscribers[client_sub_index].write_lock);
                 IpcWriteMessage(client_pipe, response_buf, 1);
+                if (client_sub_index >= 0)
+                    WH_MUTEX_UNLOCK(g_subscribers[client_sub_index].write_lock);
             }
             FlushFileBuffers(client_pipe);
             free(msg);
@@ -470,7 +478,11 @@ static void IpcServerHandleClient(HANDLE client_pipe, IPC_SERVER *server)
             } else {
                 response_buf[0] = IPC_STATUS_NOT_FOUND;
             }
+            if (client_sub_index >= 0)
+                WH_MUTEX_LOCK(g_subscribers[client_sub_index].write_lock);
             IpcWriteMessage(client_pipe, response_buf, 1);
+            if (client_sub_index >= 0)
+                WH_MUTEX_UNLOCK(g_subscribers[client_sub_index].write_lock);
             FlushFileBuffers(client_pipe);
             free(msg);
             continue;
@@ -496,7 +508,12 @@ static void IpcServerHandleClient(HANDLE client_pipe, IPC_SERVER *server)
 
         if (response_size > 0)
         {
-            if (!IpcWriteMessage(client_pipe, response_buf, response_size))
+            if (client_sub_index >= 0)
+                WH_MUTEX_LOCK(g_subscribers[client_sub_index].write_lock);
+            BOOLEAN write_ok = IpcWriteMessage(client_pipe, response_buf, response_size);
+            if (client_sub_index >= 0)
+                WH_MUTEX_UNLOCK(g_subscribers[client_sub_index].write_lock);
+            if (!write_ok)
             {
                 LOG_ERROR("[ipc] Failed to send response\n");
                 break;
@@ -1141,10 +1158,18 @@ static void IpcServerHandleClient(int client_fd, IPC_SERVER *server)
             if (client_is_v2 && op_id != 0) {
                 response_buf[0] = IPC_STATUS_OK;
                 WriteUint32LE(response_buf + 1, op_id);
+                if (client_sub_index >= 0)
+                    WH_MUTEX_LOCK(g_subscribers[client_sub_index].write_lock);
                 IpcWriteMessage(client_fd, response_buf, 5);
+                if (client_sub_index >= 0)
+                    WH_MUTEX_UNLOCK(g_subscribers[client_sub_index].write_lock);
             } else {
                 response_buf[0] = IPC_STATUS_OK;
+                if (client_sub_index >= 0)
+                    WH_MUTEX_LOCK(g_subscribers[client_sub_index].write_lock);
                 IpcWriteMessage(client_fd, response_buf, 1);
+                if (client_sub_index >= 0)
+                    WH_MUTEX_UNLOCK(g_subscribers[client_sub_index].write_lock);
             }
             free(msg);
             continue;
@@ -1162,7 +1187,11 @@ static void IpcServerHandleClient(int client_fd, IPC_SERVER *server)
             } else {
                 response_buf[0] = IPC_STATUS_NOT_FOUND;
             }
+            if (client_sub_index >= 0)
+                WH_MUTEX_LOCK(g_subscribers[client_sub_index].write_lock);
             IpcWriteMessage(client_fd, response_buf, 1);
+            if (client_sub_index >= 0)
+                WH_MUTEX_UNLOCK(g_subscribers[client_sub_index].write_lock);
             free(msg);
             continue;
         }
@@ -1187,7 +1216,12 @@ static void IpcServerHandleClient(int client_fd, IPC_SERVER *server)
 
         if (response_size > 0)
         {
-            if (!IpcWriteMessage(client_fd, response_buf, response_size))
+            if (client_sub_index >= 0)
+                WH_MUTEX_LOCK(g_subscribers[client_sub_index].write_lock);
+            BOOLEAN write_ok = IpcWriteMessage(client_fd, response_buf, response_size);
+            if (client_sub_index >= 0)
+                WH_MUTEX_UNLOCK(g_subscribers[client_sub_index].write_lock);
+            if (!write_ok)
                 break;
         }
     }

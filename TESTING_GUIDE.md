@@ -1,6 +1,6 @@
 # Wormhole Testing Guide
 
-Complete walkthrough for building, running automated tests, and manually verifying every functional feature. Covers Phases 1-7 (direct transfer, P2P storage, DHT, erasure coding RS(8,4), multi-platform, production readiness, usability & management).
+Complete walkthrough for building, running automated tests, and manually verifying every functional feature. Covers Phases 1-9 (direct transfer, P2P storage, DHT, erasure coding RS(8,4), multi-platform, production readiness, usability & management, GUI foundation, Qt GUI).
 
 ---
 
@@ -8,8 +8,9 @@ Complete walkthrough for building, running automated tests, and manually verifyi
 
 1. [Prerequisites](#1-prerequisites)
 2. [Build the Project](#2-build-the-project)
+   - [Build the GUI](#21-build-the-gui)
 3. [Automated Tests](#3-automated-tests)
-   - [Unit Tests (17 suites)](#31-unit-tests-17-suites)
+   - [Unit Tests (18 suites)](#31-unit-tests-18-suites)
    - [E2E Daemon Tests](#32-e2e-daemon-tests)
    - [Docker Multi-Node Tests](#33-docker-multi-node-tests)
 4. [Manual Testing — Direct File Transfer](#4-manual-testing--direct-file-transfer)
@@ -43,7 +44,8 @@ Complete walkthrough for building, running automated tests, and manually verifyi
    - [All 14 Config Keys](#81-all-14-config-keys)
    - [Graceful Shutdown](#82-graceful-shutdown)
    - [Error Cases](#83-error-cases)
-9. [Results Checklist](#9-results-checklist)
+9. [Manual Testing — GUI](#9-manual-testing--gui)
+10. [Results Checklist](#10-results-checklist)
 
 ---
 
@@ -104,11 +106,51 @@ Output: `relay-server/build/relay-server`
 
 **Verify:** Check that all binaries exist before proceeding.
 
+### 2.1 Build the GUI
+
+The Qt GUI is a separate CMake project in `gui/`. It communicates with the daemon via IPC — no MsQuic dependency.
+
+**Prerequisites:** Qt 6 and CMake 3.21+
+
+**Windows** (from x64 Native Tools Command Prompt):
+
+```bat
+cd gui
+cmake -B build_windows -DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/msvc2022_64
+cmake --build build_windows --config Release
+```
+
+The first build automatically runs `windeployqt` to copy Qt DLLs alongside the executable. Run from anywhere:
+
+```bat
+gui\build_windows\Release\wormhole-gui.exe
+```
+
+**Linux:**
+
+```bash
+cd gui
+cmake -B build_linux
+cmake --build build_linux
+./build_linux/wormhole-gui
+```
+
+Qt6 is typically found automatically on Linux if installed via your package manager (`sudo apt install qt6-base-dev`).
+
+**Quick rebuild** after code changes — just re-run the build command in the appropriate build directory:
+
+```bash
+cmake --build build_linux        # Linux
+cmake --build build_windows      # Windows
+```
+
+**Note:** The daemon (`wormholed`) must be running for the GUI to connect. Start it first with `wormhole daemon start` or `wormholed --port 4567`. The GUI status bar shows "Connected" when the IPC link is active.
+
 ---
 
 ## 3. Automated Tests
 
-### 3.1 Unit Tests (17 suites)
+### 3.1 Unit Tests (18 suites)
 
 **Windows** (from Developer Command Prompt, after `build.bat`):
 
@@ -128,7 +170,7 @@ cd src/test
 
 ```
 ============================================
-  Results: 17/17 passed, 0 failed
+  Results: 18/18 passed, 0 failed
 ============================================
 ```
 
@@ -153,6 +195,7 @@ cd src/test
 | 15 | `test_health` | EC recovery, health check stats, degraded detection |
 | 16 | `test_file_registry` | File registry save/load/update/list, hex prefix lookup |
 | 17 | `test_file_crypto` | Encrypt/decrypt roundtrip (small/large/empty), wrong key, null args |
+| 18 | `test_ipc_v2` | IPC v2 error responses, operation registry, v2 constants, backward compat |
 
 If a test fails:
 - **COMPILE FAILED** — Did you run `build.bat` / `make` first?
@@ -1027,7 +1070,120 @@ wormhole get <chunk_hash> -o out.bin
 
 ---
 
-## 9. Results Checklist
+## 9. Manual Testing — GUI
+
+These tests verify the Qt 6 desktop application. The daemon must be running for all GUI tests.
+
+### 9.1 Prerequisites
+
+Build the GUI (see [Section 2.1](#21-build-the-gui) above). Start the daemon:
+
+```bash
+wormhole daemon start
+# or: wormholed --port 4567
+```
+
+Launch the GUI:
+
+```bash
+gui/build/wormhole-gui           # Linux
+gui\build\Release\wormhole-gui   # Windows
+```
+
+### 9.2 Daemon Connection
+
+**Verify:**
+- [ ] Status bar shows "Connected" when daemon is running
+- [ ] Status bar shows "Disconnected" when daemon is not running
+- [ ] Auto-reconnect works (stop daemon, restart it — GUI reconnects)
+- [ ] "Start Daemon" option available in File menu when disconnected
+- [ ] On first disconnect, GUI offers to start the daemon
+
+### 9.3 Transfer Tab
+
+**Send a file:**
+- [ ] Click "Send File", select a file — ticket displayed
+- [ ] Progress bar updates during transfer
+- [ ] Transfer appears in queue with status
+
+**Send a directory:**
+- [ ] Click "Send Directory", select a directory — ticket displayed
+- [ ] Progress bar updates during transfer
+
+**Receive:**
+- [ ] Click "Receive", enter ticket code, choose destination directory
+- [ ] Progress bar updates during transfer
+- [ ] File saved to chosen destination
+
+**Cancel:**
+- [ ] Start a transfer, click Cancel — transfer stops
+- [ ] Queue shows cancelled status
+
+**Empty state:**
+- [ ] With no transfers, placeholder text is shown
+
+### 9.4 Files Tab
+
+**Store via drag-and-drop:**
+- [ ] Drag a file onto the Files tab — store operation starts
+- [ ] File appears in list after store completes
+
+**File list:**
+- [ ] Files displayed with name, size, chunks, status columns
+- [ ] Search/filter narrows the list
+- [ ] Column headers clickable for sorting
+- [ ] Refresh button updates the list
+
+**Delete:**
+- [ ] Right-click a file → Delete — confirmation dialog shows file size and status
+- [ ] File removed from list after deletion
+
+**Key export/import:**
+- [ ] Right-click a file → Export Key — key displayed
+- [ ] Right-click a file → Import Key — key input accepted
+
+**Empty state:**
+- [ ] With no stored files, placeholder text is shown
+
+### 9.5 Network Tab
+
+**Peer table:**
+- [ ] Peers displayed with node ID, address, port, last seen
+- [ ] Full 64-char node ID shown as tooltip on hover
+- [ ] IPv6 addresses displayed correctly
+- [ ] Refresh button updates the table
+
+**Empty state:**
+- [ ] With no peers, placeholder text is shown
+
+### 9.6 Settings Dialog
+
+- [ ] Open via menu → Settings
+- [ ] All 14 config keys displayed with appropriate widgets (spinbox, checkbox, line edit)
+- [ ] Each setting has a descriptive tooltip
+- [ ] Modify a hot-reloadable setting (e.g., `health_check_interval_sec`) — applies without restart prompt
+- [ ] Modify a restart-required setting (e.g., `dht_port`) — "Restart Daemon" button appears
+
+### 9.7 System Tray
+
+- [ ] Minimize window — app goes to system tray
+- [ ] Click tray icon — window restores
+- [ ] Tray context menu has Show/Hide, Start Daemon, Quit
+- [ ] Transfer complete triggers tray notification (distinguishes send vs receive)
+- [ ] Health alert triggers tray notification with chunk count
+- [ ] Quit from tray menu shows confirmation dialog
+
+### 9.8 Edge Cases
+
+- [ ] Launch GUI without daemon running — shows "Disconnected", offers to start daemon
+- [ ] Disconnect daemon while GUI running — status updates, timers pause
+- [ ] Reconnect daemon — all widgets refresh automatically
+- [ ] Launch second GUI instance — blocked by single-instance lock (`~/.wormhole/gui.lock`)
+- [ ] Close and reopen GUI — window position and size restored
+
+---
+
+## 10. Results Checklist
 
 Copy this table and fill in after each test run.
 
@@ -1035,7 +1191,7 @@ Copy this table and fill in after each test run.
 
 | Test | Status | Notes |
 |------|--------|-------|
-| Unit tests (17/17) | | |
+| Unit tests (18/18) | | |
 | E2E daemon tests | | |
 | Docker multi-node tests (22/22) | | |
 
@@ -1102,3 +1258,22 @@ Copy this table and fill in after each test run.
 | Error: unreachable relay | | |
 | Error: daemon not running | | |
 | Error: corrupt chunk | | |
+
+### GUI
+
+| Test | Status | Notes |
+|------|--------|-------|
+| GUI builds (Linux/Windows) | | |
+| Daemon connection/disconnect | | |
+| Send file via GUI | | |
+| Send directory via GUI | | |
+| Receive via GUI | | |
+| Transfer cancel | | |
+| File list + search | | |
+| Store via drag-and-drop | | |
+| Delete stored file | | |
+| Key export/import | | |
+| Settings editor | | |
+| Peer list display | | |
+| System tray minimize/restore | | |
+| Tray notifications | | |

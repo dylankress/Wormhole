@@ -193,8 +193,7 @@ WORMHOLE_CONFIG *Config_Load(const char *path)
     FILE *fh = fopen(path, "r");
     if (!fh)
     {
-        // File doesn't exist, return config with defaults
-        LOG_ERROR("[config] No config file at %s, using defaults\n", path);
+        // File doesn't exist, return config with defaults (normal operation)
         return config;
     }
 

@@ -303,29 +303,78 @@ Changes:
 
 ---
 
-## Phase 9: GUI Implementation — Qt (C++) (Planned)
+## Phase 9: GUI Implementation — Qt (C++) ✅
 
-**Framework:** Qt 6 (C++) — native widgets, cross-platform (Windows + Linux), can call C functions directly via `extern "C"`, professional widget library.
+**Framework:** Qt 6 (C++) — native widgets, cross-platform (Windows + Linux), calls C IPC functions directly via `extern "C"`.
 
-With Phase 8 complete, the GUI is a thin event-driven Qt client:
-- Connect to daemon via IPC (reuse existing `ipc.c` client API from C code)
-- Subscribe to events via IPC subscription channel
-- Dispatch commands (send, receive, store, get, delete, config)
-- Render progress, status, peer list, file list using Qt widgets
+With Phase 8 complete, the GUI is a thin event-driven Qt client connecting to the daemon via IPC. 22 files in `gui/` directory.
 
-### 9A: Qt Project Setup
-- CMake build integration, basic main window with daemon connection indicator and status bar
+### 9A: Qt Project Setup ✅
+- CMake build integration (`gui/CMakeLists.txt`, Qt6 Widgets, CMake 3.21+)
+- Standalone `ipc_client.h/c` (extracted from `src/ipc.c`, no MsQuic dependency)
+- `IpcWorker` + `DaemonClient` Qt wrappers (background QThread, signal forwarding, auto-reconnect)
+- `MainWindow` with tabs (Transfers, Files, Network), menu bar, status bar with daemon connection indicator
 
-### 9B: Send/Receive UI
-- File picker, ticket display/input, real-time QProgressBar, transfer queue view
+### 9B: Send/Receive UI — TransferWidget ✅
+- Send file picker and directory picker (detects directories via `IsDirectory()`)
+- Receive by ticket with destination directory chooser
+- Real-time QProgressBar per transfer, transfer queue view
+- Cancel support via IPC operation cancellation
+- Ticket display parsed from push transfer events
 
-### 9C: Storage Management
-- File list (QTreeView), store via drag-and-drop, get/delete actions, replication status indicators
+### 9C: Storage Management — FileListWidget ✅
+- File tree (QTreeWidget) with name, size, chunks, status columns
+- Store via drag-and-drop (`dragEnterEvent`/`dropEvent`)
+- Get/delete actions with context menu
+- Key export/import via context menu
+- Search/filter QLineEdit, column sorting
+- Delete confirmation with file size and status details
 
-### 9D: Settings & Network
-- Settings panel (QFormLayout with validation), peer list table, network status dashboard
+### 9D: Settings & Network — SettingsDialog + PeerListWidget ✅
+- Settings panel with typed widgets per config key (spinbox, checkbox, line edit)
+- Descriptive tooltips for each setting
+- Hot-reload detection — shows "Restart Daemon" button when restart-required settings change
+- Peer table with node ID (truncated, full hex as tooltip), address, port, last seen
+- IPv6 address display via `inet_ntop`
+- DHT status indicator, refresh button
 
-### 9E: System Integration
-- QSystemTrayIcon, minimize-to-tray, desktop notifications, background operation
+### 9E: System Integration — TrayManager ✅
+- QSystemTrayIcon with context menu (Show/Hide, Start Daemon, Quit)
+- Minimize-to-tray on window close
+- Desktop notifications on transfer complete (distinguishes send vs receive)
+- Health alert notifications with chunk count
+- Quit confirmation dialog
 
-**Build integration:** New `gui/` directory with CMakeLists.txt. Links against Qt6 and existing C sources. The Qt app calls `IpcClient_Connect()`, `IpcClient_SendCommand()` etc. directly.
+### GUI Audit Fixes ✅
+
+19 post-implementation audit fixes applied:
+
+| Fix | Description |
+|-----|-------------|
+| Ticket display | PushTransferEvent includes ticket bytes, GUI parses and shows ticket |
+| Error feedback | IpcWorker sendFile/receiveFile parse errors, emit transferFailed signal |
+| Daemon auto-start | MainWindow offers to start daemon on first disconnect, File menu "Start Daemon" |
+| closeEvent fix | No-tray path calls `m_client->stop()` + `QApplication::quit()` |
+| Destination dir picker | `onReceive()` opens `QFileDialog::getExistingDirectory` |
+| Empty states | TransferWidget, FileListWidget, PeerListWidget show placeholder text |
+| Window geometry | QSettings save/restore in MainWindow constructor/closeEvent |
+| Single instance | QLockFile on `~/.wormhole/gui.lock` |
+| Refresh buttons | FileListWidget and PeerListWidget have Refresh buttons |
+| Reconnect refresh | `MainWindow::onConnected()` refreshes all widgets + transfer list |
+| Relay config | `transfer_mgr.c` reads relay_host/relay_port from daemon config |
+| File search | FileListWidget has search/filter QLineEdit |
+| Column sorting | FileListWidget `setSortingEnabled(true)` |
+| IPv6 display | PeerListWidget uses `inet_ntop` for actual IPv6 addresses |
+| Full node ID | PeerListWidget shows full 64-char hex as tooltip |
+| Timer control | FileListWidget and PeerListWidget pause timers on disconnect |
+| Better delete confirm | Shows file size and status in delete dialog |
+| Settings tooltips | Each config key has descriptive tooltip |
+| Restart button | SettingsDialog shows "Restart Daemon" when restart-required settings change |
+
+**Build:**
+```bash
+cd gui
+cmake -B build -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x
+cmake --build build
+```
+Requires Qt 6 (`sudo apt install qt6-base-dev` on Linux) and CMake 3.21+. See [TESTING_GUIDE.md](TESTING_GUIDE.md) for platform-specific details.

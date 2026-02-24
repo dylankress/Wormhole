@@ -189,21 +189,6 @@ static uint8_t *LoadSessionTicket(uint32_t *out_len)
     return ticket;
 }
 
-// Helper: check if path is a directory
-#ifndef _WIN32
-#include <sys/stat.h>
-#endif
-static BOOLEAN IsDirectory(const char *path)
-{
-#ifdef _WIN32
-	DWORD attrs = GetFileAttributesA(path);
-	return (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY));
-#else
-	struct stat st;
-	return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
-#endif
-}
-
 // Send/Receive command callbacks
 static QUIC_STATUS QUIC_API ServerListenerCallback_Send(HQUIC Listener, void* Context, QUIC_LISTENER_EVENT* Event);
 static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(HQUIC Connection, void* Context, QUIC_CONNECTION_EVENT* Event);
@@ -701,7 +686,7 @@ static QUIC_STATUS QUIC_API ServerConnectionCallback_Send(
 
 			// Start sending file using chunk protocol
 			ChunkSendFile(Connection, ctx->filepath, ctx->manifest, ctx->transfer_done_event,
-				&ctx->transfer_complete_received);
+				&ctx->transfer_complete_received, NULL, NULL);
 
 			return QUIC_STATUS_SUCCESS;
 		}
