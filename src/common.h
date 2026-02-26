@@ -11,6 +11,11 @@
 #define _CRT_SECURE_NO_WARNINGS 1
 #endif
 
+// MSVC uses static_assert in C mode; GCC/Clang use _Static_assert
+#ifdef _MSC_VER
+#define _Static_assert static_assert
+#endif
+
 // MsQuic must come before any Windows includes
 #include <msquic.h>
 

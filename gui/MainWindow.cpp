@@ -183,6 +183,20 @@ void MainWindow::onDisconnected()
 void MainWindow::onReconnecting()
 {
     m_connectionLabel->setText(QStringLiteral("<span style='color:orange;'>&#x25CF;</span> Reconnecting..."));
+
+    // Offer to start daemon if we've never connected
+    if (!m_hasEverConnected && !m_daemonStartOffered) {
+        m_daemonStartOffered = true;
+        QTimer::singleShot(2000, this, [this]() {
+            if (m_hasEverConnected) return;
+            auto result = QMessageBox::question(this, tr("Daemon Not Running"),
+                tr("The Wormhole daemon is not running. Would you like to start it?"),
+                QMessageBox::Yes | QMessageBox::No);
+            if (result == QMessageBox::Yes) {
+                tryStartDaemon();
+            }
+        });
+    }
 }
 
 void MainWindow::onStatusUpdated(uint32_t peers, uint32_t chunks, uint64_t storage,
@@ -225,7 +239,7 @@ void MainWindow::tryStartDaemon()
     if (!QFile::exists(daemonPath))
         daemonPath = QStringLiteral("wormholed");
 
-    if (!QProcess::startDetached(daemonPath, QStringList())) {
+    if (!QProcess::startDetached(daemonPath, QStringList(), appDir)) {
         QMessageBox::warning(this, tr("Daemon Start Failed"),
             tr("Could not start the daemon.\n"
                "Make sure '%1' exists and is executable.").arg(daemonPath));
