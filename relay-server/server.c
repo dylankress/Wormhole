@@ -46,6 +46,18 @@ typedef int socklen_t;
 #include <string.h>
 #endif
 
+// Monotonic clock in seconds — immune to NTP adjustments.
+static time_t monotonic_sec(void)
+{
+#ifdef _WIN32
+    return (time_t)(GetTickCount64() / 1000);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec;
+#endif
+}
+
 #define MAX_PACKET_SIZE 65536
 
 // Forward declarations for message handlers
@@ -75,6 +87,45 @@ static bool send_packet(int socket_fd, const void* data, size_t len,
         return false;
     }
     return true;
+}
+
+// Compare two socket addresses (IP + port)
+static bool sockaddr_equals(const struct sockaddr_storage* a,
+                            const struct sockaddr* b) {
+    if (a->ss_family != b->sa_family) {
+        return false;
+    }
+    if (a->ss_family == AF_INET) {
+        const struct sockaddr_in* sa = (const struct sockaddr_in*)a;
+        const struct sockaddr_in* sb = (const struct sockaddr_in*)b;
+        return sa->sin_port == sb->sin_port &&
+               sa->sin_addr.s_addr == sb->sin_addr.s_addr;
+    } else if (a->ss_family == AF_INET6) {
+        const struct sockaddr_in6* sa = (const struct sockaddr_in6*)a;
+        const struct sockaddr_in6* sb = (const struct sockaddr_in6*)b;
+        return sa->sin6_port == sb->sin6_port &&
+               memcmp(&sa->sin6_addr, &sb->sin6_addr, sizeof(struct in6_addr)) == 0;
+    }
+    return false;
+}
+
+// Format a sockaddr as "IP:port" for logging. Returns static buffer (not thread-safe).
+static const char* format_addr(const struct sockaddr* addr) {
+    static char buf[INET6_ADDRSTRLEN + 8];
+    if (addr->sa_family == AF_INET) {
+        const struct sockaddr_in* a4 = (const struct sockaddr_in*)addr;
+        char ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &a4->sin_addr, ip, sizeof(ip));
+        snprintf(buf, sizeof(buf), "%s:%u", ip, ntohs(a4->sin_port));
+    } else if (addr->sa_family == AF_INET6) {
+        const struct sockaddr_in6* a6 = (const struct sockaddr_in6*)addr;
+        char ip[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &a6->sin6_addr, ip, sizeof(ip));
+        snprintf(buf, sizeof(buf), "[%s]:%u", ip, ntohs(a6->sin6_port));
+    } else {
+        snprintf(buf, sizeof(buf), "<unknown>");
+    }
+    return buf;
 }
 
 bool RelayServer_Init(RELAY_SERVER* server, const SERVER_CONFIG* config) {
@@ -256,8 +307,8 @@ int RelayServer_Run(RELAY_SERVER* server) {
     struct sockaddr_storage client_addr;
     socklen_t addr_len;
     
-    time_t last_cleanup = time(NULL);
-    time_t last_ratelimit_cleanup = time(NULL);
+    time_t last_cleanup = monotonic_sec();
+    time_t last_ratelimit_cleanup = monotonic_sec();
 
     printf("[Server] Running (listening for packets)...\n");
     
@@ -343,17 +394,18 @@ int RelayServer_Run(RELAY_SERVER* server) {
         }
         
         // Periodic cleanup (every 30 seconds for peers/tickets)
-        time_t now = time(NULL);
-        if (now - last_cleanup > 30) {
-            PeerRegistry_RemoveStalePeers(&server->peer_registry, now);
-            TicketManager_RemoveExpiredTickets(&server->ticket_manager, now);
-            last_cleanup = now;
+        time_t mono_now = monotonic_sec();
+        if (mono_now - last_cleanup > 30) {
+            time_t wall_now = time(NULL);
+            PeerRegistry_RemoveStalePeers(&server->peer_registry, wall_now);
+            TicketManager_RemoveExpiredTickets(&server->ticket_manager, wall_now);
+            last_cleanup = mono_now;
         }
 
         // Rate limiter cleanup more frequently (every 10 seconds) to bound table size
-        if (now - last_ratelimit_cleanup > 10) {
-            RateLimiter_RemoveStaleEntries(&server->rate_limiter, now);
-            last_ratelimit_cleanup = now;
+        if (mono_now - last_ratelimit_cleanup > 10) {
+            RateLimiter_RemoveStaleEntries(&server->rate_limiter, mono_now);
+            last_ratelimit_cleanup = mono_now;
         }
     }
     
@@ -510,8 +562,8 @@ static void handle_register(RELAY_SERVER* server, const uint8_t* packet, size_t 
 
 static void handle_create_ticket(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                                 const struct sockaddr* client_addr, socklen_t addr_len) {
-    /* TODO: No sender authentication - relies on IP:port matching.
-       Add Ed25519 signature verification in future. */
+    /* Authentication: session_id lookup + UDP source address verification.
+       TODO: Add Ed25519 signature verification for stronger authentication. */
 
     printf("[Server] CREATE_TICKET from client\n");
 
@@ -539,11 +591,23 @@ static void handle_create_ticket(RELAY_SERVER* server, const uint8_t* packet, si
     // Find peer by session ID
     PEER_ENTRY* peer = PeerRegistry_FindBySessionID(&server->peer_registry, msg->session_id);
     if (!peer) {
-        fprintf(stderr, "[Server] CREATE_TICKET: Invalid session ID %llu\n",
-                (unsigned long long)msg->session_id);
+        fprintf(stderr, "[Server] CREATE_TICKET: Invalid session ID %llu from %s\n",
+                (unsigned long long)msg->session_id, format_addr(client_addr));
+        // Send error response: TicketCreatedMsg with ticket_length=0
+        TicketCreatedMsg err_resp = { .message_type = RELAY_MSG_TICKET_CREATED, .ticket_length = 0 };
+        send_packet(server->socket_fd, &err_resp, sizeof(err_resp), client_addr, addr_len);
         return;
     }
-    
+
+    // Verify UDP source address matches registered peer's socket_addr
+    if (!sockaddr_equals(&peer->socket_addr, client_addr)) {
+        fprintf(stderr, "[Server] CREATE_TICKET: Address mismatch for session %llu (from %s)\n",
+                (unsigned long long)msg->session_id, format_addr(client_addr));
+        TicketCreatedMsg err_resp = { .message_type = RELAY_MSG_TICKET_CREATED, .ticket_length = 0 };
+        send_packet(server->socket_fd, &err_resp, sizeof(err_resp), client_addr, addr_len);
+        return;
+    }
+
     // Generate ticket
     char ticket[TICKET_FORMAT_LENGTH];
     const char* ticket_str = TicketManager_GenerateTicket(
@@ -557,6 +621,8 @@ static void handle_create_ticket(RELAY_SERVER* server, const uint8_t* packet, si
     
     if (!ticket_str) {
         fprintf(stderr, "[Server] Failed to generate ticket\n");
+        TicketCreatedMsg err_resp = { .message_type = RELAY_MSG_TICKET_CREATED, .ticket_length = 0 };
+        send_packet(server->socket_fd, &err_resp, sizeof(err_resp), client_addr, addr_len);
         return;
     }
     
@@ -628,8 +694,8 @@ static bool endpoint_from_sockaddr(const struct sockaddr* addr, ENDPOINT* ep, ui
 
 static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t len,
                          const struct sockaddr* client_addr, socklen_t addr_len) {
-    /* TODO: No sender authentication - relies on IP:port matching.
-       Add Ed25519 signature verification in future. */
+    /* Authentication: session_id lookup + UDP source address verification.
+       TODO: Add Ed25519 signature verification for stronger authentication. */
 
     printf("[Server] LOOKUP from client\n");
 
@@ -654,10 +720,35 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
     memcpy(ticket, ticket_data, ticket_len);
     ticket[ticket_len] = '\0';
 
+    // Find receiver peer (by session_id from the LOOKUP message) and verify address
+    PEER_ENTRY* receiver = PeerRegistry_FindBySessionID(&server->peer_registry, msg->session_id);
+    if (!receiver) {
+        fprintf(stderr, "[Server] LOOKUP: Invalid session ID %llu from %s\n",
+                (unsigned long long)msg->session_id, format_addr(client_addr));
+        PeerInfoMsg err_resp = { .message_type = RELAY_MSG_PEER_INFO, .endpoint_count = 0 };
+        memset(err_resp.peer_id, 0, 32);
+        send_packet(server->socket_fd, &err_resp, sizeof(err_resp), client_addr, addr_len);
+        return;
+    }
+
+    // Verify UDP source address matches registered receiver's socket_addr
+    if (!sockaddr_equals(&receiver->socket_addr, client_addr)) {
+        fprintf(stderr, "[Server] LOOKUP: Address mismatch for session %llu (from %s)\n",
+                (unsigned long long)msg->session_id, format_addr(client_addr));
+        PeerInfoMsg err_resp = { .message_type = RELAY_MSG_PEER_INFO, .endpoint_count = 0 };
+        memset(err_resp.peer_id, 0, 32);
+        send_packet(server->socket_fd, &err_resp, sizeof(err_resp), client_addr, addr_len);
+        return;
+    }
+
     // Lookup ticket
     TICKET_INFO* ticket_info = TicketManager_LookupTicket(&server->ticket_manager, ticket);
     if (!ticket_info) {
-        fprintf(stderr, "[Server] Ticket not found or expired: %s\n", ticket);
+        fprintf(stderr, "[Server] Ticket not found or expired: %s (from %s)\n",
+                ticket, format_addr(client_addr));
+        PeerInfoMsg err_resp = { .message_type = RELAY_MSG_PEER_INFO, .endpoint_count = 0 };
+        memset(err_resp.peer_id, 0, 32);
+        send_packet(server->socket_fd, &err_resp, sizeof(err_resp), client_addr, addr_len);
         return;
     }
 
@@ -665,11 +756,11 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
     PEER_ENTRY* sender = PeerRegistry_FindByPeerID(&server->peer_registry, ticket_info->sender_peer_id);
     if (!sender) {
         fprintf(stderr, "[Server] Sender peer not found for ticket: %s\n", ticket);
+        PeerInfoMsg err_resp = { .message_type = RELAY_MSG_PEER_INFO, .endpoint_count = 0 };
+        memset(err_resp.peer_id, 0, 32);
+        send_packet(server->socket_fd, &err_resp, sizeof(err_resp), client_addr, addr_len);
         return;
     }
-
-    // Find receiver peer (by session_id from the LOOKUP message)
-    PEER_ENTRY* receiver = PeerRegistry_FindBySessionID(&server->peer_registry, msg->session_id);
 
     // ---------------------------------------------------------------
     // Part 1: Send PEER_INFO to RECEIVER (sender's endpoints)
@@ -684,6 +775,9 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
             total_ep_count = MAX_ENDPOINTS;
         }
         uint16_t sender_eps_to_copy = total_ep_count - extra_endpoints;
+        // Bounds clamp: never copy more than sender actually has
+        if (sender_eps_to_copy > sender->endpoint_count)
+            sender_eps_to_copy = sender->endpoint_count;
         size_t response_size = sizeof(PeerInfoMsg) + total_ep_count * sizeof(ENDPOINT);
         uint8_t* response_buffer = (uint8_t*)malloc(response_size);
 
@@ -755,6 +849,9 @@ static void handle_lookup(RELAY_SERVER* server, const uint8_t* packet, size_t le
         }
         // Cap receiver endpoints copied so extra endpoints fit within total
         uint16_t recv_eps_to_copy = total_ep_count - extra;
+        // Bounds clamp: never copy more than receiver actually has
+        if (recv_eps_to_copy > receiver->endpoint_count)
+            recv_eps_to_copy = receiver->endpoint_count;
         size_t response_size = sizeof(PeerInfoMsg) + total_ep_count * sizeof(ENDPOINT);
         uint8_t* response_buffer = (uint8_t*)malloc(response_size);
 

@@ -106,17 +106,6 @@ static BOOLEAN GetReplicaBasePath(char *path, size_t path_len);
 static BOOLEAN GetAccessTimePath(char *path, size_t path_len);
 void ChunkStore_SetAccessTime(const uint8_t hash[WH_HASH_SIZE]);
 
-// Convert a 32-byte hash to a 64-char hex string (no null terminator added).
-static void HashToHex(const uint8_t hash[WH_HASH_SIZE], char hex[64])
-{
-    static const char digits[] = "0123456789abcdef";
-    for (int i = 0; i < WH_HASH_SIZE; i++)
-    {
-        hex[i * 2]     = digits[(hash[i] >> 4) & 0x0F];
-        hex[i * 2 + 1] = digits[hash[i] & 0x0F];
-    }
-}
-
 // Build the store base path: %USERPROFILE%\.wormhole\store (Windows)
 // or $HOME/.wormhole/store (POSIX).
 static BOOLEAN GetStoreBasePath(char *path, size_t path_len)
@@ -142,8 +131,7 @@ static BOOLEAN GetChunkPath(const uint8_t hash[WH_HASH_SIZE],
     if (!GetStoreBasePath(base, sizeof(base))) return FALSE;
 
     char hex[65];
-    HashToHex(hash, hex);
-    hex[64] = '\0';
+    WH_HashToHex(hash, hex);
 
 #ifdef _WIN32
     snprintf(path, path_len, "%s\\%.2s\\%s", base, hex, hex + 2);
@@ -208,12 +196,18 @@ BOOLEAN ChunkStore_Put(const uint8_t hash[WH_HASH_SIZE],
 {
     if (!data || size == 0) return FALSE;
 
-    // Skip if already stored
-    if (ChunkStore_Has(hash)) return TRUE;
-
-    // Enforce storage quota
+    // Hold lock through entire operation to prevent TOCTOU on dedup and quota
     EnsureStoreLock();
     WH_MUTEX_LOCK(g_store_lock);
+
+    // Skip if already stored (inside lock to eliminate dedup race)
+    if (ChunkStore_Has(hash))
+    {
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return TRUE;
+    }
+
+    // Enforce storage quota
     EnsureQuotaInitialized();
 
     uint64_t max_bytes = ChunkStore_GetQuotaBytes();
@@ -225,18 +219,24 @@ BOOLEAN ChunkStore_Put(const uint8_t hash[WH_HASH_SIZE],
         WH_MUTEX_UNLOCK(g_store_lock);
         return FALSE;
     }
-    WH_MUTEX_UNLOCK(g_store_lock);
 
     char path[MAX_PATH];
-    if (!GetChunkPath(hash, path, sizeof(path))) return FALSE;
+    if (!GetChunkPath(hash, path, sizeof(path)))
+    {
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return FALSE;
+    }
 
     // Ensure the 2-char prefix directory exists
     char base[MAX_PATH];
-    if (!GetStoreBasePath(base, sizeof(base))) return FALSE;
+    if (!GetStoreBasePath(base, sizeof(base)))
+    {
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return FALSE;
+    }
 
     char hex[65];
-    HashToHex(hash, hex);
-    hex[64] = '\0';
+    WH_HashToHex(hash, hex);
 
     char prefix_dir[MAX_PATH];
 #ifdef _WIN32
@@ -244,23 +244,31 @@ BOOLEAN ChunkStore_Put(const uint8_t hash[WH_HASH_SIZE],
 #else
     snprintf(prefix_dir, sizeof(prefix_dir), "%s/%.2s", base, hex);
 #endif
-    if (!EnsureDir(prefix_dir)) return FALSE;
+    if (!EnsureDir(prefix_dir))
+    {
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return FALSE;
+    }
 
     // Write chunk data
     FILE *fh = fopen(path, "wb");
-    if (!fh) return FALSE;
+    if (!fh)
+    {
+        WH_MUTEX_UNLOCK(g_store_lock);
+        return FALSE;
+    }
 
     size_t written = fwrite(data, 1, size, fh);
     fclose(fh);
 
     if (written == size)
     {
-        WH_MUTEX_LOCK(g_store_lock);
         g_total_store_bytes += size;
         WH_MUTEX_UNLOCK(g_store_lock);
         return TRUE;
     }
 
+    WH_MUTEX_UNLOCK(g_store_lock);
     return FALSE;
 }
 
@@ -351,8 +359,7 @@ static BOOLEAN GetReplicaPath(const uint8_t hash[WH_HASH_SIZE],
     if (!GetReplicaBasePath(base, sizeof(base))) return FALSE;
 
     char hex[65];
-    HashToHex(hash, hex);
-    hex[64] = '\0';
+    WH_HashToHex(hash, hex);
 
 #ifdef _WIN32
     snprintf(path, path_len, "%s\\%.2s\\%s", base, hex, hex + 2);
@@ -373,8 +380,7 @@ static BOOLEAN EnsureReplicaDirs(const uint8_t hash[WH_HASH_SIZE])
 
     // Ensure prefix subdir
     char hex[65];
-    HashToHex(hash, hex);
-    hex[64] = '\0';
+    WH_HashToHex(hash, hex);
 
     char prefix_dir[MAX_PATH];
 #ifdef _WIN32
@@ -1086,8 +1092,7 @@ uint64_t ChunkStore_Evict(uint64_t bytes_to_free)
             Proof_DeleteCache(candidates[i].hash);
 
             char hex[65];
-            HashToHex(candidates[i].hash, hex);
-            hex[64] = '\0';
+            WH_HashToHex(candidates[i].hash, hex);
             LOG("[evict] Removed chunk %.8s... (%llu bytes, %u replicas)\n",
                 hex, (unsigned long long)candidates[i].file_size, candidates[i].replica_count);
         }

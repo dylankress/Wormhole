@@ -8,6 +8,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
+
+// Monotonic clock in seconds — immune to NTP adjustments.
+static time_t monotonic_sec(void)
+{
+#ifdef _WIN32
+    return (time_t)(GetTickCount64() / 1000);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec;
+#endif
+}
 
 // Hash IP address
 static uint32_t hash_ip(const uint8_t* ip, uint8_t addr_type, uint32_t bucket_count) {
@@ -125,7 +138,7 @@ bool RateLimiter_CheckAndUpdate(RATE_LIMITER* limiter, const struct sockaddr* ad
     pthread_mutex_lock(&limiter->lock);
 #endif
     
-    time_t now = time(NULL);
+    time_t now = monotonic_sec();
     uint32_t bucket = hash_ip(ip, addr_type, limiter->bucket_count);
     
     // Find existing entry

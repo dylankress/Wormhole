@@ -233,7 +233,7 @@ WORMHOLE_CONFIG *Config_Load(const char *path)
     }
 
     fclose(fh);
-    LOG_ERROR("[config] Loaded config from %s (%u entries)\n", path, config->count);
+    LOG("[config] Loaded config from %s (%u entries)\n", path, config->count);
     return config;
 }
 
@@ -271,7 +271,7 @@ BOOLEAN Config_Save(const WORMHOLE_CONFIG *config)
     }
 
     fclose(fh);
-    LOG_ERROR("[config] Saved config to %s\n", config->filepath);
+    LOG("[config] Saved config to %s\n", config->filepath);
     return TRUE;
 }
 
@@ -348,6 +348,7 @@ BOOLEAN Config_SetUint64(WORMHOLE_CONFIG *config, const char *key, uint64_t valu
     return Config_Set(config, key, buf);
 }
 
+// See config.h for the full hot-reload classification of all 14 keys.
 BOOLEAN Config_IsHotReloadable(const char *key)
 {
     if (!key) return FALSE;

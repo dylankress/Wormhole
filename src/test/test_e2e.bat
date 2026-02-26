@@ -246,8 +246,19 @@ if not exist "%GET_OUTPUT_FILE%" (
     goto :test_ec_metadata
 )
 
-echo   PASS: Get command retrieved file to %GET_OUTPUT_FILE%
-set /a PASS_COUNT+=1
+REM Verify content integrity via hash comparison
+set HASH_MATCH=0
+for /f "tokens=*" %%h in ('powershell -NoProfile -Command "$o=[IO.File]::ReadAllBytes('%TEST_FILE%');$r=[IO.File]::ReadAllBytes('%GET_OUTPUT_FILE%');if($o.Length-ne$r.Length){exit 1};$s=[Security.Cryptography.SHA256]::Create();$ho=[BitConverter]::ToString($s.ComputeHash($o)).Replace('-','');$hr=[BitConverter]::ToString($s.ComputeHash($r)).Replace('-','');if($ho-eq$hr){'MATCH'}else{'MISMATCH'}"') do (
+    if "%%h"=="MATCH" set HASH_MATCH=1
+)
+
+if "!HASH_MATCH!"=="1" (
+    echo   PASS: Get command retrieved file with matching hash
+    set /a PASS_COUNT+=1
+) else (
+    echo   FAIL: Retrieved file hash does not match original
+    set /a FAIL_COUNT+=1
+)
 set /a TOTAL+=1
 echo.
 
@@ -411,6 +422,39 @@ if exist "!DELETED_CHUNK!" (
     echo   ^(This may happen if the chunk is a parity chunk not tracked by EC metadata^)
     echo   Daemon restart log tail:
     type "%DAEMON_LOG2%" | findstr /C:"EC recovered" /C:"Health check"
+    set /a FAIL_COUNT+=1
+)
+set /a TOTAL+=1
+echo.
+
+REM Verify recovered file integrity via re-get
+echo --- Step 8b: Verify recovered file integrity ---
+if "!FILE_ID!"=="" (
+    echo   SKIP: No File ID for integrity check
+    set /a TOTAL+=1
+    set /a FAIL_COUNT+=1
+    goto :cleanup
+)
+
+set VERIFY_FILE=%TEST_DIR%\verify_after_recovery.bin
+"%WORMHOLE%" --daemon %DAEMON_PORT% get !FILE_ID! -o "%VERIFY_FILE%" >nul 2>&1
+if !ERRORLEVEL! neq 0 (
+    echo   FAIL: Get after EC recovery returned error
+    set /a FAIL_COUNT+=1
+    set /a TOTAL+=1
+    goto :cleanup
+)
+
+set VERIFY_MATCH=0
+for /f "tokens=*" %%h in ('powershell -NoProfile -Command "$o=[IO.File]::ReadAllBytes('%TEST_FILE%');$r=[IO.File]::ReadAllBytes('%VERIFY_FILE%');if($o.Length-ne$r.Length){exit 1};$s=[Security.Cryptography.SHA256]::Create();$ho=[BitConverter]::ToString($s.ComputeHash($o)).Replace('-','');$hr=[BitConverter]::ToString($s.ComputeHash($r)).Replace('-','');if($ho-eq$hr){'MATCH'}else{'MISMATCH'}"') do (
+    if "%%h"=="MATCH" set VERIFY_MATCH=1
+)
+
+if "!VERIFY_MATCH!"=="1" (
+    echo   PASS: File integrity verified after EC recovery
+    set /a PASS_COUNT+=1
+) else (
+    echo   FAIL: File hash mismatch after EC recovery
     set /a FAIL_COUNT+=1
 )
 set /a TOTAL+=1

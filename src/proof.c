@@ -22,17 +22,6 @@
 // Internal helpers
 //=============================================================================
 
-// Convert a 32-byte hash to a 64-char hex string (no null terminator added).
-static void HashToHex(const uint8_t hash[WH_HASH_SIZE], char hex[64])
-{
-    static const char digits[] = "0123456789abcdef";
-    for (int i = 0; i < WH_HASH_SIZE; i++)
-    {
-        hex[i * 2]     = digits[(hash[i] >> 4) & 0x0F];
-        hex[i * 2 + 1] = digits[hash[i] & 0x0F];
-    }
-}
-
 // Ensure a directory exists (create if needed).
 static BOOLEAN EnsureDir(const char *dir)
 {
@@ -70,8 +59,7 @@ static BOOLEAN GetProofCachePath(const uint8_t hash[WH_HASH_SIZE],
     if (!GetProofsBasePath(base, sizeof(base))) return FALSE;
 
     char hex[65];
-    HashToHex(hash, hex);
-    hex[64] = '\0';
+    WH_HashToHex(hash, hex);
 
 #ifdef _WIN32
     snprintf(path, path_len, "%s\\%s", base, hex);

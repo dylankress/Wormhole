@@ -85,6 +85,27 @@ BOOLEAN Config_ValidateValue(const char *key, const char *value);
 
 // Check if a config key can be hot-reloaded (changed without daemon restart).
 // Returns TRUE for safe keys, FALSE for keys requiring restart.
+//
+// Hot-Reload Classification for all 14 config keys:
+//
+//   HOT-RELOADABLE (safe to change while daemon is running):
+//     health_check_interval_sec  — health check period (default 1800s)
+//     min_storage_ratio          — reciprocity threshold (default 50 = 0.50)
+//     proof_cache_count          — pre-cached proofs per chunk (default 8)
+//     max_storage_gb             — storage quota (default 10)
+//     replication_target         — chunk replication target (default 4)
+//     auto_evict_enabled         — auto-evict after replication (default 0)
+//
+//   REQUIRES DAEMON RESTART:
+//     relay_host                 — relay server hostname
+//     relay_port                 — relay server port
+//     dht_enabled                — enable/disable DHT subsystem
+//     dht_port                   — DHT UDP listen port
+//     dht_bootstrap_nodes        — comma-separated bootstrap host:port list
+//     ec_enabled                 — enable/disable erasure coding
+//     ec_data_shards             — RS data shards per stripe
+//     ec_parity_shards           — RS parity shards per stripe
+//
 BOOLEAN Config_IsHotReloadable(const char *key);
 
 // Get the default config file path (~/.wormhole/config).

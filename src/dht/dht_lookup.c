@@ -114,7 +114,7 @@ void DhtLookup_Start(DHT_ITERATIVE_LOOKUP *lookup, const ROUTING_TABLE *rt,
     memset(lookup, 0, sizeof(DHT_ITERATIVE_LOOKUP));
     lookup->type = type;
     memcpy(lookup->target, target, 32);
-    lookup->start_time = time(NULL);
+    lookup->start_time = wh_monotonic_sec();
 
     // Seed shortlist from routing table's closest nodes
     ROUTING_NODE closest[DHT_K];
@@ -244,7 +244,7 @@ void DhtLookup_MarkFailed(DHT_ITERATIVE_LOOKUP *lookup, const uint8_t node_id[32
 BOOLEAN DhtLookup_CheckTimeout(DHT_ITERATIVE_LOOKUP *lookup)
 {
     if (lookup->complete) return FALSE;
-    if (difftime(time(NULL), lookup->start_time) > DHT_LOOKUP_TIMEOUT_SEC)
+    if (difftime(wh_monotonic_sec(), lookup->start_time) > DHT_LOOKUP_TIMEOUT_SEC)
     {
         lookup->complete = TRUE;
         return TRUE;

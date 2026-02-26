@@ -3116,7 +3116,7 @@ static void Daemon_OnPeersFound(void *context, const DISCOVERED_PEER *peers, uin
 
     LOG("[daemon] Peer discovery: found %u active peers\n", count);
 
-    // Push peer change event to subscribed clients
+    // Push peer change event: PEER_CHANGE — [4B peer_count]
     {
         uint8_t pc_evt[4];
         WriteUint32LE(pc_evt, (uint32_t)count);
@@ -3538,7 +3538,7 @@ static WH_THREAD_RETURN WorkQueue_ThreadProc(WH_THREAD_PARAM param)
             {
                 LOG("[worker] File %s safely replicated to network\n", entry.filename);
 
-                // Push file status event: REPLICATING → SAFE
+                // Push FILE_STATUS — [32B manifest_hash][1B status][2B replica_count][1B pad]
                 {
                     uint8_t fs_evt[36];
                     memcpy(fs_evt, item->check_repl.manifest_hash, WH_HASH_SIZE);
@@ -5039,7 +5039,7 @@ static uint32_t Daemon_HandleIpcCommandV2(
     // Clear thread-local op_id
     g_current_op_id = 0;
 
-    // If we tracked progress, emit completion event and unregister
+    // Emit OP_COMPLETE — [1B status][4B op_id][2B error_msg_len][error_msg...]
     if (track_progress) {
         uint8_t complete_buf[8];
         complete_buf[0] = (result > 0 && response_out[0] == IPC_STATUS_OK)
@@ -5701,7 +5701,7 @@ int main(int argc, char *argv[])
                         stats.chunks_degraded, stats.chunks_critical);
                     fflush(stdout);
 
-                    // Push health event to subscribed clients
+                    // Push HEALTH — [4B checked][4B healthy][4B degraded][4B critical]
                     uint8_t health_evt[16];
                     WriteUint32LE(health_evt, stats.chunks_checked);
                     WriteUint32LE(health_evt + 4, stats.chunks_healthy);

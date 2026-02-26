@@ -378,3 +378,104 @@ cmake -B build -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x
 cmake --build build
 ```
 Requires Qt 6 (`sudo apt install qt6-base-dev` on Linux) and CMake 3.21+. See [TESTING_GUIDE.md](TESTING_GUIDE.md) for platform-specific details.
+
+---
+
+## Phase 10: Pre-Release Hardening ✅
+
+Security audit and code quality sweep across the entire codebase — 32 files, 866 insertions, 178 deletions across 7 batches.
+
+### 10A: Network Security ✅
+
+**Effort**: Medium | **Impact**: Prevents spoofing, injection, and out-of-bounds access
+
+- **Relay source address verification** — `CREATE_TICKET` and `LOOKUP` now verify that the UDP source address matches the registered peer's `socket_addr`, preventing session hijacking
+- **Path traversal defense** — `VerifyPathWithinDir()` in `stream.c` uses `realpath()`/`GetFullPathNameA()` to verify received file paths stay within the expected output directory; `ValidateRelativePath()` rejects backslash separators
+- **Endpoint bounds clamping** — relay `handle_lookup()` clamps `sender_eps_to_copy` and `recv_eps_to_copy` to the peer's actual `endpoint_count`, preventing over-read
+- **Cryptographic session IDs** — `peer_registry.c` replaced `/dev/urandom` fallback with `randombytes_buf()` (libsodium CSPRNG)
+
+Changes:
+- `relay-server/server.c` — `sockaddr_equals()`, `format_addr()`, source address checks in `handle_create_ticket`/`handle_lookup`, endpoint bounds clamping, error responses
+- `relay-server/peer_registry.c` — `generate_session_id()` now uses `randombytes_buf()`
+- `src/stream.c` — `VerifyPathWithinDir()`, backslash rejection in `ValidateRelativePath()`
+
+### 10B: Thread Safety ✅
+
+**Effort**: Small | **Impact**: Eliminates data races and resource leaks
+
+- **TOCTOU fix in chunk store** — `ChunkStore_Put()` holds the lock through the entire has-check + write sequence (previously released between check and write)
+- **Thread join before free** — `transfer_mgr.c` `FreeTransfer()` joins the background thread before freeing the transfer struct
+- **Destructor terminate fallback** — `DaemonClient::stop()` calls `terminate()` + `wait()` if the worker thread doesn't exit within 5 seconds
+- **Event buffer overflow protection** — `gui/ipc_client.c` uses a 16-entry ring buffer with atomic head/tail indices for event polling
+
+Changes:
+- `src/chunk_store.c` — Lock held through entire Put operation
+- `src/transfer_mgr.c` — `FreeTransfer()` thread join
+- `gui/DaemonClient.cpp` — `terminate()` fallback after 5s timeout
+- `gui/ipc_client.c` — 16-entry event ring buffer
+
+### 10C: File Permissions ✅
+
+**Effort**: Small | **Impact**: Sensitive files not world-readable on Linux
+
+- **`WH_SET_FILE_PRIVATE` macro** — `chmod(0600)` on Linux, no-op on Windows
+- Applied to: identity keypair, storage ledger, TLS certificate/key, file registry entries
+
+Changes:
+- `src/common.h` — `WH_SET_FILE_PRIVATE()` macro definition
+- `src/crypto.c`, `src/incentives.c`, `src/file_registry.c` — Applied after writing sensitive files
+
+### 10D: Correctness ✅
+
+**Effort**: Small | **Impact**: Prevents DHT flooding and integer overflow
+
+- **DHT anti-flooding** — `DHT_STORE_RATE_LIMITER` tracks per-sender STORE rates (50 ops/sender/minute, 64 tracked senders, oldest-eviction)
+- **`_Static_assert` overflow guard** — Compile-time check that `DHT_STORE_MAX_LOCATIONS * sizeof(DHT_NODE_INFO)` fits in `uint32_t`
+- **Monotonic clock** — `wh_monotonic_sec()` replaces `time(NULL)` for elapsed-time calculations (immune to NTP adjustments)
+
+Changes:
+- `src/dht/dht_store.h/c` — `DHT_STORE_RATE_LIMITER`, `DhtStore_RateLimitCheck()`
+- `src/dht/dht_node.c` — STORE rate limiting in `HandleStore()`, `_Static_assert`, `wh_monotonic_sec()` for RPC timeouts and bucket refresh
+- `src/dht/dht_lookup.c` — `wh_monotonic_sec()` for lookup timing
+- `src/common.h` — `wh_monotonic_sec()` portable implementation
+
+### 10E: Build System ✅
+
+**Effort**: Small | **Impact**: Cleaner builds and Windows IPC
+
+- **MsQuic build check** — `src/Makefile` verifies `libmsquic.so` exists before linking, with clear error message
+- **VPATH documentation** — Build system docs updated for out-of-source builds
+- **Overlapped IPC** — `gui/ipc_client.c` uses Windows overlapped I/O for non-blocking IPC reads
+
+Changes:
+- `src/Makefile` — MsQuic existence check
+- `src/build.bat` — Build improvements
+- `gui/ipc_client.h/c` — Overlapped I/O on Windows, event buffer API
+
+### 10F: Testing ✅
+
+**Effort**: Medium | **Impact**: Better coverage and integrity verification
+
+- **7 new test cases** — path traversal rejection (2), unknown/future manifest version rejection (2), negative number/uint64 overflow/overlong config values (3)
+- **E2E hash verification** — `test_e2e.bat` now verifies SHA256 hash integrity on store/get roundtrip and EC recovery
+
+Changes:
+- `src/test/test_manifest.c` — Path traversal rejection tests (backslash separator, mid-path `..`), unknown version and future version rejection tests
+- `src/test/test_config.c` — Negative number, uint64 overflow, overlong value tests
+- `src/test/test_e2e.bat` — SHA256 hash verification for store/get and EC recovery
+
+### 10G: Code Hygiene ✅
+
+**Effort**: Small | **Impact**: Consistency and maintainability
+
+- **`WH_HashToHex` utility** — Replaces 5+ inline hash-to-hex conversion loops with a single `common.h` inline function
+- **`wh_monotonic_sec` utility** — Portable monotonic clock for all elapsed-time calculations
+- **Log levels** — `LOG()` and `LOG_ERROR()` macros with timestamps, consistent across daemon and DHT subsystem
+- **Event documentation** — IPC v2 event types documented in `ipc.h` header
+- **Hot-reload documentation** — `config.h` documents which settings are hot-reloadable vs restart-required
+
+Changes:
+- `src/common.h` — `WH_HashToHex()`, `wh_monotonic_sec()`
+- `src/chunk_store.c`, `src/proof.c`, `src/file_registry.c`, `src/transfer_state.c` — Use `WH_HashToHex()`
+- `src/ipc.h` — Event type documentation
+- `src/config.h` — Hot-reload classification documentation

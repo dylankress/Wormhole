@@ -4363,7 +4363,7 @@ int main(int argc, char *argv[])
 	}
 #endif
 
-	LOG_ERROR("=== Wormhole - Secure P2P File Transfer ===\n\n");
+	LOG("=== Wormhole - Secure P2P File Transfer ===\n\n");
 
 	if (argc < 2)
 	{

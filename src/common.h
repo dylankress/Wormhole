@@ -303,6 +303,14 @@ static inline DWORD GetTickCount(void)
 
 #endif // _WIN32
 
+// --- Restrictive file permissions (owner read/write only) ---
+#ifdef _WIN32
+#define WH_SET_FILE_PRIVATE(path) ((void)(path))
+#else
+static inline void wh_set_file_private(const char *p) { chmod(p, 0600); }
+#define WH_SET_FILE_PRIVATE(path) wh_set_file_private(path)
+#endif
+
 // --- Portable string wrappers ---
 #ifndef _WIN32
 #define strcpy_s(dst, dst_size, src) snprintf((dst), (dst_size), "%s", (src))
@@ -340,6 +348,31 @@ static inline void PrintTimestampErr(void)
 	fprintf(stderr, "[%02d:%02d:%02d.%03ld] ",
 		tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec, ts.tv_nsec / 1000000);
 #endif
+}
+
+// Monotonic clock in seconds — use for elapsed-time/timeout calculations.
+// Unlike time(NULL), this is immune to NTP adjustments and clock_settime.
+static inline time_t wh_monotonic_sec(void)
+{
+#ifdef _WIN32
+    return (time_t)(GetTickCount64() / 1000);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec;
+#endif
+}
+
+// Convert a 32-byte hash to a null-terminated 65-char hex string.
+static inline void WH_HashToHex(const uint8_t hash[32], char hex[65])
+{
+    static const char digits[] = "0123456789abcdef";
+    for (int i = 0; i < 32; i++)
+    {
+        hex[i * 2]     = digits[(hash[i] >> 4) & 0x0F];
+        hex[i * 2 + 1] = digits[hash[i] & 0x0F];
+    }
+    hex[64] = '\0';
 }
 
 // Logging macros with timestamps

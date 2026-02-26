@@ -18,16 +18,6 @@
 // Internal helpers
 //=============================================================================
 
-static void HashToHex(const uint8_t hash[32], char hex[64])
-{
-    static const char digits[] = "0123456789abcdef";
-    for (int i = 0; i < 32; i++)
-    {
-        hex[i * 2]     = digits[(hash[i] >> 4) & 0x0F];
-        hex[i * 2 + 1] = digits[hash[i] & 0x0F];
-    }
-}
-
 static BOOLEAN EnsureDir(const char *dir)
 {
 #ifdef _WIN32
@@ -68,8 +58,7 @@ static BOOLEAN GetStatePath(const uint8_t manifest_hash[32],
     if (!EnsureDir(transfers_dir)) return FALSE;
 
     char hex[65];
-    HashToHex(manifest_hash, hex);
-    hex[64] = '\0';
+    WH_HashToHex(manifest_hash, hex);
 
 #ifdef _WIN32
     snprintf(path, path_len, "%s\\%s.state", transfers_dir, hex);

@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <sodium.h>
 
 // FNV-1a hash (fast, good distribution for small keys)
 static uint32_t hash_peer_id(const uint8_t peer_id[32], uint32_t bucket_count) {
@@ -20,24 +21,16 @@ static uint32_t hash_peer_id(const uint8_t peer_id[32], uint32_t bucket_count) {
     return hash & (bucket_count - 1);  // Assumes bucket_count is power of 2
 }
 
-// Generate unique session ID using /dev/urandom for better entropy.
-// Falls back to timestamp + counter if urandom is unavailable.
-// NOTE: Session IDs are not cryptographic secrets, but better randomness
-// prevents guessing by malicious peers.
+// Generate unique session ID using libsodium's CSPRNG.
+// libsodium uses the best available entropy source on each platform
+// (getrandom/getentropy on Linux, CryptGenRandom on Windows).
 static uint64_t generate_session_id(void) {
     uint64_t id = 0;
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) {
-        if (fread(&id, sizeof(id), 1, f) == 1 && id != 0) {
-            fclose(f);
-            return id;
-        }
-        fclose(f);
-    }
-    // Fallback: timestamp + incrementing counter
-    static uint64_t counter = 0;
-    counter++;
-    return ((uint64_t)time(NULL) << 32) | (counter & 0xFFFFFFFF);
+    randombytes_buf(&id, sizeof(id));
+    // Avoid returning 0 (used as error sentinel)
+    while (id == 0)
+        randombytes_buf(&id, sizeof(id));
+    return id;
 }
 
 // Compare two PeerIDs

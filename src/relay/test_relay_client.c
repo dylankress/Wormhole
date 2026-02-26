@@ -1,6 +1,11 @@
 //
 // test_relay_client.c
-// Simple test program for relay client components
+// Manual integration test for relay client components (not part of unit test suite).
+// Build and run manually when testing relay connectivity:
+//   gcc -o test_relay_client test_relay_client.c peer_id.c relay_client.c discovery.c ticket.c
+//       -I../../deps/blake3 -lsodium -lpthread
+//   ./test_relay_client send <relay-host> <filename>
+//   ./test_relay_client receive <relay-host> <ticket>
 // by Dylan Kress
 //
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wormhole is a decentralized P2P file storage platform written in C — a privacy-respecting alternative to Dropbox/Google Drive. Peers contribute disk space to the network, files are erasure-coded and replicated across multiple nodes, and anyone can store and retrieve data without centralized cloud providers. Built on QUIC (via MsQuic) with a Kademlia DHT for decentralized discovery and a UDP relay server for NAT traversal. Also supports direct peer-to-peer file transfer via ticket codes like "3-guitar-battery".
 
-**Phases 1-9 complete.** Phase 9 added a Qt 6 cross-platform GUI as a thin IPC client to the daemon. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (18 unit test suites + E2E daemon tests + 22 GUI IPC integration tests). Phase 8 added IPC v2 protocol (subscriptions, structured errors, operation tracking, cancellation), progress reporting for long-running operations, daemon-mediated send/receive with `--direct` fallback, config management via IPC, daemon lifecycle hardening (readiness signal, heartbeat, stale PID, log rotation), and real-time push events (peer/file/health/transfer). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
+**Phases 1-10 complete.** Phase 10 hardened the codebase for pre-release: relay source address verification, path traversal defense, DHT anti-flooding rate limiter, TOCTOU fix in chunk store, file permission lockdown (`chmod 0600`), cryptographic session IDs, `_Static_assert` overflow guards, monotonic clocks, 7 new unit tests, and E2E hash verification. Phase 9 added a Qt 6 cross-platform GUI as a thin IPC client to the daemon. The daemon (`wormholed`) provides persistent chunk storage, peer discovery via Kademlia DHT, erasure coding (RS(8,4) with R=4 replication), client-side encryption, proof-of-storage verification, TLS peer identity verification, and storage incentive tracking — all wired together and tested (18 unit test suites + E2E daemon tests + 22 GUI IPC integration tests). Phase 8 added IPC v2 protocol (subscriptions, structured errors, operation tracking, cancellation), progress reporting for long-running operations, daemon-mediated send/receive with `--direct` fallback, config management via IPC, daemon lifecycle hardening (readiness signal, heartbeat, stale PID, log rotation), and real-time push events (peer/file/health/transfer). Direct file transfer with progress bar, resume, and directory support is also production-ready. Linux client support is functional with a Makefile build system and Docker multi-node testing.
 
 Design decisions should keep the decentralized storage trajectory in mind. See [ROADMAP.md](ROADMAP.md) for the full development roadmap and production readiness plan.
 
@@ -86,13 +86,13 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 **Client** (`src/`) — Cross-platform QUIC-based file transfer app (Windows + Linux)
 - `wormhole.c` — Entry point, CLI (`send`/`receive`/`store`/`get`/`delete`/`files`/`status`/`peers`/`export-key`/`import-key`/`daemon`/`config`), MsQuic lifecycle, QUIC listener/connection setup, UDP hole-punch probes (WHPK), parallel connection racing, Ctrl+C cleanup
 - `wormholed.c` — Persistent daemon process: QUIC listener, chunk store, relay connection with auto-reconnect, peer discovery, chunk replication (4x target), DHT node bootstrap/polling (multi-bootstrap with exponential backoff), health checks (20-chunk sample, event-driven), proof-of-storage challenge/response, storage ledger, client-side encryption on store/retrieve, configurable auto-eviction, DHT store persistence, IPC v1+v2 server (named pipes on Windows, Unix sockets on Linux), transfer manager integration, readiness signal, heartbeat, log rotation
-- `transfer_mgr.c` — Daemon-mediated send/receive: manages up to 8 concurrent transfers (ACTIVE_TRANSFER), per-transfer relay client and QUIC connection, send/receive thread functions (supports directory send via IsDirectory check), progress callback bridging to IPC events, cancel support
-- `stream.c` — Chunk-based two-stream transfer protocol: control stream (manifest request/response, chunk request, transfer complete) and data stream (chunk frames). Progress bar with speed/ETA (or StreamProgressCallback for daemon mode). Resumable transfers via `transfer_state.c`. Multi-file receive support.
+- `transfer_mgr.c` — Daemon-mediated send/receive: manages up to 8 concurrent transfers (ACTIVE_TRANSFER), per-transfer relay client and QUIC connection, send/receive thread functions (supports directory send via IsDirectory check), progress callback bridging to IPC events, cancel support. `FreeTransfer()` joins background thread before freeing.
+- `stream.c` — Chunk-based two-stream transfer protocol: control stream (manifest request/response, chunk request, transfer complete) and data stream (chunk frames). Progress bar with speed/ETA (or StreamProgressCallback for daemon mode). Resumable transfers via `transfer_state.c`. Multi-file receive support. `VerifyPathWithinDir()` prevents path traversal on received file paths.
 - `file_io.c` — Cross-platform file ops, 64-bit size support, Downloads folder integration, `IsDirectory()` check
 - `crypto.c` — Self-signed TLS cert generation with Ed25519 node ID embedded in CN (64 hex chars), peer certificate verification, Windows Certificate Store integration
 - `manifest.c` — File manifest serialization: v1 (single file), v2 (multi-file with per-file entries and chunk ranges), v3 (erasure coding metadata — ec_k, ec_m, stripe definitions with parity hashes)
 - `chunker.c` — Content-addressed chunking (Blake3 hashes, 256KB chunks), `Chunker_BuildManifestFromDirectory` for recursive directory transfer, `Chunker_BuildManifestAndStoreWithProgress` for progress-reporting store operations
-- `chunk_store.c` — Dedup chunk store (`ChunkStore_Has/Get/Put`), content-addressed by Blake3 hash. Replica metadata tracking (`ChunkStore_PutWithMeta`, `GetReplicaCount`, `SetReplicaLocation`). Storage quota enforcement with LRU eviction (`ChunkStore_Evict`) preferring highly-replicated chunks.
+- `chunk_store.c` — Dedup chunk store (`ChunkStore_Has/Get/Put`), content-addressed by Blake3 hash. Replica metadata tracking (`ChunkStore_PutWithMeta`, `GetReplicaCount`, `SetReplicaLocation`). Storage quota enforcement with LRU eviction (`ChunkStore_Evict`) preferring highly-replicated chunks. Lock held through entire Put operation (TOCTOU fix).
 - `transfer_state.c` — Resumable transfer state: saves/loads received-chunks bitfield to `~/.wormhole/transfers/<hash>.state`
 - `config.c` — Configuration management: INI-style `~/.wormhole/config` file with defaults (14 keys — see Key Configuration section). Hot-reload classification (`Config_IsHotReloadable`), value validation (`Config_ValidateValue`).
 - `ipc.c` — IPC transport: named pipes on Windows (`\\.\pipe\wormhole`), Unix domain sockets on Linux (`~/.wormhole/wormhole.sock`). Server API for daemon, client API for CLI. Message framing: `[4B length][1B command][payload]`. v1 commands: STORE (0x01), GET (0x02), STATUS (0x03), SHUTDOWN (0x04), DHT_STATUS (0x05), LIST_FILES (0x06), FILE_GET (0x07), FILE_DELETE (0x08), EXPORT_KEY (0x09), IMPORT_KEY (0x0A), PEER_LIST (0x0B). v2 extensions: SUBSCRIBE (0x0C), CANCEL (0x0D), SEND (0x0E), RECEIVE (0x0F), TRANSFER_STATUS (0x10), TRANSFER_LIST (0x11), CONFIG_LIST (0x12), CONFIG_GET (0x13), CONFIG_SET (0x14), HEARTBEAT (0x15), EVENT (0xE0). v2 adds operation IDs, structured errors, subscriber management, and push events.
@@ -106,8 +106,8 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 - `dht/` — Kademlia DHT subsystem (UDP port 4568):
   - `dht_protocol.h` — Wire format: 102-byte header `[1B type][1B version][4B txn_id][32B sender_id][64B ed25519_sig]`, messages 0x20-0x27
   - `routing_table.c` — K-bucket routing table (K=20, 256 buckets), XOR distance, LRS eviction, persistence to `~/.wormhole/dht_routing_table.bin`
-  - `dht_node.c` — UDP transport, RPC dispatch (PING/PONG, FIND_NODE, FIND_VALUE, STORE), multi-bootstrap (up to 4 nodes, comma-separated config), bucket refresh, pending RPC tracking
-  - `dht_store.c` — Local DHT value store: chunk hash → list of node locations (capacity 4096), 24h expiry, persistence
+  - `dht_node.c` — UDP transport, RPC dispatch (PING/PONG, FIND_NODE, FIND_VALUE, STORE), multi-bootstrap (up to 4 nodes, comma-separated config), bucket refresh, pending RPC tracking. STORE rate limiting via `DhtStore_RateLimitCheck()`, `_Static_assert` overflow guard on location payload size.
+  - `dht_store.c` — Local DHT value store: chunk hash → list of node locations (capacity 4096), 24h expiry, persistence. Anti-flooding rate limiter (`DHT_STORE_RATE_LIMITER`, 50 stores/sender/min, 64 tracked senders).
   - `dht_lookup.c` — Iterative Kademlia lookup (alpha=3, max 10 iterations), FIND_NODE and FIND_VALUE with shortlist convergence
 - `relay/` — Relay client subsystem:
   - `peer_id.c` — Ed25519 keypair management (persisted to `~/.wormhole/identity`)
@@ -117,16 +117,16 @@ On Windows, the executables are `wormhole.exe` and `wormholed.exe`.
 
 **Relay Server** (`relay-server/`) — Linux UDP coordination server (~2,900 LOC)
 - `main.c` — CLI args (`-p port`, `-w wordlist`, `--max-peers`, `--max-tickets`), signal handling
-- `server.c` — Main UDP recv loop, message routing, stats tracking, `handle_find_peers` for P2P peer discovery (FIND_PEERS/PEERS_FOUND), DHT bootstrap handler (responds to PING/FIND_NODE with K closest peers from registry)
-- `peer_registry.c` — Hash table of peers keyed by Ed25519 public key, stale cleanup (>60s)
+- `server.c` — Main UDP recv loop, message routing, stats tracking, `handle_find_peers` for P2P peer discovery (FIND_PEERS/PEERS_FOUND), DHT bootstrap handler (responds to PING/FIND_NODE with K closest peers from registry). Source address verification on `CREATE_TICKET`/`LOOKUP`, endpoint bounds clamping, monotonic clock for cleanup intervals.
+- `peer_registry.c` — Hash table of peers keyed by Ed25519 public key, stale cleanup (>60s). Cryptographic session IDs via `randombytes_buf()` (libsodium CSPRNG).
 - `ticket_manager.c` — EFF wordlist ticket generation ("N-word-word"), 1-hour expiry
 - `rate_limiter.c` — Per-IP rate limiting (1,000 pkt/s), hash table tracking
 - `crypto.c` — Ed25519 signature verification for relay messages
 
 **GUI** (`gui/`) — Qt 6 cross-platform desktop application (22 files, ~3,000 LOC)
-- `ipc_client.h/c` — Standalone C IPC client (extracted from `src/ipc.c`, no MsQuic dependency)
+- `ipc_client.h/c` — Standalone C IPC client (extracted from `src/ipc.c`, no MsQuic dependency). 16-entry event ring buffer, Windows overlapped I/O for non-blocking reads.
 - `IpcWorker.h/cpp` — QObject on background QThread: blocking IPC calls, event polling, auto-reconnect
-- `DaemonClient.h/cpp` — QObject wrapper: owns IpcWorker+QThread, signal forwarding, thread-safe command dispatch
+- `DaemonClient.h/cpp` — QObject wrapper: owns IpcWorker+QThread, signal forwarding, thread-safe command dispatch. Destructor `terminate()` fallback after 5s thread join timeout.
 - `MainWindow.h/cpp` — QMainWindow: tabs (Transfers/Files/Network), menu bar, status bar, daemon auto-start, window geometry persistence, single instance lock
 - `TransferWidget.h/cpp` — Send/receive UI with progress bars, transfer queue, cancel, ticket display, empty state
 - `FileListWidget.h/cpp` — File storage management with drag-and-drop, search/filter, column sorting, context menu (delete/export-key/import-key)
@@ -201,10 +201,10 @@ cd test
 
 Test suite (`src/test/`), 18 executables:
 - `test_wire_format.c` — LE encoding/decoding (header-only, no link deps)
-- `test_manifest.c` — Manifest v1 create/serialize/validate + v2 multi-file (chunk ranges, roundtrip, empty file)
+- `test_manifest.c` — Manifest v1 create/serialize/validate + v2 multi-file (chunk ranges, roundtrip, empty file) + path traversal rejection (backslash, mid-path `..`) + unknown/future version rejection
 - `test_chunk_store.c` — Chunk put/get/has/dedup + replica metadata (set/get/dedup/max) + LRU eviction (total size, prefers replicated)
 - `test_transfer_state.c` — Resumable transfer bitfield save/load roundtrip, boundary cases (8/9 chunks), large count (1000), error handling
-- `test_config.c` — INI config defaults, get/set (string/uint64/case-insensitive/overflow), file roundtrip (comments, whitespace, empty lines)
+- `test_config.c` — INI config defaults, get/set (string/uint64/case-insensitive/overflow), file roundtrip (comments, whitespace, empty lines), negative numbers, uint64 overflow, overlong values
 - `test_chunker.c` — File chunking (single/multi-chunk, deterministic hashing), directory chunking (multi-file, nested subdirs with '/' paths)
 - `test_reed_solomon.c` — GF(2^8) codec: encode/decode, 1-2 missing shards, partial stripes, 256KB shards
 - `test_erasure.c` — Stripe encoding, parity chunk storage, chunk reconstruction, EC metadata save/load roundtrip, RS(8,4) encode/reconstruct/partial stripe tests
@@ -226,7 +226,7 @@ All tests use `greatest.h` (single-header test framework). Tests needing filesys
 cd src\test
 test_e2e.bat                            # Automated daemon smoke test (no relay needed)
 ```
-Tests store/get/status, EC metadata persistence, ledger persistence across restart, and EC recovery.
+Tests store/get/status with SHA256 hash verification, EC metadata persistence, ledger persistence across restart, and EC recovery with hash integrity check.
 
 ### Manual integration testing
 ```bash
@@ -234,7 +234,7 @@ dd if=/dev/urandom of=test_10mb.bin bs=1M count=10
 md5sum test_10mb.bin                    # before
 md5sum ~/Downloads/test_10mb.bin        # after
 ```
-There is also a standalone test file at `src/relay/test_relay_client.c` (not integrated into the build).
+There is also a standalone test file at `src/relay/test_relay_client.c` — a manual integration test for the relay client; see build/run instructions in the file header.
 
 ### Multi-node integration tests
 ```bash
@@ -278,7 +278,7 @@ Test file: `gui/test_gui_ipc.cpp`. Covers connect, status, DHT status, peer list
 
 See [ROADMAP.md](ROADMAP.md) for the full development roadmap.
 
-**Completed:** Phases 1-9 (core transfer, P2P storage, DHT, erasure coding, multi-platform, production readiness, usability, GUI foundation, Qt GUI)
+**Completed:** Phases 1-10 (core transfer, P2P storage, DHT, erasure coding, multi-platform, production readiness, usability, GUI foundation, Qt GUI, pre-release hardening)
 
 ### Phase 7: Usability & Management (Complete)
 - 7A: File deletion — `wormhole delete <id>` removes chunks, EC metadata, DHT entries, registry entry ✅
@@ -301,3 +301,12 @@ See [ROADMAP.md](ROADMAP.md) for the full development roadmap.
 - 9D: SettingsDialog + PeerListWidget — 14 config keys with typed widgets, hot-reload detection, peer table, tooltips ✅
 - 9E: TrayManager — system tray icon, minimize-to-tray, desktop notifications, tray menu, quit confirmation ✅
 - 19 GUI audit fixes applied (ticket display, error feedback, daemon auto-start, empty states, single instance, etc.)
+
+### Phase 10: Pre-Release Hardening (Complete)
+- 10A: Network security — relay source address verification, path traversal defense, endpoint bounds clamping, cryptographic session IDs ✅
+- 10B: Thread safety — TOCTOU fix in chunk store, thread join before free, destructor terminate fallback, event ring buffer ✅
+- 10C: File permissions — `WH_SET_FILE_PRIVATE` (`chmod 0600`) on identity, ledger, certs, registry ✅
+- 10D: Correctness — DHT anti-flooding rate limiter (50/sender/min), `_Static_assert` overflow guard, monotonic clocks ✅
+- 10E: Build system — MsQuic existence check, VPATH docs, Windows overlapped IPC ✅
+- 10F: Testing — 7 new unit tests (path traversal, version rejection, config edge cases), E2E SHA256 hash verification ✅
+- 10G: Code hygiene — `WH_HashToHex`, `wh_monotonic_sec`, log levels, event/hot-reload documentation ✅

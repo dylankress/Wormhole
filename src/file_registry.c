@@ -23,17 +23,6 @@
 // Internal helpers
 //=============================================================================
 
-static void HashToHexStr(const uint8_t hash[WH_HASH_SIZE], char hex[65])
-{
-    static const char digits[] = "0123456789abcdef";
-    for (int i = 0; i < WH_HASH_SIZE; i++)
-    {
-        hex[i * 2]     = digits[(hash[i] >> 4) & 0x0F];
-        hex[i * 2 + 1] = digits[hash[i] & 0x0F];
-    }
-    hex[64] = '\0';
-}
-
 static BOOLEAN EnsureDirExists(const char *dir)
 {
 #ifdef _WIN32
@@ -70,7 +59,7 @@ static BOOLEAN GetFilePath(const uint8_t manifest_hash[WH_HASH_SIZE],
     if (!GetFilesBasePath(base, sizeof(base))) return FALSE;
 
     char hex[65];
-    HashToHexStr(manifest_hash, hex);
+    WH_HashToHex(manifest_hash, hex);
 
 #ifdef _WIN32
     snprintf(path, path_len, "%s\\%s.file", base, hex);
@@ -202,6 +191,9 @@ static BOOLEAN FileRegistry_SaveInternal(const FILE_MANIFEST *manifest, const ch
     fwrite(header, 1, header_size, fh);
     fwrite(manifest_data, 1, manifest_size, fh);
     fclose(fh);
+
+    // Restrict file permissions — registry entries contain encryption keys
+    WH_SET_FILE_PRIVATE(path);
 
     free(header);
     free(manifest_data);

@@ -391,6 +391,9 @@ BOOLEAN GenerateSelfSignedCert(char *cert_path_out, size_t path_size)
 	}
 	fclose(f);
 
+	// Restrict key file permissions to owner-only
+	WH_SET_FILE_PRIVATE(key_path);
+
 	LOG("Certificate generated: %s\n", cert_path);
 	snprintf(cert_path_out, path_size, "%s", cert_path);
 	return TRUE;
@@ -450,6 +453,9 @@ BOOLEAN GenerateSelfSignedCertWithNodeId(char *cert_path_out, size_t path_size,
 			return FALSE;
 		}
 	}
+
+	// Restrict key file permissions to owner-only
+	WH_SET_FILE_PRIVATE(key_path);
 
 	snprintf(cert_path_out, path_size, "%s", cert_path);
 	return TRUE;

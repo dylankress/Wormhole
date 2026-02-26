@@ -447,3 +447,68 @@ BOOLEAN DhtStore_Load(DHT_VALUE_STORE *store, const char *path)
     fclose(fh);
     return TRUE;
 }
+
+// ============================================================================
+// STORE Rate Limiter (anti-flooding)
+// ============================================================================
+
+void DhtStore_RateLimiterInit(DHT_STORE_RATE_LIMITER *limiter)
+{
+    memset(limiter, 0, sizeof(DHT_STORE_RATE_LIMITER));
+}
+
+BOOLEAN DhtStore_RateLimitCheck(DHT_STORE_RATE_LIMITER *limiter,
+                                 const uint8_t sender_id[32])
+{
+    if (!limiter || !sender_id) return FALSE;
+
+    time_t now = time(NULL);
+
+    // Find existing entry for this sender
+    for (uint32_t i = 0; i < limiter->count; i++)
+    {
+        if (memcmp(limiter->entries[i].node_id, sender_id, 32) == 0)
+        {
+            // Reset window if expired
+            if (difftime(now, limiter->entries[i].window_start) >= DHT_STORE_RATE_WINDOW_SEC)
+            {
+                limiter->entries[i].count = 1;
+                limiter->entries[i].window_start = now;
+                return TRUE;
+            }
+            // Check rate limit
+            if (limiter->entries[i].count >= DHT_STORE_RATE_LIMIT)
+                return FALSE;
+            limiter->entries[i].count++;
+            return TRUE;
+        }
+    }
+
+    // New sender — add entry
+    if (limiter->count < DHT_STORE_RATE_TRACKER_SIZE)
+    {
+        DHT_STORE_RATE_ENTRY *e = &limiter->entries[limiter->count];
+        memcpy(e->node_id, sender_id, 32);
+        e->count = 1;
+        e->window_start = now;
+        limiter->count++;
+        return TRUE;
+    }
+
+    // Tracker full — evict oldest entry
+    uint32_t oldest_idx = 0;
+    time_t oldest_time = limiter->entries[0].window_start;
+    for (uint32_t i = 1; i < limiter->count; i++)
+    {
+        if (limiter->entries[i].window_start < oldest_time)
+        {
+            oldest_time = limiter->entries[i].window_start;
+            oldest_idx = i;
+        }
+    }
+    DHT_STORE_RATE_ENTRY *e = &limiter->entries[oldest_idx];
+    memcpy(e->node_id, sender_id, 32);
+    e->count = 1;
+    e->window_start = now;
+    return TRUE;
+}

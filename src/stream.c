@@ -235,6 +235,81 @@ static int ValidateRelativePath(const char *path, uint16_t path_len)
     return 0;
 }
 
+// Defense-in-depth: verify that a resolved path stays within the expected directory.
+// Uses realpath() (POSIX) or GetFullPathNameA() (Windows) to resolve symlinks and ".." components.
+// For files that don't exist yet, resolves the parent directory instead.
+// Returns TRUE if path is safe, FALSE if it escapes the expected directory.
+static BOOLEAN VerifyPathWithinDir(const char *full_path, const char *expected_dir)
+{
+#ifdef _WIN32
+    char resolved_dir[MAX_PATH];
+    char resolved_path[MAX_PATH];
+
+    // GetFullPathNameA resolves . and .. even for non-existent files
+    if (GetFullPathNameA(expected_dir, MAX_PATH, resolved_dir, NULL) == 0)
+        return FALSE;
+    if (GetFullPathNameA(full_path, MAX_PATH, resolved_path, NULL) == 0)
+        return FALSE;
+
+    // Ensure trailing backslash on dir for prefix matching
+    size_t dir_len = strlen(resolved_dir);
+    if (dir_len > 0 && resolved_dir[dir_len - 1] != '\\')
+    {
+        if (dir_len + 1 < MAX_PATH)
+        {
+            resolved_dir[dir_len] = '\\';
+            resolved_dir[dir_len + 1] = '\0';
+            dir_len++;
+        }
+    }
+
+    // Case-insensitive prefix check on Windows
+    return (_strnicmp(resolved_path, resolved_dir, dir_len) == 0) ? TRUE : FALSE;
+#else
+    char resolved_dir[MAX_PATH];
+    char resolved_path[MAX_PATH];
+
+    // Resolve the expected output directory
+    if (!realpath(expected_dir, resolved_dir))
+        return FALSE;
+
+    // Try to resolve the full path — may fail if file doesn't exist yet
+    if (!realpath(full_path, resolved_path))
+    {
+        // File doesn't exist: resolve parent directory, then re-append filename
+        char parent_copy[MAX_PATH];
+        snprintf(parent_copy, sizeof(parent_copy), "%s", full_path);
+        char *last_slash = strrchr(parent_copy, '/');
+        if (!last_slash)
+            return FALSE;
+        *last_slash = '\0';
+        const char *filename = last_slash + 1;
+
+        if (!realpath(parent_copy, resolved_path))
+            return FALSE;
+
+        // Re-append the filename so the prefix check covers the full path
+        size_t rp_len = strlen(resolved_path);
+        snprintf(resolved_path + rp_len, sizeof(resolved_path) - rp_len,
+                 "/%s", filename);
+    }
+
+    // Ensure trailing slash on dir for prefix matching
+    size_t dir_len = strlen(resolved_dir);
+    if (dir_len > 0 && resolved_dir[dir_len - 1] != '/')
+    {
+        if (dir_len + 1 < MAX_PATH)
+        {
+            resolved_dir[dir_len] = '/';
+            resolved_dir[dir_len + 1] = '\0';
+            dir_len++;
+        }
+    }
+
+    return (strncmp(resolved_path, resolved_dir, dir_len) == 0) ? TRUE : FALSE;
+#endif
+}
+
 // For v2 manifests: ensure the correct file is open in ctx->file_handle.
 // Returns TRUE if file_handle is ready for writing the given chunk.
 static BOOLEAN OpenChunkOutputFile(CHUNK_RECEIVE_CONTEXT *ctx, uint32_t chunk_index)
@@ -320,6 +395,14 @@ static BOOLEAN OpenChunkOutputFile(CHUNK_RECEIVE_CONTEXT *ctx, uint32_t chunk_in
     {
         *last_sep = '\0';
         EnsureDirPath(parent);
+    }
+
+    // Defense-in-depth: verify resolved path stays within output directory
+    if (!VerifyPathWithinDir(full_path, ctx->output_path))
+    {
+        LOG_ERROR("[RecvData] ERROR: Path traversal detected, resolved path escapes output dir: %s\n",
+                  full_path);
+        return FALSE;
     }
 
     // Open file for writing (create or overwrite)

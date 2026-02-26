@@ -12,6 +12,21 @@ set MSQUIC_INC=%MSQUIC_ROOT%\src\inc
 set MSQUIC_LIB=%MSQUIC_ROOT%\artifacts\bin\windows\x64_Debug_schannel\msquic.lib
 set MSQUIC_DLL=%MSQUIC_ROOT%\artifacts\bin\windows\x64_Debug_schannel\msquic.dll
 
+REM --- Check MsQuic is built
+if not exist "%MSQUIC_LIB%" (
+	echo ERROR: MsQuic library not found at:
+	echo   %MSQUIC_LIB%
+	echo.
+	echo Build MsQuic first:
+	echo   cd msquic
+	echo   mkdir build ^&^& cd build
+	echo   cmake -G "Visual Studio 17 2022" -A x64 ..
+	echo   cmake --build . --config Debug
+	echo.
+	echo See BUILD_LINUX.md for alternative build instructions.
+	goto :done
+)
+
 REM --- libsodium paths
 set LIBSODIUM_ROOT=..\..\deps\libsodium
 set LIBSODIUM_INC=%LIBSODIUM_ROOT%\include

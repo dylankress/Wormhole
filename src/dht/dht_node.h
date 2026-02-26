@@ -50,6 +50,9 @@ typedef struct DHT_NODE {
     char            bootstrap_host_str[512];
     uint16_t        bootstrap_default_port;
 
+    // Anti-flooding: rate limiter for incoming STORE operations
+    DHT_STORE_RATE_LIMITER store_rate_limiter;
+
     // Stats
     uint64_t        msgs_sent;
     uint64_t        msgs_received;

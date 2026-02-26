@@ -66,6 +66,7 @@ Ticket: 5-ocean-maple
 - **Storage incentives** — per-peer reciprocity tracking, reject freeloading peers (ratio < 0.5)
 - **Storage quota** — configurable disk limit with LRU eviction (prefers evicting highly-replicated chunks)
 - **File management** — delete stored files, export/import encryption keys, daemon lifecycle control, peer visibility
+- **Security hardening** — relay source address verification, path traversal defense, DHT anti-flooding, cryptographic session IDs, file permission lockdown
 - **Configuration** — `~/.wormhole/config` INI file with 14 tunable settings
 
 ### Direct Transfer
@@ -92,7 +93,7 @@ Ticket: 5-ocean-maple
 
 ## Project Status
 
-**Phases 1–9 complete.** The core platform is built and tested:
+**Phases 1–10 complete.** The core platform is built, hardened, and tested:
 
 | Phase | Status | Description |
 |-------|--------|-------------|
@@ -106,6 +107,7 @@ Ticket: 5-ocean-maple
 | 7 | Done | Usability & management — file deletion, key export/import, daemon lifecycle, peer visibility |
 | 8 | Done | GUI foundation — IPC v2, progress reporting, daemon send/receive, config via IPC, lifecycle hardening, push events |
 | 9 | Done | Qt GUI — transfers, file management, settings, peer list, system tray |
+| 10 | Done | Pre-release hardening — security audit, thread safety, file permissions, testing |
 
 18 unit test suites + E2E daemon smoke tests + Docker multi-node integration tests (22 tests) + GUI IPC integration tests (22 tests). See [TESTING_GUIDE.md](TESTING_GUIDE.md) for details.
 

@@ -235,7 +235,7 @@ static BOOLEAN AddPendingRPC(DHT_NODE *node, uint32_t txn_id, uint8_t msg_type,
     } else {
         memset(rpc->target_id, 0, 32);
     }
-    rpc->sent_at = time(NULL);
+    rpc->sent_at = wh_monotonic_sec();
     rpc->callback_ctx = NULL;
     return TRUE;
 }
@@ -553,6 +553,13 @@ static void HandleStore(DHT_NODE *node, uint8_t *data, size_t len,
 
     if (value_avail < 1) goto send_error;
 
+    // Anti-flooding: rate-limit STORE operations per sender
+    if (!DhtStore_RateLimitCheck(&node->store_rate_limiter, msg->header.sender_id))
+    {
+        printf("[dht] STORE rate-limited for sender (>%d/min)\n", DHT_STORE_RATE_LIMIT);
+        goto send_error;
+    }
+
     uint8_t loc_count = value_data[0];
     if (value_avail < 1 + loc_count * sizeof(DHT_NODE_INFO)) goto send_error;
 
@@ -723,8 +730,9 @@ BOOLEAN DhtNode_Init(DHT_NODE *node, KEYPAIR *keypair, uint16_t port,
     // Initialize routing table with our public key as node ID
     RoutingTable_Init(&node->routing_table, keypair->public_key);
 
-    // Initialize value store
+    // Initialize value store and STORE rate limiter
     DhtStore_Init(&node->value_store);
+    DhtStore_RateLimiterInit(&node->store_rate_limiter);
 
     // Try to load saved routing table
     char rt_path[512];
@@ -1083,7 +1091,7 @@ BOOLEAN DhtNode_SendFindNode(DHT_NODE *node, const uint8_t addr[16],
 
 void DhtNode_RefreshBuckets(DHT_NODE *node)
 {
-    time_t now = time(NULL);
+    time_t now = wh_monotonic_sec();
     for (int b = 0; b < DHT_BUCKET_COUNT; b++) {
         K_BUCKET *bucket = &node->routing_table.buckets[b];
         if (bucket->count == 0) continue;
@@ -1104,7 +1112,7 @@ void DhtNode_RefreshBuckets(DHT_NODE *node)
 
 void DhtNode_ExpirePendingRPCs(DHT_NODE *node)
 {
-    time_t now = time(NULL);
+    time_t now = wh_monotonic_sec();
     uint32_t i = 0;
     while (i < node->pending_count) {
         DHT_PENDING_RPC *rpc = &node->pending_rpcs[i];
@@ -1185,6 +1193,9 @@ BOOLEAN DhtNode_SendStore(DHT_NODE *node, const uint8_t addr[16],
     if (location_count == 0 || location_count > DHT_STORE_MAX_LOCATIONS) return FALSE;
 
     // Build STORE message: header + key[32] + value_size[4] + loc_count[1] + locs[N*51]
+    // Safety: DHT_STORE_MAX_LOCATIONS (16) * sizeof(DHT_NODE_INFO) (51) = 816, well under UINT32_MAX.
+    _Static_assert(DHT_STORE_MAX_LOCATIONS * sizeof(DHT_NODE_INFO) < UINT32_MAX,
+                   "location payload size must fit in uint32_t");
     uint32_t value_size = 1 + location_count * sizeof(DHT_NODE_INFO);
     size_t msg_len = sizeof(DHT_STORE_MSG) + value_size;
     uint8_t *msg = (uint8_t *)malloc(msg_len);

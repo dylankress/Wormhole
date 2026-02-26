@@ -121,10 +121,37 @@ typedef unsigned char BOOLEAN;
 #define IPC_MAX_ERROR_MSG_LEN   512
 
 //=============================================================================
-// IPC v2: Progress Payload Size
+// IPC v2: Event Payload Binary Formats
 //=============================================================================
-
-// [4B op_id][8B bytes_done][8B bytes_total][4B chunks_done][4B chunks_total][4B speed_bps][4B eta_sec]
+//
+// All events are framed as:
+//   [4B msg_len][1B IPC_CMD_EVENT(0xE0)][4B op_id][1B event_type][payload...]
+// The payloads below describe the [payload...] portion only.
+// All multi-byte integers are little-endian.
+//
+// Event: PROGRESS (0x01) — 36 bytes
+//   [4B op_id][8B bytes_done][8B bytes_total]
+//   [4B chunks_done][4B chunks_total][4B speed_bps][4B eta_sec]
+//
+// Event: OP_COMPLETE (0x02) — 7+ bytes
+//   [1B status][4B op_id][2B error_msg_len][error_msg_bytes...]
+//
+// Event: PEER_CHANGE (0x03) — 4 bytes
+//   [4B peer_count]
+//
+// Event: FILE_STATUS (0x04) — 36 bytes
+//   [32B manifest_hash][1B file_status][2B replica_count_LE][1B padding]
+//
+// Event: HEALTH (0x05) — 16 bytes
+//   [4B chunks_checked][4B chunks_healthy][4B chunks_degraded][4B chunks_critical]
+//
+// Event: TRANSFER (0x06) — 25+ bytes (variable length)
+//   [4B transfer_id][1B direction][1B state][1B status]
+//   [8B bytes_transferred][8B bytes_total]
+//   [2B error_msg_len][error_msg_bytes...]
+//   [1B ticket_len][ticket_bytes...]
+//   [1B filename_len][filename_bytes...]
+//
 #define IPC_PROGRESS_PAYLOAD_SIZE  (4 + 8 + 8 + 4 + 4 + 4 + 4)
 
 //=============================================================================

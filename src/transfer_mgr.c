@@ -83,6 +83,14 @@ static void FreeTransfer(ACTIVE_TRANSFER *t)
 {
     if (!t) return;
 
+    // Join background thread before freeing resources
+    if (t->thread_valid) {
+        WH_ATOMIC_SET(&t->cancel_requested, 1);
+        WH_EVENT_SET(t->complete_event);
+        WH_THREAD_JOIN(t->thread, 5000);
+        t->thread_valid = FALSE;
+    }
+
     // Close QUIC handles (safety net after thread join)
     if (t->quic_connection) {
         MsQuic->ConnectionShutdown(t->quic_connection,
@@ -131,10 +139,12 @@ static void PushTransferProgress(ACTIVE_TRANSFER *t)
 // Push a transfer state event (started/completed/failed)
 static void PushTransferEvent(ACTIVE_TRANSFER *t, uint8_t ipc_status)
 {
-    // Transfer event payload: [4B transfer_id][1B direction][1B state][1B status]
-    //                         [8B bytes_transferred][8B bytes_total]
-    //                         [2B error_msg_len][error_msg]
-    //                         [1B ticket_len][ticket_bytes]
+    // TRANSFER event payload:
+    //   [4B transfer_id][1B direction][1B state][1B status]
+    //   [8B bytes_transferred][8B bytes_total]
+    //   [2B error_msg_len][error_msg_bytes...]
+    //   [1B ticket_len][ticket_bytes...]
+    //   [1B filename_len][filename_bytes...]
     uint8_t buf[512];
     uint32_t off = 0;
 

@@ -47,7 +47,11 @@ void DaemonClient::stop()
     if (m_workerThread.isRunning()) {
         QMetaObject::invokeMethod(m_worker, "stop", Qt::QueuedConnection);
         m_workerThread.quit();
-        m_workerThread.wait(5000);
+        if (!m_workerThread.wait(5000)) {
+            qWarning("DaemonClient: worker thread did not exit within 5s, forcing termination");
+            m_workerThread.terminate();
+            m_workerThread.wait();
+        }
     }
 }
 

@@ -180,6 +180,9 @@ BOOLEAN Ledger_Save(const STORAGE_LEDGER *ledger, const char *path)
         return FALSE;
     }
 
+    // Restrict permissions — ledger contains peer relationship data
+    WH_SET_FILE_PRIVATE(path);
+
     return TRUE;
 }
 

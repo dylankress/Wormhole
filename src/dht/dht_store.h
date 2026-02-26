@@ -36,6 +36,11 @@ typedef unsigned char BOOLEAN;
 // Entry expiry (24 hours)
 #define DHT_STORE_EXPIRY_SEC    86400
 
+// Anti-flooding: per-sender rate limiting for STORE operations
+#define DHT_STORE_RATE_LIMIT        50   // Max STORE ops per sender per window
+#define DHT_STORE_RATE_WINDOW_SEC   60   // Rate limit window (seconds)
+#define DHT_STORE_RATE_TRACKER_SIZE 64   // Max concurrently tracked senders
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -67,6 +72,19 @@ typedef struct {
     pthread_mutex_t  lock;
 #endif
 } DHT_VALUE_STORE;
+
+// Per-sender rate limit tracker entry
+typedef struct {
+    uint8_t  node_id[32];
+    uint32_t count;
+    time_t   window_start;
+} DHT_STORE_RATE_ENTRY;
+
+// Rate limiter for STORE operations (prevents flooding attacks)
+typedef struct {
+    DHT_STORE_RATE_ENTRY entries[DHT_STORE_RATE_TRACKER_SIZE];
+    uint32_t             count;
+} DHT_STORE_RATE_LIMITER;
 
 // ============================================================================
 // Public API
@@ -105,3 +123,11 @@ BOOLEAN DhtStore_Save(const DHT_VALUE_STORE *store, const char *path);
 
 // Load store from file
 BOOLEAN DhtStore_Load(DHT_VALUE_STORE *store, const char *path);
+
+// Initialize STORE rate limiter
+void DhtStore_RateLimiterInit(DHT_STORE_RATE_LIMITER *limiter);
+
+// Check if a STORE from sender_id is allowed. Returns TRUE if within rate limit.
+// Increments the sender's counter on success.
+BOOLEAN DhtStore_RateLimitCheck(DHT_STORE_RATE_LIMITER *limiter,
+                                 const uint8_t sender_id[32]);

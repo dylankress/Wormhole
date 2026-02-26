@@ -14,8 +14,8 @@
 // Default UDP port (4567 for development, use 443 in production)
 #define WORMHOLE_DEFAULT_PORT 4567
 
-// Content-addressed chunk size (256KB)
-#define CHUNK_SIZE (256 * 1024)
+// Content-addressed chunk size — use WH_CHUNK_SIZE from manifest.h (256KB)
+// (Legacy CHUNK_SIZE removed; canonical definition is WH_CHUNK_SIZE in manifest.h)
 
 // Control messages (Stream 0: bidirectional)
 #define CTRL_MSG_MANIFEST_REQUEST    0x01

@@ -1,6 +1,6 @@
 # Wormhole Testing Guide
 
-Complete walkthrough for building, running automated tests, and manually verifying every functional feature. Covers Phases 1-9 (direct transfer, P2P storage, DHT, erasure coding RS(8,4), multi-platform, production readiness, usability & management, GUI foundation, Qt GUI).
+Complete walkthrough for building, running automated tests, and manually verifying every functional feature. Covers Phases 1-10 (direct transfer, P2P storage, DHT, erasure coding RS(8,4), multi-platform, production readiness, usability & management, GUI foundation, Qt GUI, pre-release hardening).
 
 ---
 
@@ -45,6 +45,7 @@ Complete walkthrough for building, running automated tests, and manually verifyi
    - [All 14 Config Keys](#81-all-14-config-keys)
    - [Graceful Shutdown](#82-graceful-shutdown)
    - [Error Cases](#83-error-cases)
+   - [Security Hardening Verification](#84-security-hardening-verification)
 9. [Manual Testing — GUI](#9-manual-testing--gui)
 10. [Results Checklist](#10-results-checklist)
 
@@ -180,10 +181,10 @@ cd src/test
 | # | Test | Covers |
 |---|------|--------|
 | 1 | `test_wire_format` | Little-endian encoding/decoding (header-only) |
-| 2 | `test_manifest` | Manifest v1/v2 create/serialize/validate, multi-file |
+| 2 | `test_manifest` | Manifest v1/v2 create/serialize/validate, multi-file, path traversal rejection (backslash, mid-path `..`), unknown/future version rejection |
 | 3 | `test_chunk_store` | Chunk put/get/has/dedup, replica metadata, LRU eviction |
 | 4 | `test_transfer_state` | Resumable transfer bitfield save/load, boundary cases |
-| 5 | `test_config` | INI config defaults (14 keys), get/set, file roundtrip |
+| 5 | `test_config` | INI config defaults (14 keys), get/set, file roundtrip, negative numbers, uint64 overflow, overlong values |
 | 6 | `test_chunker` | File/directory chunking, deterministic hashing |
 | 7 | `test_reed_solomon` | GF(2^8) encode/decode, 1-2 missing shards, 256KB shards |
 | 8 | `test_erasure` | RS(4,2) + RS(8,4) stripes, parity, reconstruction, EC metadata |
@@ -211,7 +212,7 @@ cd src\test
 test_e2e.bat
 ```
 
-Tests: daemon startup, store/get/status, EC metadata persistence, ledger persistence across restart, EC chunk recovery. Runs in an isolated temp directory on port 14567.
+Tests: daemon startup, store/get/status with SHA256 hash verification, EC metadata persistence, ledger persistence across restart, EC chunk recovery with hash integrity check. Runs in an isolated temp directory on port 14567.
 
 ### 3.3 Docker Multi-Node Tests
 
@@ -1212,6 +1213,67 @@ wormhole get <chunk_hash> -o out.bin
 - [ ] Error message indicates corruption
 - [ ] Health check flags it for EC recovery
 
+### 8.4 Security Hardening Verification
+
+These checks verify the Phase 10 pre-release hardening changes.
+
+#### Relay Source Address Verification (10A)
+
+The relay server verifies that `CREATE_TICKET` and `LOOKUP` requests come from the same UDP source address that registered the session. This prevents session hijacking by spoofed peers.
+
+**Verify:** Review `relay-server/server.c` — `handle_create_ticket()` and `handle_lookup()` both call `sockaddr_equals()` to match the packet sender against the peer's registered `socket_addr`. Mismatches return error responses.
+
+#### Path Traversal Defense (10B)
+
+Received file paths are validated to prevent directory escape attacks.
+
+**Unit tests:**
+- `test_manifest` — `path_traversal_backslash`: rejects paths with `\` separators
+- `test_manifest` — `path_traversal_dotdot_mid`: rejects paths with `..` components
+- `test_manifest` — `unknown_version` / `future_version`: rejects manifest versions outside known range
+
+**Code review:** `stream.c` — `VerifyPathWithinDir()` uses `realpath()` (Linux) / `GetFullPathNameA()` (Windows) to resolve symlinks and `..`, then checks the resolved path starts with the expected output directory.
+
+#### DHT Anti-Flooding (10D)
+
+The DHT node rate-limits incoming STORE operations per sender.
+
+**Behavior:** Each sender is allowed up to 50 STORE operations per 60-second window (constants `DHT_STORE_RATE_LIMIT` and `DHT_STORE_RATE_WINDOW_SEC` in `dht_store.h`). Excess STOREs are silently dropped with a log message. The tracker supports 64 concurrent senders with oldest-eviction when full.
+
+#### File Permissions (10C)
+
+Sensitive files are created with `chmod 0600` (owner read/write only) on Linux.
+
+**Verify on Linux:**
+
+```bash
+# After daemon has run:
+ls -la ~/.wormhole/identity                 # Should show -rw-------
+ls -la ~/.wormhole/storage_ledger.bin       # Should show -rw-------
+ls -la ~/.wormhole/cert.pem                 # Should show -rw-------
+ls -la ~/.wormhole/key.pem                  # Should show -rw-------
+ls -la ~/.wormhole/files/*                  # Should show -rw-------
+```
+
+#### Chunk Store Thread Safety (10A)
+
+`ChunkStore_Put()` holds the mutex through the entire has-check + write sequence, eliminating a TOCTOU race where two threads could write the same chunk concurrently.
+
+**Verify:** Code review of `chunk_store.c` — the lock is acquired before `ChunkStore_Has()` and released after the file write completes.
+
+#### Config Validation (10F)
+
+New unit tests verify that `Config_ValidateValue` and `Config_SetUint64` handle edge cases correctly.
+
+**Unit tests:**
+- `test_config` — `negative_number_rejected`: negative values rejected for unsigned integer keys
+- `test_config` — `uint64_overflow_rejected`: values exceeding `UINT64_MAX` rejected
+- `test_config` — `overlong_value_rejected`: values exceeding `CONFIG_MAX_VALUE_LEN` rejected
+
+#### E2E Hash Verification (10F)
+
+The E2E daemon test (`test_e2e.bat`) now computes SHA256 hashes of the original file, the retrieved file, and the EC-recovered file to verify bitwise integrity across the store/get/recover pipeline.
+
 ---
 
 ## 9. Manual Testing — GUI
@@ -1423,3 +1485,16 @@ Copy this table and fill in after each test run.
 | Peer list display | | |
 | System tray minimize/restore | | |
 | Tray notifications | | |
+
+### Security Hardening (Phase 10)
+
+| Test | Status | Notes |
+|------|--------|-------|
+| Relay source address verification (10A) | | Code review |
+| Path traversal unit tests (10B) | | `test_manifest` |
+| DHT anti-flooding rate limiter (10D) | | Code review |
+| File permissions `chmod 0600` (10C) | | `ls -la` on Linux |
+| Chunk store TOCTOU fix (10B) | | Code review |
+| Config validation edge cases (10F) | | `test_config` |
+| E2E SHA256 hash verification (10F) | | `test_e2e.bat` |
+| Cryptographic session IDs (10A) | | Code review |

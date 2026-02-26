@@ -413,6 +413,52 @@ TEST test_validate_unknown_key_allowed(void)
     PASS();
 }
 
+TEST test_validate_negative_numbers(void)
+{
+    // Negative numbers should be rejected for numeric fields
+    ASSERT_FALSE(Config_ValidateValue("max_storage_gb", "-1"));
+    ASSERT_FALSE(Config_ValidateValue("replication_target", "-5"));
+    ASSERT_FALSE(Config_ValidateValue("dht_port", "-443"));
+    ASSERT_FALSE(Config_ValidateValue("relay_port", "-1"));
+    ASSERT_FALSE(Config_ValidateValue("min_storage_ratio", "-10"));
+    ASSERT_FALSE(Config_ValidateValue("health_check_interval_sec", "-60"));
+    PASS();
+}
+
+TEST test_validate_uint64_overflow(void)
+{
+    // Values exceeding uint64 range should be rejected
+    ASSERT_FALSE(Config_ValidateValue("max_storage_gb", "99999999999999999999"));
+    ASSERT_FALSE(Config_ValidateValue("relay_port", "99999999999999999999"));
+    PASS();
+}
+
+TEST test_overlong_value_handling(void)
+{
+    char path[512];
+    make_temp_path(path, sizeof(path), "overlong.ini");
+
+    WORMHOLE_CONFIG *config = Config_Load(path);
+    ASSERT(config != NULL);
+
+    // Build a very long value string (longer than CONFIG_MAX_VALUE_LEN)
+    char long_value[1024];
+    memset(long_value, 'A', sizeof(long_value) - 1);
+    long_value[sizeof(long_value) - 1] = '\0';
+
+    // Setting should succeed (value truncated to fit) or be rejected
+    // Either way the config should not crash or corrupt
+    Config_Set(config, "relay_host", long_value);
+
+    // Verify config is still functional
+    const char *val = Config_GetString(config, "relay_host", "fallback");
+    ASSERT(val != NULL);
+    ASSERT(strlen(val) < sizeof(long_value));
+
+    Config_Destroy(config);
+    PASS();
+}
+
 SUITE(validation_suite)
 {
     RUN_TEST(test_validate_numeric_in_range);
@@ -422,6 +468,9 @@ SUITE(validation_suite)
     RUN_TEST(test_validate_string_passthrough);
     RUN_TEST(test_set_rejects_invalid);
     RUN_TEST(test_validate_unknown_key_allowed);
+    RUN_TEST(test_validate_negative_numbers);
+    RUN_TEST(test_validate_uint64_overflow);
+    RUN_TEST(test_overlong_value_handling);
 }
 
 // ============================================================================

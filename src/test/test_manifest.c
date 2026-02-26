@@ -639,12 +639,112 @@ TEST test_absolute_path_rejected(void)
     PASS();
 }
 
+TEST test_backslash_traversal_rejected(void)
+{
+    // Windows-style path traversal with backslash
+    const char *paths[] = {"..\\evil.txt"};
+    uint64_t sizes[] = {1000};
+
+    FILE_MANIFEST *m = Manifest_CreateMultiFile("mydir", paths, sizes, 1);
+    ASSERT(m != NULL);
+
+    uint8_t hash[WH_HASH_SIZE];
+    fill_hash(hash, 0xAD);
+    Manifest_AddChunk(m, 0, hash, 1000);
+    Manifest_ComputeHash(m);
+
+    size_t sz = 0;
+    uint8_t *data = Manifest_Serialize(m, &sz);
+    ASSERT(data != NULL);
+
+    FILE_MANIFEST *m2 = Manifest_Deserialize(data, sz);
+    ASSERT(m2 == NULL);
+
+    free(data);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+TEST test_mid_path_traversal_rejected(void)
+{
+    // Traversal in the middle of a path: "foo/../../etc/passwd"
+    const char *paths[] = {"foo/../../etc/passwd"};
+    uint64_t sizes[] = {1000};
+
+    FILE_MANIFEST *m = Manifest_CreateMultiFile("mydir", paths, sizes, 1);
+    ASSERT(m != NULL);
+
+    uint8_t hash[WH_HASH_SIZE];
+    fill_hash(hash, 0xAE);
+    Manifest_AddChunk(m, 0, hash, 1000);
+    Manifest_ComputeHash(m);
+
+    size_t sz = 0;
+    uint8_t *data = Manifest_Serialize(m, &sz);
+    ASSERT(data != NULL);
+
+    FILE_MANIFEST *m2 = Manifest_Deserialize(data, sz);
+    ASSERT(m2 == NULL);
+
+    free(data);
+    Manifest_Destroy(m);
+    PASS();
+}
+
+TEST test_unknown_version_rejected(void)
+{
+    // Craft raw manifest bytes with version = 0 (invalid)
+    uint8_t buf[64];
+    memset(buf, 0, sizeof(buf));
+    uint8_t *p = buf;
+
+    WriteUint32LE(p, WH_MANIFEST_MAGIC); p += 4;
+    *p = 0; p += 1;  // version 0 — invalid
+    memset(p, 0, WH_HASH_SIZE); p += WH_HASH_SIZE;
+
+    WriteUint64LE(p, 1024); p += 8;
+    WriteUint32LE(p, WH_CHUNK_SIZE); p += 4;
+    WriteUint32LE(p, 1); p += 4;
+    WriteUint16LE(p, 4); p += 2;
+    memcpy(p, "test", 4); p += 4;
+
+    FILE_MANIFEST *m = Manifest_Deserialize(buf, (size_t)(p - buf));
+    ASSERT(m == NULL);
+    PASS();
+}
+
+TEST test_future_version_rejected(void)
+{
+    // Craft raw manifest bytes with version = 255 (future/unknown)
+    uint8_t buf[64];
+    memset(buf, 0, sizeof(buf));
+    uint8_t *p = buf;
+
+    WriteUint32LE(p, WH_MANIFEST_MAGIC); p += 4;
+    *p = 255; p += 1;  // version 255 — unknown future version
+    memset(p, 0, WH_HASH_SIZE); p += WH_HASH_SIZE;
+
+    WriteUint64LE(p, 1024); p += 8;
+    WriteUint32LE(p, WH_CHUNK_SIZE); p += 4;
+    WriteUint32LE(p, 1); p += 4;
+    WriteUint16LE(p, 4); p += 2;
+    memcpy(p, "test", 4); p += 4;
+
+    FILE_MANIFEST *m = Manifest_Deserialize(buf, (size_t)(p - buf));
+    ASSERT(m == NULL);
+    PASS();
+}
+
 SUITE(hardening_suite)
 {
     RUN_TEST(test_overflow_chunk_count);
     RUN_TEST(test_large_file_count_rejected);
     RUN_TEST(test_path_traversal_rejected);
     RUN_TEST(test_absolute_path_rejected);
+    RUN_TEST(test_backslash_traversal_rejected);
+    RUN_TEST(test_mid_path_traversal_rejected);
+    RUN_TEST(test_unknown_version_rejected);
+    RUN_TEST(test_future_version_rejected);
 }
 
 int main(void)

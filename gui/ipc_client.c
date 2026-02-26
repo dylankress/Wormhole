@@ -13,6 +13,9 @@
 // IPC message header size: 4 bytes (little-endian length)
 #define IPC_HEADER_SIZE 4
 
+// Maximum number of buffered events during command responses
+#define IPC_EVENT_BUFFER_CAPACITY 16
+
 //=============================================================================
 // Windows implementation
 //=============================================================================
@@ -23,20 +26,33 @@
 
 struct IPC_CLIENT {
     HANDLE pipe_handle;
+    HANDLE io_event;      // Manual-reset event for overlapped I/O
     BOOLEAN is_v2;
-    uint8_t *buffered_events[8];
-    uint32_t buffered_event_sizes[8];
+    uint8_t *buffered_events[IPC_EVENT_BUFFER_CAPACITY];
+    uint32_t buffered_event_sizes[IPC_EVENT_BUFFER_CAPACITY];
     int buffered_event_count;
 };
 
-static BOOLEAN PipeReadExact(HANDLE pipe, uint8_t *buffer, uint32_t count)
+// Overlapped read helper — blocks until all bytes are read.
+static BOOLEAN PipeReadExact(IPC_CLIENT *client, uint8_t *buffer, uint32_t count)
 {
     uint32_t total_read = 0;
     while (total_read < count)
     {
+        OVERLAPPED ol = {0};
+        ol.hEvent = client->io_event;
+        ResetEvent(client->io_event);
         DWORD bytes_read = 0;
-        if (!ReadFile(pipe, buffer + total_read, count - total_read, &bytes_read, NULL))
-            return FALSE;
+        if (!ReadFile(client->pipe_handle, buffer + total_read,
+                      count - total_read, &bytes_read, &ol))
+        {
+            if (GetLastError() != ERROR_IO_PENDING)
+                return FALSE;
+            if (WaitForSingleObject(client->io_event, INFINITE) != WAIT_OBJECT_0)
+                return FALSE;
+            if (!GetOverlappedResult(client->pipe_handle, &ol, &bytes_read, FALSE))
+                return FALSE;
+        }
         if (bytes_read == 0)
             return FALSE;
         total_read += bytes_read;
@@ -44,24 +60,69 @@ static BOOLEAN PipeReadExact(HANDLE pipe, uint8_t *buffer, uint32_t count)
     return TRUE;
 }
 
-static BOOLEAN PipeWriteExact(HANDLE pipe, const uint8_t *buffer, uint32_t count)
+// Overlapped write helper — blocks until all bytes are written.
+static BOOLEAN PipeWriteExact(IPC_CLIENT *client, const uint8_t *buffer, uint32_t count)
 {
     uint32_t total_written = 0;
     while (total_written < count)
     {
+        OVERLAPPED ol = {0};
+        ol.hEvent = client->io_event;
+        ResetEvent(client->io_event);
         DWORD bytes_written = 0;
-        if (!WriteFile(pipe, buffer + total_written, count - total_written, &bytes_written, NULL))
+        if (!WriteFile(client->pipe_handle, buffer + total_written,
+                       count - total_written, &bytes_written, &ol))
+        {
+            if (GetLastError() != ERROR_IO_PENDING)
+                return FALSE;
+            if (WaitForSingleObject(client->io_event, INFINITE) != WAIT_OBJECT_0)
+                return FALSE;
+            if (!GetOverlappedResult(client->pipe_handle, &ol, &bytes_written, FALSE))
+                return FALSE;
+        }
+        if (bytes_written == 0)
             return FALSE;
         total_written += bytes_written;
     }
     return TRUE;
 }
 
-static BOOLEAN IpcReadMessage(HANDLE pipe, uint8_t **out_buf, uint32_t *out_size)
+// Read a framed IPC message with an optional timeout on the initial header read.
+// Pass INFINITE for no timeout (blocking). Returns FALSE on timeout or error.
+static BOOLEAN IpcReadMessageEx(IPC_CLIENT *client, uint8_t **out_buf,
+                                uint32_t *out_size, DWORD timeout_ms)
 {
     uint8_t header[IPC_HEADER_SIZE];
-    if (!PipeReadExact(pipe, header, IPC_HEADER_SIZE))
-        return FALSE;
+
+    // Start an overlapped read for the header with timeout
+    OVERLAPPED ol = {0};
+    ol.hEvent = client->io_event;
+    ResetEvent(client->io_event);
+    DWORD bytes_read = 0;
+    if (!ReadFile(client->pipe_handle, header, IPC_HEADER_SIZE, &bytes_read, &ol))
+    {
+        if (GetLastError() != ERROR_IO_PENDING)
+            return FALSE;
+        DWORD result = WaitForSingleObject(client->io_event, timeout_ms);
+        if (result == WAIT_TIMEOUT)
+        {
+            CancelIo(client->pipe_handle);
+            // Wait for cancellation to complete so stack OVERLAPPED is safe
+            GetOverlappedResult(client->pipe_handle, &ol, &bytes_read, TRUE);
+            return FALSE;
+        }
+        if (result != WAIT_OBJECT_0)
+            return FALSE;
+        if (!GetOverlappedResult(client->pipe_handle, &ol, &bytes_read, FALSE))
+            return FALSE;
+    }
+
+    // Complete partial header read if needed
+    if (bytes_read < IPC_HEADER_SIZE)
+    {
+        if (!PipeReadExact(client, header + bytes_read, IPC_HEADER_SIZE - bytes_read))
+            return FALSE;
+    }
 
     uint32_t body_len = ReadUint32LE(header);
     if (body_len == 0 || body_len > IPC_MAX_MESSAGE_SIZE)
@@ -71,7 +132,7 @@ static BOOLEAN IpcReadMessage(HANDLE pipe, uint8_t **out_buf, uint32_t *out_size
     if (!body)
         return FALSE;
 
-    if (!PipeReadExact(pipe, body, body_len))
+    if (!PipeReadExact(client, body, body_len))
     {
         free(body);
         return FALSE;
@@ -82,14 +143,19 @@ static BOOLEAN IpcReadMessage(HANDLE pipe, uint8_t **out_buf, uint32_t *out_size
     return TRUE;
 }
 
-static BOOLEAN IpcWriteMessage(HANDLE pipe, const uint8_t *body, uint32_t body_len)
+static BOOLEAN IpcReadMessage(IPC_CLIENT *client, uint8_t **out_buf, uint32_t *out_size)
+{
+    return IpcReadMessageEx(client, out_buf, out_size, INFINITE);
+}
+
+static BOOLEAN IpcWriteMessage(IPC_CLIENT *client, const uint8_t *body, uint32_t body_len)
 {
     uint8_t header[IPC_HEADER_SIZE];
     WriteUint32LE(header, body_len);
 
-    if (!PipeWriteExact(pipe, header, IPC_HEADER_SIZE))
+    if (!PipeWriteExact(client, header, IPC_HEADER_SIZE))
         return FALSE;
-    if (body_len > 0 && !PipeWriteExact(pipe, body, body_len))
+    if (body_len > 0 && !PipeWriteExact(client, body, body_len))
         return FALSE;
     return TRUE;
 }
@@ -100,7 +166,7 @@ IPC_CLIENT *IpcClient_ConnectTo(const char *pipe_name)
 
     HANDLE pipe = CreateFileA(
         name, GENERIC_READ | GENERIC_WRITE,
-        0, NULL, OPEN_EXISTING, 0, NULL
+        0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL
     );
 
     if (pipe == INVALID_HANDLE_VALUE)
@@ -109,14 +175,23 @@ IPC_CLIENT *IpcClient_ConnectTo(const char *pipe_name)
     DWORD mode = PIPE_READMODE_BYTE;
     SetNamedPipeHandleState(pipe, &mode, NULL, NULL);
 
-    IPC_CLIENT *client = (IPC_CLIENT *)calloc(1, sizeof(IPC_CLIENT));
-    if (!client)
+    HANDLE event = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (!event)
     {
         CloseHandle(pipe);
         return NULL;
     }
 
+    IPC_CLIENT *client = (IPC_CLIENT *)calloc(1, sizeof(IPC_CLIENT));
+    if (!client)
+    {
+        CloseHandle(event);
+        CloseHandle(pipe);
+        return NULL;
+    }
+
     client->pipe_handle = pipe;
+    client->io_event = event;
     client->is_v2 = FALSE;
     return client;
 }
@@ -143,7 +218,7 @@ BOOLEAN IpcClient_SendCommand(
     if (payload && payload_size > 0)
         memcpy(msg + 1, payload, payload_size);
 
-    BOOLEAN ok = IpcWriteMessage(client->pipe_handle, msg, msg_len);
+    BOOLEAN ok = IpcWriteMessage(client, msg, msg_len);
     free(msg);
     if (!ok) return FALSE;
 
@@ -152,14 +227,15 @@ BOOLEAN IpcClient_SendCommand(
     uint8_t *resp = NULL;
     uint32_t resp_size = 0;
     while (1) {
-        if (!IpcReadMessage(client->pipe_handle, &resp, &resp_size))
+        if (!IpcReadMessage(client, &resp, &resp_size))
             return FALSE;
         if (resp_size >= 1 && resp[0] == IPC_CMD_EVENT) {
-            if (client->buffered_event_count < 8) {
+            if (client->buffered_event_count < IPC_EVENT_BUFFER_CAPACITY) {
                 client->buffered_events[client->buffered_event_count] = resp;
                 client->buffered_event_sizes[client->buffered_event_count] = resp_size;
                 client->buffered_event_count++;
             } else {
+                fprintf(stderr, "[ipc_client] Event buffer full, dropping event\n");
                 free(resp);
             }
             resp = NULL;
@@ -199,7 +275,7 @@ BOOLEAN IpcClient_SendCommandV2(
     if (payload && payload_size > 0)
         memcpy(msg + 5, payload, payload_size);
 
-    BOOLEAN ok = IpcWriteMessage(client->pipe_handle, msg, msg_len);
+    BOOLEAN ok = IpcWriteMessage(client, msg, msg_len);
     free(msg);
     if (!ok) return FALSE;
 
@@ -208,14 +284,15 @@ BOOLEAN IpcClient_SendCommandV2(
     uint8_t *resp = NULL;
     uint32_t resp_size = 0;
     while (1) {
-        if (!IpcReadMessage(client->pipe_handle, &resp, &resp_size))
+        if (!IpcReadMessage(client, &resp, &resp_size))
             return FALSE;
         if (resp_size >= 1 && resp[0] == IPC_CMD_EVENT) {
-            if (client->buffered_event_count < 8) {
+            if (client->buffered_event_count < IPC_EVENT_BUFFER_CAPACITY) {
                 client->buffered_events[client->buffered_event_count] = resp;
                 client->buffered_event_sizes[client->buffered_event_count] = resp_size;
                 client->buffered_event_count++;
             } else {
+                fprintf(stderr, "[ipc_client] Event buffer full, dropping event\n");
                 free(resp);
             }
             resp = NULL;
@@ -288,20 +365,11 @@ BOOLEAN IpcClient_ReadEvent(
         return TRUE;
     }
 
-    DWORD start = GetTickCount();
-    while (1) {
-        DWORD available = 0;
-        if (PeekNamedPipe(client->pipe_handle, NULL, 0, NULL, &available, NULL) && available > 0)
-            break;
-        DWORD elapsed = GetTickCount() - start;
-        if (timeout_ms != 0xFFFFFFFF && elapsed >= timeout_ms)
-            return FALSE;
-        Sleep(10);
-    }
-
+    // Read message with proper blocking via overlapped I/O (no busy-poll)
+    DWORD wait_time = (timeout_ms == 0xFFFFFFFF) ? INFINITE : timeout_ms;
     uint8_t *msg = NULL;
     uint32_t msg_size = 0;
-    if (!IpcReadMessage(client->pipe_handle, &msg, &msg_size))
+    if (!IpcReadMessageEx(client, &msg, &msg_size, wait_time))
         return FALSE;
 
     if (msg_size < 6 || msg[0] != IPC_CMD_EVENT) {
@@ -343,6 +411,11 @@ void IpcClient_Disconnect(IPC_CLIENT *client)
         CloseHandle(client->pipe_handle);
         client->pipe_handle = INVALID_HANDLE_VALUE;
     }
+    if (client->io_event)
+    {
+        CloseHandle(client->io_event);
+        client->io_event = NULL;
+    }
     free(client);
 }
 
@@ -360,8 +433,8 @@ void IpcClient_Disconnect(IPC_CLIENT *client)
 struct IPC_CLIENT {
     int fd;
     BOOLEAN is_v2;
-    uint8_t *buffered_events[8];
-    uint32_t buffered_event_sizes[8];
+    uint8_t *buffered_events[IPC_EVENT_BUFFER_CAPACITY];
+    uint32_t buffered_event_sizes[IPC_EVENT_BUFFER_CAPACITY];
     int buffered_event_count;
 };
 
@@ -509,11 +582,12 @@ BOOLEAN IpcClient_SendCommand(
         if (!IpcReadMessage(client->fd, &resp, &resp_size))
             return FALSE;
         if (resp_size >= 1 && resp[0] == IPC_CMD_EVENT) {
-            if (client->buffered_event_count < 8) {
+            if (client->buffered_event_count < IPC_EVENT_BUFFER_CAPACITY) {
                 client->buffered_events[client->buffered_event_count] = resp;
                 client->buffered_event_sizes[client->buffered_event_count] = resp_size;
                 client->buffered_event_count++;
             } else {
+                fprintf(stderr, "[ipc_client] Event buffer full, dropping event\n");
                 free(resp);
             }
             resp = NULL;
@@ -563,11 +637,12 @@ BOOLEAN IpcClient_SendCommandV2(
         if (!IpcReadMessage(client->fd, &resp, &resp_size))
             return FALSE;
         if (resp_size >= 1 && resp[0] == IPC_CMD_EVENT) {
-            if (client->buffered_event_count < 8) {
+            if (client->buffered_event_count < IPC_EVENT_BUFFER_CAPACITY) {
                 client->buffered_events[client->buffered_event_count] = resp;
                 client->buffered_event_sizes[client->buffered_event_count] = resp_size;
                 client->buffered_event_count++;
             } else {
+                fprintf(stderr, "[ipc_client] Event buffer full, dropping event\n");
                 free(resp);
             }
             resp = NULL;

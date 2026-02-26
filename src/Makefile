@@ -76,7 +76,11 @@ DAEMON_SOURCES  = wormholed.c transfer_mgr.c $(SHARED_SOURCES) $(DEP_SOURCES)
 CLIENT_OBJS = $(patsubst %.c,$(BUILDDIR)/%.o,$(notdir $(CLIENT_SOURCES)))
 DAEMON_OBJS = $(patsubst %.c,$(BUILDDIR)/%.o,$(notdir $(DAEMON_SOURCES)))
 
-# VPATH for finding source files in subdirectories
+# VPATH for finding source files in subdirectories.
+# Note: All source filenames across VPATH dirs are unique (no collisions), so
+# $(notdir ...) object mapping is safe. If a new source file is added that
+# collides with an existing name in a different directory, the build will
+# silently pick the wrong file — use prefixed object names in that case.
 VPATH = . relay dht $(BLAKE3_ROOT) $(RS_ROOT)
 
 .PHONY: all clean wormhole wormholed
